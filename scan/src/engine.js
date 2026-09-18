@@ -17,16 +17,12 @@
       phoneme, on its own fixed clock however slowly you are moving. That is
       what keeps stops intelligible at any scan speed.
 
-  Stops come in two kinds, decided by position in the word:
-
-    * WORD-FINAL stops are holdable. Dwell and the closure sits there — silent
-      for /p t k/, a voice bar for /b d g/ — and it releases when you leave the
-      word, when the gate closes, or when you lift the mouse.
-
-    * EVERY OTHER STOP is pass-through. There is nothing to dwell on in a
-      word-initial or medial stop, so arriving at one fires the whole gesture
-      at once and lands on the next continuant. Its cell is drawn narrow to
-      say so.
+  Stops get no cell of their own. There is nothing in a stop to dwell on, so
+  each one is folded onto a neighbouring block: as an ONSET, fired the moment
+  you arrive at that block, or as a CODA, fired as you reach the end of it.
+  "crack" is three blocks wide — /ɹ/ carrying a /k/ on its front, /æ/ carrying
+  one on its back — so a constant-rate scan never waits in silence for a
+  consonant to finish.
 
   The engine is driven by an explicit clock — voice.update(position, now) — and
   touches nothing but AudioParams, so it can be hosted anywhere.
@@ -43,6 +39,8 @@ export const DEFAULTS = {
   votVoiced: 0.012, // after /b d g/
   transition: 0.06, // post-burst move onto the next phoneme
   affricateClosure: 0.07, // how long /tʃ dʒ/ hold closure before self-releasing
+  holdWordFinalStops: false, // true = a word-final stop gets a cell of its own
+  codaAt: 0.86, // how far into a block its trailing stop fires (0-1)
   autoReleaseStops: false, // a held stop lets go by itself...
   maxClosure: 0.25, // ...after this long. It does not re-close.
   retriggerLockout: 0.14, // ignore a re-entry into the same stop within this
@@ -56,6 +54,8 @@ export const DEFAULTS = {
   release: 0.08,
   burstIntensity: 1,
   burstLevel: 0.5, // strength of the injected burst transient (0 = none)
+  burstDecay: 500, // how fast it dies: higher = shorter, brighter, less thump
+  pressureVoiceless: 0.3, // source level behind a closed /p t k/ before it opens
   closureIntensityVoiced: 0.28, // voice bar during /b d g/
   voicenessVowel: 0.9,
   voicenessVoicedFric: 0.7,
@@ -226,10 +226,54 @@ export function buildTrack(ipaString, table, cfg = DEFAULTS) {
     i += key.length;
   }
 
-  markStops(cells);
+  markStops(cells, cfg);
   resolveInheritance(cells);
-  resolvePassThroughTargets(cells);
-  return cells;
+  const attached = attachStops(cells, cfg);
+  resolvePassThroughTargets(attached);
+  return attached;
+}
+
+/**
+ * A stop is an event, not a state: there is nothing in it to dwell on, so it
+ * should not occupy any of the strip. Every stop is folded onto a neighbouring
+ * block — as an *onset*, fired when you arrive at the block, or as a *coda*,
+ * fired as you reach the end of it. Scanning at a constant rate therefore spends
+ * no time waiting in silence: "crack" is three blocks wide, with the first /k/
+ * on the front of the /ɹ/ and the last on the back of the /æ/.
+ */
+function attachStops(cells, cfg) {
+  const out = [];
+  cells.forEach((cell, i) => {
+    const isStop = cell.cls === "stop" || cell.cls === "affricate";
+    const keepsItsCell =
+      !isStop ||
+      cell.cls === "affricate" || // an affricate sustains its frication: it stays
+      (cell.wordFinal && cfg.holdWordFinalStops);
+    if (keepsItsCell) {
+      out.push(cell);
+      return;
+    }
+
+    // the next thing in this word that can be held
+    let j = i + 1;
+    while (j < cells.length && cells[j].cls === "stop") j++;
+    const next = cells[j];
+    if (next && next.cls !== "silence") {
+      next.onsets = next.onsets || [];
+      next.onsets.push(cell);
+      next.blendIn = false; // a stop interrupts: do not smear across it
+      return;
+    }
+    const prev = out[out.length - 1];
+    if (prev && prev.cls !== "silence") {
+      prev.codas = prev.codas || [];
+      prev.codas.push(cell);
+      prev.blendOut = false;
+      return;
+    }
+    out.push(cell); // a word that is nothing but a stop: it keeps its cell
+  });
+  return out;
 }
 
 function makeSilence(wordIndex) {
@@ -343,21 +387,23 @@ function makeCell(ipa, table, cfg, wordIndex) {
   return cell;
 }
 
-/** a stop is holdable only at the end of a word; everywhere else it passes through */
-function markStops(cells) {
+/**
+ * Every stop fires the moment you arrive at it: closure, burst and all, at the
+ * seam between the phoneme before it and its own cell. A word-final stop has
+ * nothing after it, so it lands in silence rather than on a vowel.
+ *
+ * With cfg.holdWordFinalStops on, a word-final stop instead waits: it sits on
+ * its closure until you leave the word or the gate closes, and only then bursts.
+ */
+function markStops(cells, cfg) {
   cells.forEach((cell, i) => {
     if (cell.cls !== "stop") return;
     const next = cells[i + 1];
     cell.wordFinal = !next || next.cls === "silence";
-    if (cell.wordFinal) {
-      cell.closes = true;
-      cell.passThrough = false;
-      cell.width = WIDTHS.heldStop;
-    } else {
-      cell.closes = false;
-      cell.passThrough = true;
-      cell.width = WIDTHS.passThroughStop;
-    }
+    const held = cell.wordFinal && cfg.holdWordFinalStops;
+    cell.closes = held;
+    cell.passThrough = !held;
+    cell.width = held ? WIDTHS.heldStop : WIDTHS.passThroughStop;
   });
 }
 
@@ -404,8 +450,8 @@ function resolvePassThroughTargets(cells) {
       break;
     }
     if (!target) {
-      // nothing ahead: fall back to its own release shape
-      target = cell.releasePose;
+      // nothing ahead: open, then fall silent
+      target = Object.assign({}, cell.releasePose, { a: 0 });
     }
     cell.trackPose = Object.assign({}, target);
     cell.poses = [cell.trackPose];
@@ -448,6 +494,7 @@ export class ScanVoice {
   }
 
   setTrack(cells) {
+    cells.forEach((cell) => (cell.codaFired = false));
     this.cells = cells;
     this.curCell = -1;
     this.closed = false;
@@ -634,15 +681,17 @@ export class ScanVoice {
    * The burst. Fixed duration regardless of how fast the pointer is moving:
    * pressure -> open + noise -> VOT/aspiration -> next phoneme.
    */
-  _burstSteps(cell, target, closeTime, now) {
+  _burstSteps(cell, target, closeTime, now, offset = 0) {
     const cfg = this.cfg;
     const closure = cell.closurePose;
     const rel = cell.releasePose || closure;
     const voiced = cell.voiced;
     const vot = voiced ? cfg.votVoiced : cfg.votVoiceless;
 
+    // whatever is running behind a closed tract is trapped, and escapes as a
+    // thump when it opens — so keep it modest
     const pressure = Object.assign({}, closure, {
-      a: voiced ? Math.max(closure.a, 0.5) : cfg.burstIntensity * 0.9,
+      a: voiced ? Math.max(closure.a, 0.4) : cfg.pressureVoiceless,
       v: voiced ? 0.85 : 0.02,
     });
     const burst = Object.assign({}, rel, {
@@ -655,19 +704,22 @@ export class ScanVoice {
     });
 
     const steps = [
-      { t: closeTime + 0.001, pose: pressure },
-      { t: closeTime + cfg.burstTime, pose: burst },
-      { t: closeTime + cfg.burstTime + vot, pose: aspirate },
-      { t: closeTime + cfg.burstTime + vot + cfg.transition, pose: target },
+      { t: offset + closeTime + 0.001, pose: pressure },
+      { t: offset + closeTime + cfg.burstTime, pose: burst },
+      { t: offset + closeTime + cfg.burstTime + vot, pose: aspirate },
+      { t: offset + closeTime + cfg.burstTime + vot + cfg.transition, pose: target },
     ];
-    const lock = closeTime + cfg.burstTime + vot + cfg.transition;
+    const lock = offset + closeTime + cfg.burstTime + vot + cfg.transition;
 
     // the transient is turbulence, not voicing, so it fires even when whispering
     if (cfg.burstLevel > 0) {
+      if (this.params.burstDecay) {
+        this.params.burstDecay.setValueAtTime(cfg.burstDecay, now);
+      }
       this._pulse(
         this.params.burst,
         cfg.burstLevel * (voiced ? 0.6 : 1),
-        now + closeTime + Math.max(0.002, cfg.burstTime - 0.002)
+        now + offset + closeTime + Math.max(0.002, cfg.burstTime - 0.002)
       );
     }
     return { steps, lock };
@@ -716,9 +768,54 @@ export class ScanVoice {
     this.curCell = toIndex;
   }
 
+  /** the stops folded onto the front of a block, fired as you arrive at it */
+  fireOnsets(i, now) {
+    const cell = this.cells[i];
+    const stops = cell.onsets;
+    if (!stops || stops.length === 0) return false;
+    const steps = [];
+    let offset = 0;
+    stops.forEach((stop, k) => {
+      const last = k === stops.length - 1;
+      const target = last ? cell.poses[0] : stops[k + 1].closurePose;
+      const built = this._burstSteps(stop, target, this.cfg.passClose, now, offset);
+      steps.push(...built.steps);
+      offset = built.lock;
+    });
+    this.scheduleGesture(steps, now, offset, "stop", stops[0]);
+    this.curCell = i;
+    this.closed = false;
+    this.released = true;
+    cell.codaFired = false;
+    return true;
+  }
+
+  /** the stops folded onto the end of a block, fired as you leave it */
+  fireCodas(i, now, target) {
+    const cell = this.cells[i];
+    const stops = cell.codas;
+    if (!stops || stops.length === 0) return false;
+    const steps = [];
+    let offset = 0;
+    stops.forEach((stop, k) => {
+      const last = k === stops.length - 1;
+      const to = last
+        ? target || Object.assign({}, stop.releasePose, { a: 0 })
+        : stops[k + 1].closurePose;
+      const built = this._burstSteps(stop, to, this.cfg.passClose, now, offset);
+      steps.push(...built.steps);
+      offset = built.lock;
+    });
+    this.scheduleGesture(steps, now, offset, "stop", stops[0]);
+    cell.codaFired = true;
+    this.closed = false;
+    this.released = true;
+    return true;
+  }
+
   /**
-   * A word-initial or medial stop: closure and burst in one movement, landing
-   * on the next thing you can hold. There is no dwelling on it.
+   * A stop that kept a cell of its own: closure and burst in one movement,
+   * landing on the next thing you can hold.
    */
   firePassThrough(i, now) {
     const cell = this.cells[i];
@@ -758,8 +855,23 @@ export class ScanVoice {
       return;
     }
 
+    // a block's trailing stop, if the scan left before it fired
+    if (prev && prev.codas && !prev.codaFired && i > this.curCell) {
+      const target = next.cls === "silence" ? null : this.entryPose(i);
+      this.fireCodas(this.curCell, now, target);
+      this.curCell = i;
+      next.codaFired = false;
+      return;
+    }
+
     if (next.cls === "silence") {
       this.enterSilence(i, now);
+      return;
+    }
+
+    next.codaFired = false;
+    if (next.onsets && next.onsets.length) {
+      this.fireOnsets(i, now);
       return;
     }
 
@@ -808,6 +920,11 @@ export class ScanVoice {
     const cell = this.cells[i];
     if (!cell) return;
 
+    if (cell.codas && !cell.codaFired && pos - i > this.cfg.codaAt) {
+      this.fireCodas(i, now, null);
+      return;
+    }
+
     if (cell.cls === "silence") {
       this._ramp(this.params.intensity, 0, now, this.cfg.release, "intensity");
       return;
@@ -845,6 +962,12 @@ export class ScanVoice {
     const wasOn = this.gate > 0;
     if (!on) {
       const cell = this.cells[this.curCell];
+      if (cell && cell.codas && !cell.codaFired) {
+        // "crack" still gets its k if you simply stop on the vowel
+        this.fireCodas(this.curCell, now, null);
+        this.gate = 0;
+        return;
+      }
       if (cell && cell.closes && this.closed && !this.released) {
         // a held stop still gets its burst on the way out — schedule it while
         // the gate is still open, or every step of it would be multiplied by 0
@@ -866,6 +989,7 @@ export class ScanVoice {
       this.cells.forEach((cell) => {
         cell.firedAt = undefined;
         cell.released = false;
+        cell.codaFired = false;
       });
     }
   }

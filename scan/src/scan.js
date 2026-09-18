@@ -89,11 +89,17 @@ function allowedNotes() {
   return list.map(parsePitch).filter((n) => n !== null && isFinite(n));
 }
 
-// seconds per phoneme for each scan rate; a fresh value is drawn per cell
+/* ----------------------------------------------------------------- *
+ *  SCAN SPEEDS — tune these.
+ *  Seconds per phoneme for the three held keys. A fresh value is drawn
+ *  from the range for every cell, so two players on the same key drift
+ *  apart. A cell's own width scales it: a narrow pass-through stop takes
+ *  half as long as a vowel, a word gap about two thirds.
+ * ----------------------------------------------------------------- */
 const RATES = {
-  slow: [4, 6],
-  mid: [1, 3],
-  fast: [0.5, 1],
+  slow: [4, 6], // A
+  mid: [0.5, 1], // S
+  fast: [0.25, 0.75], // D — near speaking tempo
 };
 const rand = (a, b) => a + Math.random() * (b - a);
 
@@ -118,11 +124,14 @@ let lastGestureAt = 0;
 let note = 45.5; // ≈140 Hz, the Pink Trombone default
 let ws = null;
 
-let gain = 0.15; // the raw tract peaks around +18 dBFS, with a 27 dB crest factor
+let gain = 0.4; // the tract is hot and impulsive; see the limiter below
 const vibrato = { rate: 6, depth: 0.005, wobble: 1 };
 let wordMode = "next"; // or "random", per phrase
 let wordSpans = [];
+let spanWord = []; // span index -> index into words[]
 let wordCursor = -1;
+let pronunciation = "fixed"; // fixed | phrase | word
+let lastSpanSeen = -1;
 let atEnd = false; // the last scan ran off the end of the phrase
 let whisperRestoreAt = 0;
 
@@ -214,6 +223,7 @@ async function enableAudio() {
       frequency: element.frequency,
       tractLength: element.tractLength,
       burst: element.burst,
+      burstDecay: element.burstDecay,
     },
     cfg
   );
@@ -231,6 +241,8 @@ async function enableAudio() {
 
   applyVibrato();
   master.gain.value = gain;
+
+  showTract(true);
 
   ready = true;
   $("startAudio").textContent = "audio running";
@@ -283,23 +295,58 @@ function setPhrase(index, { announce = true } = {}) {
   $("phraseNum").textContent = `${phraseIndex + 1}/${count}`;
   $("phraseText").textContent = phrase;
   paintDots();
+  applyPreset(phraseIndex); // brings this phrase's cfg, pitch and word choices
+  if (pronunciation !== "fixed") randomizeChoices();
   renderAlts();
   rebuildFromWords();
-  applyPreset(phraseIndex);
   paintInstruction();
+  lastSpanSeen = -1;
   wordCursor = -1;
   atEnd = false;
   targetPos = 0;
   if (announce) sendOut("/scan/out/phrase", [phraseIndex + 1, phrase]);
 }
 
+/** re-roll the pronunciation of one word, or of all of them */
+function randomizeChoices(wordIndex) {
+  // a straight uniform draw: forcing a change from last time makes a two-variant
+  // word alternate on a fixed cycle instead of being random
+  const roll = (w) => {
+    if (w.alts.length < 2) return;
+    w.choice = Math.floor(Math.random() * w.alts.length);
+  };
+  if (wordIndex === undefined) words.forEach(roll);
+  else if (words[wordIndex]) roll(words[wordIndex]);
+}
+
+/** which span (word) a position falls in */
+function spanAt(pos) {
+  for (let i = 0; i < wordSpans.length; i++) {
+    if (pos >= wordSpans[i].start && pos < wordSpans[i].end) return i;
+  }
+  return -1;
+}
+
+/** re-roll one word mid-performance and keep the scan where it was */
+function rerollSpan(spanIndex) {
+  if (spanIndex < 0 || spanIndex >= spanWord.length) return;
+  const wordIndex = spanWord[spanIndex];
+  if (!words[wordIndex] || words[wordIndex].alts.length < 2) return;
+  randomizeChoices(wordIndex);
+  rebuildFromWords();
+  const span = wordSpans[spanIndex];
+  if (span) targetPos = span.start + 0.02;
+}
+
 function rebuildFromWords() {
   const parts = [];
   wordLabels = [];
-  words.forEach((w) => {
+  spanWord = [];
+  words.forEach((w, index) => {
     if (w.alts.length === 0) return;
     parts.push(w.alts[w.choice]);
     wordLabels.push(w.token);
+    spanWord.push(index);
     if (w.pause) {
       parts.push(""); // an empty part between two spaces = a second gap cell
       wordLabels.push("");
@@ -312,6 +359,37 @@ function rebuildFromWords() {
 
 function renderAlts() {
   altsHost.innerHTML = "";
+  const label = document.createElement("span");
+  label.className = "alts-label";
+  label.textContent = "pronunciation";
+  altsHost.appendChild(label);
+
+  const modeSel = document.createElement("select");
+  modeSel.id = "pronunciationSel";
+  [
+    ["fixed", "as chosen"],
+    ["phrase", "re-roll each phrase"],
+    ["word", "re-roll each word"],
+  ].forEach(([value, text]) => modeSel.appendChild(new Option(text, value)));
+  modeSel.value = pronunciation;
+  modeSel.addEventListener("input", () => {
+    pronunciation = modeSel.value;
+    if (pronunciation !== "fixed") {
+      randomizeChoices();
+      renderAlts();
+      rebuildFromWords();
+    }
+  });
+  altsHost.appendChild(modeSel);
+
+  const variable = words.filter((w) => w.alts.length > 1);
+  if (variable.length === 0) {
+    const none = document.createElement("span");
+    none.className = "alts-label";
+    none.textContent = "· this phrase has no variants";
+    altsHost.appendChild(none);
+    return;
+  }
   words.forEach((w) => {
     if (w.alts.length <= 1) return;
     const select = document.createElement("select");
@@ -433,8 +511,15 @@ function renderStrip() {
       `${cell.ipa} — ${cell.cls}` +
       (cell.passThrough ? " (passes through)" : cell.closes ? " (holds)" : "") +
       (cell.example ? ` · as in "${cell.example}"` : "");
+    const onsets = (cell.onsets || []).map((c) => c.ipa).join("");
+    const codas = (cell.codas || []).map((c) => c.ipa).join("");
     el.innerHTML =
-      `<div class="bar"></div><span class="ipa">${cell.ipa}</span>` +
+      `<div class="bar"></div>` +
+      `<span class="glyphs">` +
+      (onsets ? `<span class="affix onset">${onsets}</span>` : "") +
+      `<span class="ipa">${cell.ipa}</span>` +
+      (codas ? `<span class="affix coda">${codas}</span>` : "") +
+      `</span>` +
       `<span class="tag">${cellTag(cell)}</span>`;
     groupCells.appendChild(el);
     cellEls.push(el);
@@ -484,6 +569,7 @@ function withinStrip(event) {
 
 strip.addEventListener("pointerdown", async (event) => {
   event.preventDefault();
+  cancelTransport(); // taking hold of the strip overrides a running key
   strip.setPointerCapture(event.pointerId);
   pressed = true;
   insideStrip = true;
@@ -496,6 +582,12 @@ strip.addEventListener("pointerdown", async (event) => {
 
 strip.addEventListener("pointermove", (event) => {
   const inside = withinStrip(event);
+  // a key transport owns the position while it runs: a trackpad nudge should
+  // not yank the scan somewhere else mid-phrase
+  if (transport.mode && !pressed) {
+    insideStrip = inside;
+    return;
+  }
   targetPos = posFromX(event.clientX);
   if (pressed && inside !== insideStrip) {
     insideStrip = inside;
@@ -686,6 +778,7 @@ export function applyRemote(address, args = []) {
       if (typeof a0 === "string" && a0 in cfg) {
         cfg[a0] = typeof cfg[a0] === "boolean" ? num(args[1]) > 0.5 : num(args[1], cfg[a0]);
         syncControl(a0, cfg[a0]);
+        if (a0 === "holdWordFinalStops") setTrack(ipaLine.textContent);
       }
       break;
     case "/scan/speed": {
@@ -869,6 +962,8 @@ const CONTROLS = [
   { key: "passClose", label: "pass-through closure", min: 0.005, max: 0.1, step: 0.002, unit: "s" },
   { key: "burstTime", label: "burst", min: 0.002, max: 0.05, step: 0.001, unit: "s" },
   { key: "burstLevel", label: "burst strength", min: 0, max: 1, step: 0.01, unit: "" },
+  { key: "burstDecay", label: "burst brightness", min: 50, max: 2000, step: 10, unit: "" },
+  { key: "pressureVoiceless", label: "pressure behind p t k", min: 0, max: 1, step: 0.02, unit: "" },
   { key: "votVoiceless", label: "VOT  p t k", min: 0, max: 0.15, step: 0.005, unit: "s" },
   { key: "votVoiced", label: "VOT  b d g", min: 0, max: 0.08, step: 0.002, unit: "s" },
   { key: "transition", label: "burst → next", min: 0.01, max: 0.2, step: 0.005, unit: "s" },
@@ -883,6 +978,7 @@ const CONTROLS = [
   { key: "vibratoDepth", label: "vibrato depth", min: 0, max: 0.04, step: 0.001, unit: "", special: true },
   { key: "wobble", label: "wobble (pitch drift)", min: 0, max: 1, step: 0.01, unit: "", special: true },
   { key: "whisper", label: "whisper", toggle: true, special: true },
+  { key: "holdWordFinalStops", label: "word-final stops wait to be left", toggle: true },
   { key: "autoReleaseStops", label: "held stops release themselves", toggle: true },
 ];
 
@@ -951,6 +1047,7 @@ function formatValue(value, spec) {
 function onControl(spec, value) {
   if (!spec.special) {
     cfg[spec.key] = value;
+    if (spec.key === "holdWordFinalStops") setTrack(ipaLine.textContent);
     return;
   }
   switch (spec.key) {
@@ -1085,8 +1182,31 @@ function stopRecordingAndDownload() {
  *  Q W E R T are one-shots.
  * ================================================================ */
 
+/** stop whatever the keys were doing, without touching the gate twice */
+function cancelTransport() {
+  if (!transport.mode) return;
+  transport.mode = null;
+  transport.key = null;
+  restoreWhisper();
+  paintTransport();
+}
+
+/**
+ * The percussion key borrows the voice and makes it unvoiced. If anything else
+ * starts before it has handed the voice back — press T then Q — the restore was
+ * being orphaned and everything stayed whispered. Every start goes through here.
+ */
+function restoreWhisper() {
+  whisperRestoreAt = 0;
+  if (ready && voice.whisper !== presetWhisper) {
+    voice.setWhisper(presetWhisper, ctx.currentTime);
+    syncControl("whisper", presetWhisper);
+  }
+}
+
 function startScan(rateName, key) {
   if (!ready || pressed) return;
+  restoreWhisper();
   if (atEnd || targetPos >= cells.length - 0.01) {
     targetPos = 0;
     atEnd = false;
@@ -1125,8 +1245,13 @@ function pickWord() {
 
 function startWord(rateName) {
   if (!ready || pressed) return;
-  const span = pickWord();
+  restoreWhisper();
+  let span = pickWord();
   if (!span) return;
+  if (pronunciation === "word") {
+    rerollSpan(wordCursor);
+    span = wordSpans[wordCursor] || span;
+  }
   transport.mode = "word";
   transport.rate = rateName;
   transport.last = ctx.currentTime;
@@ -1140,6 +1265,7 @@ function startWord(rateName) {
 
 function startRandomPhoneme() {
   if (!ready || pressed) return;
+  restoreWhisper();
   const candidates = cells
     .map((c, i) => ({ c, i }))
     .filter(({ c }) => c.cls !== "silence");
@@ -1162,6 +1288,7 @@ function startPercussion() {
   if (candidates.length === 0) return;
   const { c, i } = candidates[Math.floor(Math.random() * candidates.length)];
   const now = ctx.currentTime;
+  restoreWhisper();
   targetPos = i + 0.5;
   voice.setWhisper(true, now);
   whisperRestoreAt = 0;
@@ -1188,6 +1315,16 @@ function tickTransport(now) {
 
   const dt = Math.max(0, Math.min(0.25, now - transport.last));
   transport.last = now;
+
+  if (pronunciation === "word" && transport.mode === "scan") {
+    const span = spanAt(targetPos);
+    if (span > -1 && span !== lastSpanSeen) {
+      lastSpanSeen = span;
+      const before = targetPos;
+      rerollSpan(span);
+      if (targetPos !== before) transport.cellIndex = -1;
+    }
+  }
 
   const i = Math.max(0, Math.min(cells.length - 1, Math.floor(targetPos)));
   if (i !== transport.cellIndex) {
@@ -1332,6 +1469,8 @@ function capturePreset() {
   const p = part();
   const out = {
     cfg: {},
+    pronunciation,
+    wordChoices: words.map((w) => w.choice),
     note,
     gain,
     wordMode,
@@ -1351,10 +1490,20 @@ function applyPreset(index) {
   const preset = presets[index] || null;
   const p = part();
   wordMode = (preset && preset.wordMode) || "next";
+  // pronunciation mode persists until a preset says otherwise: a phrase with no
+  // preset saved should not silently switch it back
   const sel = $("wordModeSel");
   if (sel) sel.value = wordMode;
 
   if (preset) {
+    pronunciation = preset.pronunciation || "fixed";
+    const modeSel = $("pronunciationSel");
+    if (modeSel) modeSel.value = pronunciation;
+    if (Array.isArray(preset.wordChoices)) {
+      preset.wordChoices.forEach((choice, index) => {
+        if (words[index] && choice < words[index].alts.length) words[index].choice = choice;
+      });
+    }
     Object.keys(DEFAULTS).forEach((k) => {
       if (preset.cfg && k in preset.cfg) {
         cfg[k] = preset.cfg[k];
@@ -1518,6 +1667,8 @@ function setupComposer() {
   } catch (e) {
     composerMode = SEARCH.has("composer") && SEARCH.get("composer") !== "0";
   }
+  const maxPanel = $("maxPanel");
+  if (maxPanel) maxPanel.hidden = !composerMode;
   const row = $("presetRow");
   if (!row) return;
   row.hidden = !composerMode;
@@ -1664,7 +1815,16 @@ $("record").addEventListener("click", () => {
 $("prevPhrase").addEventListener("click", () => setPhrase(phraseIndex - 1));
 $("nextPhrase").addEventListener("click", () => setPhrase(phraseIndex + 1));
 
-$("toggleTract").addEventListener("click", () => {
+function showTract(on) {
+  if (!element) return;
+  const host = $("tractHost");
+  if (host.classList.contains("on") === on) return;
+  toggleTract();
+}
+
+$("toggleTract").addEventListener("click", () => toggleTract());
+
+function toggleTract() {
   if (!element) return;
   const host = $("tractHost");
   const showing = host.classList.toggle("on");
@@ -1688,7 +1848,7 @@ $("toggleTract").addEventListener("click", () => {
     element.stopUI();
     $("toggleTract").textContent = "show tract";
   }
-});
+}
 
 const HOLD_KEYS = { a: "slow", s: "mid", d: "fast" };
 const SHOT_KEYS = { w: "slow", e: "mid", r: "fast" };

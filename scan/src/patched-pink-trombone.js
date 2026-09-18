@@ -34,7 +34,10 @@
   momentarily closes and re-opens, and you get a loud spurious click every time
   you arrive at a stop. Measured, not guessed.
 
-  So instead we fix the decay (3) and add an explicit trigger: a new AudioParam
+  So instead we fix the decay (3), split the impulse between both directions of
+  the waveguide the way upstream Pink Trombone does (injecting it only leftward
+  is a lopsided low-frequency shove — the "balloon pop"), and add an explicit
+  trigger: a new AudioParam
   called `burst`. A rising edge on it fires one transient at the narrowest point
   of the tract, with its strength scaled by the parameter value. The scan engine
   fires it at the exact moment it opens the closure, so the burst is a musical
@@ -80,6 +83,12 @@ const WORKLET_PATCHES = [
     minValue: 0,
     maxValue: 4,
   },
+  {
+    name: "burstDecay",
+    defaultValue: 200,
+    minValue: 20,
+    maxValue: 4000,
+  },
 ];`,
   },
   {
@@ -106,6 +115,7 @@ const WORKLET_PATCHES = [
     }
     const transient = new Transient(position, seconds);
     transient.strength = 0.3 * Math.min(1, burst);
+    transient.exponent = parameterSamples.burstDecay || 200;
     this.transients.push(transient);
   }
 
@@ -118,6 +128,16 @@ const WORKLET_PATCHES = [
     vibrato += 0.04 * this.noise.simplex1(seconds * 2.15);`,
     to: `    vibrato += parameterSamples.vibratoWobble * 0.02 * this.noise.simplex1(seconds * 4.07);
     vibrato += parameterSamples.vibratoWobble * 0.04 * this.noise.simplex1(seconds * 2.15);`,
+  },
+  {
+    name: "transient-balance",
+    why: "the impulse is injected only into the leftward line, which is a lopsided low-frequency push — upstream splits it between both directions",
+    from: `      this.left[transient.position] += transient.amplitude;
+      transient.update(seconds);`,
+    to: `      const halfAmplitude = transient.amplitude * 0.5;
+      this.left[transient.position] += halfAmplitude;
+      this.right[transient.position] += halfAmplitude;
+      transient.update(seconds);`,
   },
   {
     name: "burst-call",

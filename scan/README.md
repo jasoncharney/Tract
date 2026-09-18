@@ -33,19 +33,27 @@ cell width is spent transitioning versus holding.
 **Stops are ballistic**, and they come in two kinds depending on where they fall
 in the word.
 
-*Word-final stops hold.* Sit on the `k` of "crack" and the closure sits there —
-silent for `p t k`, a low voice bar for `b d g` — and the release fires the
-moment you leave the word, lift the mouse, or close the gate: burst →
+**Stops get no block of their own.** There is nothing in a stop to dwell on, so
+each one is folded onto a neighbouring block and drawn in orange on its front or
+its back: an *onset*, fired the moment you arrive at that block, or a *coda*,
+fired as you reach the end of it. "crack" is two blocks wide — `[k]ɹ` and `æ[k]`
+— so a scan at a constant rate never sits waiting in silence for a consonant to
+finish. A stop goes on the front of the next thing in its word if there is one,
+and on the back of the previous thing otherwise, which is ordinary
+syllabification: the `t` of "not" rides the `ɑ`, the `p` of "place" rides the `l`.
+
+The gesture itself is unchanged and still ballistic — closure → burst →
 VOT/aspiration → onset of whatever comes next, *the same duration whether you
 crossed in 20 ms or 2 seconds*. That fixed clock is the part that cannot be done
 by interpolating presets, and it is why stops stay intelligible at any scan
-speed. These cells are drawn wide, with an orange border.
+speed. `codaAt` sets how far into a block its trailing stop fires (0.86 by
+default, so it lands near the end), and a coda that never got there still fires
+when the gate closes, so stopping on the vowel of "crack" still gives you the k.
 
-*Every other stop passes through.* There is nothing to dwell on in a
-word-initial or medial stop — a held `k` at the start of "crack" is just silence
-— so arriving at one fires the whole gesture at once and lands on the next thing
-you can actually hold. Dwell on that `k` and you are already on the `ɹ`. These
-cells are drawn narrow and hatched, a seam rather than a box.
+Turning on **word-final stops wait to be left** goes back to an earlier
+behaviour: a word-final stop then keeps a block of its own and holds its closure
+(silent for `p t k`, a low voice bar for `b d g`), bursting only when you leave
+the word, lift the mouse or close the gate.
 
 Affricates (`tʃ dʒ`) are the hybrid: they close, let go by themselves after
 `affricate hold`, then sustain their frication for as long as you stay.
@@ -65,8 +73,8 @@ gymnastics. Left hand only:
 | key | |
 | --- | --- |
 | **A** | hold to scan slowly — a fresh 4–6 s drawn for each phoneme |
-| **S** | hold to scan at a middle rate — 1–3 s per phoneme |
-| **D** | hold to scan near speaking tempo — 0.5–1 s per phoneme |
+| **S** | hold to scan at a middle rate — 0.5–1 s per phoneme |
+| **D** | hold to scan near speaking tempo — 0.25–0.75 s per phoneme |
 | **W E R** | one-shot: play the whole next word, slow / mid / speaking |
 | **Q** | one-shot: a random phoneme from the phrase |
 | **T** | one-shot: a random stop or fricative, unvoiced — percussion |
@@ -79,6 +87,15 @@ rather than restarting the phrase. Run off the end and the next press starts
 again from the beginning. The per-phoneme duration is redrawn for every cell, so
 two players on the same part holding the same key will drift apart, which is the
 point.
+
+The three ranges are the `RATES` block at the top of `scan/src/scan.js`, marked
+with a comment — seconds per phoneme, `[minimum, maximum]`, one line each. A
+cell's width scales its share: a stop's narrow cell takes half as long as a
+vowel, a word gap about two thirds.
+
+While a key is scanning it owns the position: moving the trackpad does nothing,
+so a stray cursor cannot yank you into the middle of another word. Pressing the
+strip deliberately takes over and cancels the key.
 
 **W E R** walk through the phrase word by word, or pick a word at random —
 that is per phrase, set in the composer presets below. **T** forces the voice
@@ -142,7 +159,12 @@ number keys `1`–`8`:
 
 A comma earns a second gap cell, so the breath in "slip, slide, perish" is
 longer than an ordinary word gap. Where the dictionary offers more than one
-pronunciation for a word, a small menu appears above the strip. "imprecision" is
+pronunciation for a word, a menu appears at the top of *timing & voice*, with a
+mode beside it: **as chosen**, **re-roll each phrase**, or **re-roll each word**.
+The second re-draws every variable word whenever the phrase is triggered; the
+third re-draws a single word each time that word is triggered — by W/E/R, or by a
+scan crossing into it. The chosen variants and the mode are both stored in the
+phrase preset, so you can audition and keep them. "imprecision" is
 not in the CMU dictionary at all; its IPA is supplied in `scan.js`, built from
 the dictionary's own "precision". Anything outside the list can still be sent
 from Max with `/scan/text` or `/scan/phonemes`.
@@ -216,6 +238,9 @@ fails to match, it says so rather than silently sounding wrong.
 ---
 
 ## Control from Max
+
+(The panel describing this is hidden unless you open the page with
+`?composer=1` — the piece needs no Max.)
 
 `scan-bridge/scan-control.maxpat` is a working patch. Max's `[udpsend]` sends OSC
 automatically for any message beginning with `/`.
@@ -319,13 +344,34 @@ the players will.
 The *timing & voice* sliders themselves stay visible for everyone; only the
 preset row is hidden.
 
+## The burst, and how to shape it
+
+Three controls in *timing & voice*:
+
+* **burst strength** — how much impulse is injected at the closure.
+* **burst brightness** — how fast that impulse decays, 50 to 2000. Higher is
+  shorter and brighter; lower is longer and boomier. At the default 500 a /t/
+  burst measures a spectral centroid around 1.2 kHz; at 200 it drops to 650 Hz
+  and starts to sound like a balloon popping.
+* **pressure behind p t k** — how much source is running behind the closure
+  before it opens. Whatever is behind a closed tract is trapped and escapes as a
+  thump, so this is the other half of the pop.
+
+The injection itself had a fault worth knowing about: this build adds the
+transient only to the leftward line of the waveguide, at full amplitude, where
+upstream Pink Trombone splits it half and half between both directions. That
+one-sided shove is a large low-frequency imbalance. Split, a /t/ burst moves from
+a 497 Hz centroid with 19 dB more energy below 500 Hz than above 1.5 kHz, to a
+1.2 kHz centroid with 1.5 dB *less*, and its peak drops by about 14 dB. The
+`transient-balance` patch does this.
+
 ## Level
 
 The raw tract peaks around +18 dBFS with a 27 dB crest factor — the bursts are
 genuinely far above the average, as they are in speech. The output runs through
 a compressor and then a tanh soft-clip, because a burst transient is a
 sample-level impulse and no compressor attack is fast enough for it. At the
-default output of 0.15 a phrase peaks near −1 dBFS with the soft-clip never
+default output of 0.4 a phrase peaks around −3 dBFS with the soft-clip never
 engaging. (If you saved presets before this change, their stored output level
 will be far too hot — re-save them.)
 

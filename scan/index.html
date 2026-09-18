@@ -109,7 +109,20 @@
         cursor: pointer;
       }
       .dot.on { background: var(--hot); border-color: var(--hot); }
-      .alts { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 6px; }
+      .alts {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        align-items: center;
+        padding: 4px 0 10px;
+        border-bottom: 1px dashed var(--line);
+      }
+      .alts-label {
+        font: 11px ui-monospace, Menlo, monospace;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--dim);
+      }
       .alts select {
         font: 12px ui-monospace, Menlo, monospace;
         background: var(--panel);
@@ -260,6 +273,19 @@
         pointer-events: none;
         opacity: 0;
       }
+      /* a stop folded onto the front or back of a block */
+      .glyphs { display: flex; align-items: center; justify-content: center; gap: 1px; }
+      .affix {
+        font: 15px ui-monospace, Menlo, monospace;
+        color: var(--stop);
+        background: rgba(255, 112, 67, 0.14);
+        padding: 3px 3px 5px;
+        line-height: 1;
+        pointer-events: none;
+      }
+      .affix.onset { border-left: 2px solid var(--stop); border-radius: 3px 0 0 3px; }
+      .affix.coda { border-right: 2px solid var(--stop); border-radius: 0 3px 3px 0; }
+
       .hint { color: var(--dim); font-size: 12px; margin: 0 0 14px; }
 
       .readout {
@@ -475,24 +501,23 @@
       <span class="parttag" id="partTag">—</span>
       <div class="instruction" id="instruction">—</div>
     </div>
-    <div class="alts" id="alts"></div>
     <div id="ipaLine"></div>
 
     <div class="strip" id="strip" tabindex="0"><div id="cursor"></div></div>
     <p class="hint">
-      <b>Hold the mouse down</b> and move across the strip to speak — release, or leave the
-      strip, and the gate closes. Dwell on a phoneme and it holds. Stops at the end of a word
-      hold their closure (silent, or a voice bar for <code>b d g</code>) and fire the burst
-      when you leave; every other stop is a seam you pass through, landing on the next vowel
-      or approximant. Word gaps close the gate. <code>↑ ↓</code> or <code>1–8</code> change
-      phrase.
+      <b>Hold the mouse down</b> and move across the strip to speak, or hold a key and let it
+      scan itself — release and the gate closes. Dwell on a phoneme and it holds. Stops get no
+      block of their own: each is folded onto the front or the back of its neighbour, drawn in
+      orange, and fires as you arrive at that block or leave it — so a steady scan never waits
+      in silence for a consonant. Word gaps close the gate.
     </p>
 
     <div class="keys">
       <div class="keyrow">
         <span class="keycap">A</span><span class="keycap">S</span><span class="keycap">D</span>
-        <span class="keyhelp">hold to scan — slow (4–6 s per phoneme) · mid (1–3 s) · speaking (0.5–1 s).
-          Let go and the gate closes where you are; press again to carry on from there.</span>
+        <span class="keyhelp">hold to scan — slow (4–6 s per phoneme) · mid (0.5–1 s) ·
+          speaking (0.25–0.75 s). Let go and the gate closes where you are; press again to
+          carry on from there.</span>
       </div>
       <div class="keyrow">
         <span class="keycap">W</span><span class="keycap">E</span><span class="keycap">R</span>
@@ -524,8 +549,9 @@
       </div>
     </div>
 
-    <details open>
+    <details>
       <summary>timing &amp; voice</summary>
+      <div class="alts" id="alts"></div>
       <div class="preset-row" id="presetRow" hidden>
         <span class="preset-label">composer presets</span>
         <button id="presetSave">save to this phrase</button>
@@ -545,7 +571,7 @@
       <div class="grid" id="controls"></div>
     </details>
 
-    <details>
+    <details open>
       <summary>tract</summary>
       <p class="note">
         The upstream Pink Trombone view, minus its glottis and button panels. Costs a little
@@ -555,7 +581,7 @@
       <div id="tractHost"></div>
     </details>
 
-    <details>
+    <details id="maxPanel" hidden>
       <summary>control from Max (OSC over UDP)</summary>
       <p class="note">
         Run <code>node scan-bridge/scan-bridge.js</code> from the repo root, then send OSC to
