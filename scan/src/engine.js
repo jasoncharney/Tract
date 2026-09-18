@@ -145,6 +145,13 @@ function pose(constriction, voiceness, intensity) {
   return p;
 }
 
+/**
+ * How far back into a block you must scan before a stop that has already fired
+ * at the end of it is armed again. Hysteresis, so that resting on the boundary
+ * cannot chatter the same consonant over and over.
+ */
+const RECOCK = 0.12;
+
 /** how much a parameter must move before it is worth scheduling again */
 const EPSILON = {
   tongueIndex: 0.004,
@@ -920,9 +927,25 @@ export class ScanVoice {
     const cell = this.cells[i];
     if (!cell) return;
 
-    if (cell.codas && !cell.codaFired && pos - i > this.cfg.codaAt) {
-      this.fireCodas(i, now, null);
-      return;
+    if (cell.codas) {
+      if (!cell.codaFired && pos - i > this.cfg.codaAt) {
+        this.fireCodas(i, now, null);
+        return;
+      }
+      if (cell.codaFired) {
+        // The word ended with a stop and it has already gone off. The tracking
+        // loop would otherwise carry straight on applying this block's pose,
+        // which slid the voice back into the vowel a moment after the burst —
+        // "crack" kept ringing after its k. There is nothing left in this block
+        // to voice, so hold silence until the scan leaves it, or comes back far
+        // enough to re-arm the stop.
+        if (pos - i < this.cfg.codaAt - RECOCK) {
+          cell.codaFired = false;
+        } else {
+          this._ramp(this.params.intensity, 0, now, this.cfg.release, "intensity");
+          return;
+        }
+      }
     }
 
     if (cell.cls === "silence") {

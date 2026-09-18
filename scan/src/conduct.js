@@ -78,12 +78,30 @@ function connectWS() {
  *  who is out there
  * ================================================================ */
 
-const seen = new Map(); // partId -> { at, name, cue }
+/* Two players on a part is the normal case, so the roster counts machines, not
+ * parts: each laptop is remembered separately by the id the page gives itself,
+ * and a part shows how many of them are currently answering. */
+const seen = new Map(); // machine id -> { at, part, name, cue }
 
 function heard(args) {
-  const id = String(args[0]);
-  seen.set(id, { at: Date.now(), name: String(args[1] || id), cue: Number(args[2]) });
+  const partId = String(args[0]);
+  const machine = args[3] !== undefined ? String(args[3]) : `${partId}:only`;
+  seen.set(machine, {
+    at: Date.now(),
+    part: partId,
+    name: String(args[1] || partId),
+    cue: Number(args[2]),
+  });
   paintRoster();
+}
+
+/** the machines on a part that have said anything recently */
+function hereFor(partId) {
+  const out = [];
+  seen.forEach((info) => {
+    if (info.part === String(partId) && Date.now() - info.at < 9000) out.push(info);
+  });
+  return out;
 }
 
 function paintRoster() {
@@ -91,15 +109,28 @@ function paintRoster() {
   host.innerHTML = "";
   parts.forEach((p) => {
     const row = document.createElement("div");
-    const info = seen.get(String(p.id));
-    const here = info && Date.now() - info.at < 9000;
-    row.className = "who" + (here ? " here" : "");
-    const cue = here && info.cue >= 0 ? `cue ${info.cue}` : here ? "no cue yet" : "not here";
+    const here = hereFor(p.id);
+    row.className = "who" + (here.length ? " here" : "");
+    const cues = [...new Set(here.filter((i) => i.cue >= 0).map((i) => i.cue))];
+    const where = !here.length
+      ? "nobody"
+      : cues.length === 0
+        ? "no cue yet"
+        : cues.length === 1
+          ? `cue ${cues[0]}`
+          : `cues ${cues.sort((a, b) => a - b).join(", ")}`; // someone is adrift
     row.innerHTML =
       `<span class="dot"></span><span class="name">${p.name}</span>` +
-      `<span class="at">${cue}</span>`;
+      `<span class="count">${here.length}</span>` +
+      `<span class="at">${where}</span>`;
+    row.title = here.length
+      ? `${here.length} ${here.length === 1 ? "player" : "players"} on ${p.name}`
+      : `nobody is on ${p.name}`;
     host.appendChild(row);
   });
+  const total = [...seen.values()].filter((i) => Date.now() - i.at < 9000).length;
+  const sum = $("rosterTotal");
+  if (sum) sum.textContent = `${total} connected`;
 }
 setInterval(paintRoster, 2000);
 
@@ -135,6 +166,23 @@ async function loadAll() {
     cues = [];
   }
   at = Math.min(at, Math.max(0, cues.length - 1));
+  // A cue's id is what the players are told and what you call out in rehearsal,
+  // so two cues answering to the same number is worth catching before a
+  // performance rather than during one.
+  const counts = new Map();
+  cues.forEach((c, i) => {
+    const id = String(c.id || i + 1);
+    counts.set(id, (counts.get(id) || 0) + 1);
+  });
+  const dupes = [...counts.entries()].filter(([, n]) => n > 1).map(([id]) => id);
+  const warn = $("cueWarn");
+  if (warn) {
+    warn.hidden = dupes.length === 0;
+    warn.textContent = dupes.length
+      ? `duplicate cue ${dupes.length === 1 ? "id" : "ids"}: ${dupes.join(", ")}`
+      : "";
+  }
+  if (dupes.length) console.warn(`Tract conductor: duplicate cue ids in cues.json — ${dupes.join(", ")}`);
   paintRoster();
   paintList();
   paintStand();

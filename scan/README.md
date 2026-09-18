@@ -57,6 +57,14 @@ speed. `codaAt` sets how far into a block its trailing stop fires (0.86 by
 default, so it lands near the end), and a coda that never got there still fires
 when the gate closes, so stopping on the vowel of "crack" still gives you the k.
 
+Once a coda has gone off, its block is spent: the scan can sit on the tail of
+"crack" and hear nothing until it leaves. That needed saying in the code, because
+the tracking loop's whole job is to keep applying the block's pose — measured, it
+slid the voice back into the æ about 80 ms after the k and held it there for as
+long as you stayed, which is exactly the ringing you could hear. Scanning back
+into the block by more than a tenth of its width arms the stop again, so
+back-and-forth re-fires it without chattering on the boundary.
+
 Turning on **word-final stops wait to be left** goes back to an earlier
 behaviour: a word-final stop then keeps a block of its own and holds its closure
 (silent for `p t k`, a low voice bar for `b d g`), bursting only when you leave
@@ -67,6 +75,11 @@ Affricates (`tʃ dʒ`) are the hybrid: they close, let go by themselves after
 
 **Word gaps close the gate.** Scanning between words is a real silence and a
 fresh attack, not a crossfade, so a held final stop releases into the gap.
+
+Each tile carries its symbol and a coloured bar for its class — vowel, stop,
+fricative, nasal, approximant. The class is no longer spelled out under the
+glyph: "APPR" beneath a letter is a linguistics lesson a player did not ask for,
+and the colour already says it. Hovering a tile still names it.
 
 `h` takes the shape of whatever follows it, which is what /h/ actually is.
 Diphthongs written as two targets glide across their own cell, so you scan
@@ -240,10 +253,17 @@ show `4 3 2 1` at the tempo you set, and the downbeat lands at the end of the
 count by itself. Pressing DOWNBEAT during the count fires early; <kbd>esc</kbd>
 stops it.
 
+On the player's side the cue light sits to the **left** of the instruction,
+first thing on the line, where it is caught out of the corner of an eye while
+looking at the strip. The part name is not repeated beside it — it is already in
+the header.
+
 The roster along the top is who is actually connected. Every player announces
-itself every few seconds with its part and the cue it is on, so a laptop that
-never got out of standby, or a player sitting on the wrong part, is visible
-before it becomes a problem in performance rather than after.
+itself every few seconds with its part, the cue it is on, and an id of its own,
+so each part shows **how many machines are on it** — two players to a part being
+the normal case here — and the total is under the row. A part reading `0 ·
+nobody` is a laptop that never woke up; a part showing two different cue numbers
+is one player adrift, and you can see it before it becomes audible.
 
 A player who reloads or joins late is handled without you doing anything: the
 conductor repeats the standing cue quietly every couple of seconds, and a player
@@ -283,7 +303,7 @@ patch instead — `[udpsend]` to `/cue/prep`, `/cue/go`:
 | `/cue/go <cue> <part> <instruction>` | downbeat: flash, and the instruction becomes current |
 | `/cue/clear <part>` | cancel an unfired prep |
 | `/cue/state <cue> <part> <instruction>` | the standing cue, applied silently — for latecomers |
-| `/player/hello <part> <name> <cue>` | sent by each player; what the roster is built from |
+| `/player/hello <part> <name> <cue> <machine>` | sent by each player every few seconds; what the roster is built from |
 
 ## The phrases
 
@@ -453,6 +473,33 @@ The upstream Pink Trombone view draws a 600×500 canvas with `position: absolute
 inside a grid that reserves no room for it, so left alone it spills down the page
 over everything below. The panel here clips it and hides the glottis and button
 sub-panels, keeping the tract itself.
+
+## Output, and watching it
+
+The fader is at the top of the page, under *record*, with a meter beside it —
+where a player can find it in a hurry without opening a panel. The meter taps the
+very end of the chain, after the fader and after the limiter, so it shows what is
+actually leaving that laptop rather than what the synth would like to be sending:
+solid bar for the body of the sound, pale bar for the peaks, and a line marking
+the loudest moment of the last second, which turns red within 3 dB of the
+ceiling. Useful for spotting the one laptop in the room that is twice as loud as
+the rest, and for seeing that a part is *doing* something when you cannot pick it
+out by ear.
+
+It is the same number as the old `output` slider, which has left *timing & voice*
+to avoid two faders for one thing; presets still store it.
+
+## The skin
+
+Two, switched with the button in the header and remembered per browser:
+**pink**, which follows Pink Trombone's own palette — the pale `#FFEEF5` it fills
+the tract with, orchid for anything live, black Arial — and **dark**, the
+original. `?theme=pink` or `?theme=dark` forces one, which is what you want on a
+machine you are about to project.
+
+Every colour on both pages is a custom property defined in one block at the top
+of `scan/index.html` (the conductor's page carries the same block), so a third
+skin is a dozen lines and nothing below that block names a colour directly.
 
 ## The piano
 

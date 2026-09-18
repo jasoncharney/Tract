@@ -131,6 +131,8 @@ let ctx = null;
 let element = null;
 let voice = null;
 let master = null;
+let meterNode = null;
+let meterBuffer = null;
 let limiterNode = null;
 let ready = false;
 
@@ -219,11 +221,19 @@ async function enableAudio() {
   }
   softClip.curve = curve;
   softClip.oversample = "4x";
+  // the meter taps the very end of the chain: what leaves the page, after the
+  // fader and after the safety net, not what the synth wishes it were sending
+  meterNode = ctx.createAnalyser();
+  meterNode.fftSize = 1024;
+  meterNode.smoothingTimeConstant = 0;
+  meterBuffer = new Float32Array(meterNode.fftSize);
   element.connect(master);
   master.connect(limiter);
   limiter.connect(softClip);
+  softClip.connect(meterNode);
   softClip.connect(ctx.destination);
   limiterNode = softClip;
+  startMeter();
   element.pinkTrombone.start();
 
   // newConstriction() marks a constriction taken only after a port round-trip,
@@ -479,20 +489,13 @@ function computeWordSpans() {
  *  the strip
  * ================================================================ */
 
+/** the long name for a cell's class — tooltip only, no longer printed on the tile */
 function cellTag(cell) {
   switch (cell.cls) {
     case "stop":
-      return cell.passThrough ? "stop" : "hold";
-    case "affricate":
-      return "affr";
-    case "fricative":
-      return "fric";
-    case "aspirate":
-      return "asp";
-    case "approximant":
-      return "appr";
+      return cell.passThrough ? "stop" : "held stop";
     case "silence":
-      return "";
+      return "gap";
     default:
       return cell.cls;
   }
@@ -539,7 +542,7 @@ function renderStrip() {
     if (cell.closes && cell.cls === "stop") el.dataset.hold = "1";
     el.style.flex = String(cell.width);
     el.title =
-      `${cell.ipa} — ${cell.cls}` +
+      `${cell.ipa} — ${cellTag(cell)}` +
       (cell.passThrough ? " (passes through)" : cell.closes ? " (holds)" : "") +
       (cell.example ? ` · as in "${cell.example}"` : "");
     const onsets = (cell.onsets || []).map((c) => c.ipa).join("");
@@ -550,8 +553,10 @@ function renderStrip() {
       (onsets ? `<span class="affix onset">${onsets}</span>` : "") +
       `<span class="ipa">${cell.ipa}</span>` +
       (codas ? `<span class="affix coda">${codas}</span>` : "") +
-      `</span>` +
-      `<span class="tag">${cellTag(cell)}</span>`;
+      `</span>`;
+    // no class label under the glyph: the coloured bar already says vowel from
+    // stop, and "APPR" under a letter is a linguistics lesson nobody asked for.
+    // It survives in the tooltip.
     groupCells.appendChild(el);
     cellEls.push(el);
     groupWeight += cell.width;
@@ -1026,7 +1031,7 @@ const CONTROLS = [
   { key: "glide", label: "pitch glide", min: 0, max: 0.5, step: 0.01, unit: "s" },
   { key: "note", label: "pitch (MIDI note)", min: 24, max: 84, step: 0.01, unit: "", special: true },
   { key: "tractLength", label: "tract length", min: 15, max: 88, step: 1, unit: "", special: true },
-  { key: "gain", label: "output", min: 0, max: 1, step: 0.005, unit: "", special: true },
+  // output level lives in the bar at the top of the page now, beside the meter
   { key: "vibratoRate", label: "vibrato rate", min: 0.1, max: 12, step: 0.1, unit: "", special: true },
   { key: "vibratoDepth", label: "vibrato depth", min: 0, max: 0.04, step: 0.001, unit: "", special: true },
   { key: "wobble", label: "wobble (pitch drift)", min: 0, max: 1, step: 0.01, unit: "", special: true },
@@ -1170,6 +1175,15 @@ function onControl(spec, value) {
 }
 
 function syncControl(key, value) {
+  // the fader at the top of the page is the same number as the one in
+  // *timing & voice*, wherever the change came from — a preset, the conductor,
+  // OSC, or either slider
+  if (key === "gain") {
+    const slider = $("masterGain");
+    const out = $("masterGainOut");
+    if (slider && document.activeElement !== slider) slider.value = String(value);
+    if (out) out.textContent = Number(value).toFixed(2);
+  }
   const el = controlEls[key];
   if (!el) return;
   if (el.type === "checkbox") {
@@ -1850,10 +1864,32 @@ function cueState(cue, partId, instruction) {
   if (!$("cueLight") || $("cueLight").dataset.state === "idle") cueLight("idle", `cue ${cue}`);
 }
 
-/** tell the conductor this part is here, so the roster lights up */
+/**
+ * Tell the conductor this part is here, so the roster lights up. The machine id
+ * is this tab's own, kept for the session, so two laptops on the same part are
+ * counted as two — which is the normal case in this piece.
+ */
+const MACHINE = (() => {
+  try {
+    let id = sessionStorage.getItem("tract.machine");
+    if (!id) {
+      id = Math.random().toString(36).slice(2, 10);
+      sessionStorage.setItem("tract.machine", id);
+    }
+    return id;
+  } catch (e) {
+    return Math.random().toString(36).slice(2, 10);
+  }
+})();
+
 function sayHello() {
   const p = part();
-  sendOut("/player/hello", [p.id, p.name, cued.cue === null ? -1 : Number(cued.cue) || 0]);
+  sendOut("/player/hello", [
+    p.id,
+    p.name,
+    cued.cue === null ? -1 : Number(cued.cue) || 0,
+    MACHINE,
+  ]);
 }
 setInterval(() => {
   if (ws && ws.readyState === 1) sayHello();
@@ -2197,11 +2233,110 @@ connectWS();
 connectBroadcast();
 connectMax();
 
+
+/* ================================================================ *
+ *  output: the fader at the top of the page, and a meter beside it
+ * ================================================================ */
+
+/** the header fader and the one in *timing & voice* are the same number */
+function setMasterGain(value, { fromSlider = false } = {}) {
+  gain = Math.max(0, Math.min(1, value));
+  if (master) master.gain.setTargetAtTime(gain, ctx.currentTime, 0.02);
+  const slider = $("masterGain");
+  const out = $("masterGainOut");
+  if (slider && !fromSlider) slider.value = String(gain);
+  if (out) out.textContent = gain.toFixed(2);
+  syncControl("gain", gain);
+}
+
+const METER = { peak: 0, hold: 0, holdAt: 0 };
+
+function startMeter() {
+  const canvas = $("meter");
+  if (!canvas || !meterNode) return;
+  const ctx2d = canvas.getContext("2d");
+  const read = () => {
+    requestAnimationFrame(read);
+    if (!meterNode) return;
+    meterNode.getFloatTimeDomainData(meterBuffer);
+    let peak = 0;
+    let sum = 0;
+    for (let i = 0; i < meterBuffer.length; i++) {
+      const v = meterBuffer[i];
+      const a = v < 0 ? -v : v;
+      if (a > peak) peak = a;
+      sum += v * v;
+    }
+    const rms = Math.sqrt(sum / meterBuffer.length);
+    // fast up, slow down: a burst should be visible, not a flicker you miss
+    METER.peak = peak > METER.peak ? peak : METER.peak * 0.86 + peak * 0.14;
+    const now = performance.now();
+    if (peak >= METER.hold || now - METER.holdAt > 1200) {
+      METER.hold = peak;
+      METER.holdAt = now;
+    }
+    paintMeter(ctx2d, canvas, METER.peak, rms, METER.hold);
+  };
+  read();
+}
+
+const dbfs = (v) => (v <= 1e-6 ? -120 : 20 * Math.log10(v));
+/** -60 dB at the left edge, 0 dB at the right */
+const meterX = (v, width) => Math.max(0, Math.min(1, (dbfs(v) + 60) / 60)) * width;
+
+function paintMeter(g, canvas, peak, rms, hold) {
+  const css = getComputedStyle(document.documentElement);
+  const width = canvas.width;
+  const height = canvas.height;
+  g.clearRect(0, 0, width, height);
+  g.fillStyle = css.getPropertyValue("--vowel").trim() || "#4f7cff";
+  g.globalAlpha = 0.35;
+  g.fillRect(0, 0, meterX(peak, width), height); // the envelope
+  g.globalAlpha = 1;
+  g.fillRect(0, 0, meterX(rms, width), height); // and the body of the sound
+  // the last peak, held for a moment, in the warning colour once it is close
+  const x = meterX(hold, width);
+  g.fillStyle = (dbfs(hold) > -3 ? css.getPropertyValue("--bad") : css.getPropertyValue("--hot")).trim();
+  g.fillRect(Math.max(0, x - 2), 0, 2, height);
+  const label = $("meterPeak");
+  if (label) {
+    label.textContent = hold <= 1e-6 ? "—" : `${dbfs(hold).toFixed(1)} dB`;
+    label.classList.toggle("hot", dbfs(hold) > -3);
+  }
+}
+
+/* ================================================================ *
+ *  which skin
+ * ================================================================ */
+
+function paintThemeSwitch() {
+  const button = $("themeSwitch");
+  if (!button) return;
+  button.textContent = document.documentElement.dataset.theme === "dark" ? "skin: dark" : "skin: pink";
+}
+
+function toggleTheme() {
+  const dark = document.documentElement.dataset.theme === "dark";
+  if (dark) delete document.documentElement.dataset.theme;
+  else document.documentElement.dataset.theme = "dark";
+  try {
+    localStorage.setItem("tract.theme", dark ? "pink" : "dark");
+  } catch (e) {}
+  paintThemeSwitch();
+}
+
 $("startAudio").addEventListener("click", () => enableAudio());
 $("record").addEventListener("click", () => {
   if (recorder) stopRecordingAndDownload();
   else if (!startRecording()) enableAudio();
 });
+$("masterGain").addEventListener("input", (event) =>
+  setMasterGain(Number(event.target.value), { fromSlider: true })
+);
+$("masterGain").addEventListener("pointerup", (event) => setTimeout(() => event.target.blur(), 0));
+$("themeSwitch").addEventListener("click", toggleTheme);
+paintThemeSwitch();
+setMasterGain(gain);
 $("prevPhrase").addEventListener("click", () => setPhrase(phraseIndex - 1));
 $("nextPhrase").addEventListener("click", () => setPhrase(phraseIndex + 1));
 
