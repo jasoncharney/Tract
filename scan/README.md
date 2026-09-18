@@ -6,19 +6,26 @@ text from Eliot's *Four Quartets*.
 
 ```
 node scan-bridge/scan-bridge.js
-open http://localhost:8080/scan/     # Chrome; click "enable audio"
+open http://localhost:8080                   # a player
+open http://localhost:8080/conduct.html      # the conductor
 ```
 
 The bridge is a single dependency-free node script. It serves the repo over HTTP
 (the demos use absolute paths like `/src/utils.js`, and the AudioWorklet needs a
 real origin), runs a WebSocket server on the same port for the page, listens for
-OSC on UDP **7400**, and sends feedback back out on UDP **7401**.
+OSC on UDP **7400**, and sends feedback back out on UDP **7401**. It also accepts
+a `PUT` of `scan/presets.json`, `scan/parts.json` and `scan/cues.json` — only
+those three paths, only valid JSON, only from the machine running it — which is
+how the composer's save buttons write to disk. It listens on every interface, so
+the rest of the ensemble can reach it; see **Conducting** below.
 
 ---
 
 ## How it behaves
 
-Pick one of the eight phrases and you get a strip of phoneme cells. **Hold the
+Pick one of the eight phrases and you get a strip of phoneme cells — the symbols
+live in the cells themselves; the bare IPA transcription that used to sit above
+the strip is hidden, so what a player reads is the text and the blocks. **Hold the
 mouse down** and move across it to speak; release, or leave the strip, and the
 gate closes. Where you are is *what* is being articulated; how fast you move is
 *how fast* it is articulated. Two rules do the work, and which one applies is
@@ -72,12 +79,13 @@ gymnastics. Left hand only:
 
 | key | |
 | --- | --- |
-| **A** | hold to scan slowly — a fresh 4–6 s drawn for each phoneme |
-| **S** | hold to scan at a middle rate — 0.5–1 s per phoneme |
-| **D** | hold to scan near speaking tempo — 0.25–0.75 s per phoneme |
-| **W E R** | one-shot: play the whole next word, slow / mid / speaking |
+| **A** | hold to scan slowly — a fresh 3–5 s drawn for each phoneme |
+| **S** | hold to scan at a middle rate — 0.25–0.75 s per phoneme |
+| **D** | hold to scan fast — 0.1–0.25 s per phoneme |
+| **W E R** | one-shot: play the whole next word, at those same three rates |
 | **Q** | one-shot: a random phoneme from the phrase |
 | **T** | one-shot: a random stop or fricative, unvoiced — percussion |
+| **Z** | whisper on / off — latching, and it survives **T** |
 | **1**–**8**, **↑ ↓** | choose the phrase |
 | **Home** | back to the start of the phrase |
 
@@ -88,14 +96,34 @@ again from the beginning. The per-phoneme duration is redrawn for every cell, so
 two players on the same part holding the same key will drift apart, which is the
 point.
 
-The three ranges are the `RATES` block at the top of `scan/src/scan.js`, marked
-with a comment — seconds per phoneme, `[minimum, maximum]`, one line each. A
-cell's width scales its share: a stop's narrow cell takes half as long as a
-vowel, a word gap about two thirds.
-
 While a key is scanning it owns the position: moving the trackpad does nothing,
 so a stray cursor cannot yank you into the middle of another word. Pressing the
 strip deliberately takes over and cancels the key.
+
+The playback keys also work while a slider or checkbox has focus. Nothing in
+*timing & voice* answers the keyboard: a control you just clicked blurs itself,
+and the arrow keys and space are claimed by the transport rather than by the
+focused slider, so `A S D W E R Q T Z` and `1`–`8` never disappear into a control
+you happened to touch. (Only a real text field swallows a keystroke, and the page
+has none.) That is plain `keydown` with a tag test — no key-capture tricks, so it
+behaves the same in any browser.
+
+### Where the defaults live
+
+Two labelled blocks at the top of `scan/src/scan.js`, both meant to be edited:
+
+* `RATES` — the three key speeds, seconds per phoneme, `[minimum, maximum]`, one
+  line each. A cell's width scales its share: a stop's narrow cell takes half as
+  long as a vowel, a word gap about two thirds.
+* `VOICE` — what the page starts with and what the sliders read on load: `note`,
+  `gain`, `tractLength`, and `vibrato: { rate, depth, wobble }`.
+
+`VOICE` is the only place a voice default can usefully be set. The `defaultValue`
+fields in `pink-trombone-worklet-processor.min.js` — including `vibratoWobble` —
+look like the defaults but are never heard: the page writes every parameter the
+moment audio starts, so editing them there does nothing. And a saved phrase
+preset overrides `VOICE` in turn, so if a phrase has a preset, that is what you
+are hearing; clear or re-save it (composer mode, below) to pick up a new default.
 
 **W E R** walk through the phrase word by word, or pick a word at random —
 that is per phrase, set in the composer presets below. **T** forces the voice
@@ -104,7 +132,17 @@ click and an `s` is a hiss whatever the pitch is doing.
 
 ## The four parts
 
-Pick a part in the header. There is **no transposition** — a part does not shift
+Opening the page asks which part you are singing before anything else: a modal
+over the whole page, four buttons — **I II III IV**, the names and nothing else —
+and no way past it but choosing. The choice doubles as the gesture that starts
+audio, so a player opens the page, clicks their part, and is ready. It is
+remembered, and the remembered one is outlined — but it still has to be
+confirmed, because the usual mistake in an ensemble is a laptop quietly left on
+yesterday's part. `?part=2`, `?part=II` or `?part=<id>` skips the modal
+entirely, which is what you want for a rehearsal machine or a screenshot. The
+header selector still changes part mid-piece.
+
+There is **no transposition** — a part does not shift
 a written pitch. Instead each part's entry for each phrase lists the pitches that
 part may use, and those are the keys that light up on the piano. The player
 chooses among them by clicking a chip or the key itself. Two parts can perfectly
@@ -112,7 +150,7 @@ well share a pitch, and the last phrase has all four in unison.
 
 ```json
 {
-  "id": "1", "name": "Part 1", "tractDelta": -6,
+  "id": "1", "name": "I", "tractDelta": -6,
   "phrases": [
     { "notes": ["Eb3", "G3"], "instruction": "enter first, on either pitch…" },
     …one entry per phrase…
@@ -129,12 +167,12 @@ case you keep it.
 
 What a part *does* carry is a body: `tractDelta` is added to the phrase preset's
 tract length, so the lower parts sound larger as well as lower. The defaults run
-−6, −2, +2, +8. Nothing about the parts is SATB; they are Part 1 to Part 4 and
-you can rename them.
+−6, −2, +2, +8. Nothing about the parts is SATB; they are **I**, **II**, **III**
+and **IV**, and you can rename them.
 
 All of it lives in `scan/parts.json`, which is meant to be edited by hand as you
 compose. The instruction lines are also editable in the app with `?composer=1`,
-with an **export parts.json** button beside the preset one. Every instruction in
+with a **write parts.json** button beside the preset one. Every instruction in
 the file right now is placeholder text, and the pitch sets are a sketch — a
 descending harmonic field over the eight phrases, quarter-tones for "decay with
 imprecision", unison for the last.
@@ -142,6 +180,110 @@ imprecision", unison for the last.
 The pitch chosen is not enforced: clicking an unlit key still works, on the
 assumption that the instruction line is the authority and a player may need to
 get out of trouble. Say if you would rather it were locked.
+
+## Conducting
+
+`scan/conduct.html` is a second page on the same bridge — open it on the
+conductor's laptop while the players open `/scan/`. It makes no sound; it reads
+`scan/cues.json`, keeps a pointer in the cue list, and lights people up.
+
+**A cue speaks only to the parts written under it.** That is the rule everything
+else follows from. A part with no entry in a cue is sent nothing: no instruction,
+no prep light, no downbeat flash. So "hold what you are doing" and "there is no
+cue for you here" stay different things, which is what lets some passages be
+conducted while the players around them are listening to each other and choosing
+for themselves.
+
+```json
+{
+  "cues": [
+    {
+      "id": "4", "phrase": 2, "label": "CRACK — first",
+      "note": "listen: they choose the spacing themselves here",
+      "parts": {
+        "3": { "instruction": "T on your own. Not together — let them scatter." },
+        "4": { "instruction": "T on your own. Not together — let them scatter." }
+      }
+    }
+  ]
+}
+```
+
+`parts` is keyed by the part ids in `parts.json`. `phrase` groups cues under a
+heading in the conductor's list and is not sent anywhere — a cue changes what a
+player *reads*, never their phrase or their pitch. `label` and `note` are for the
+conductor's eyes only; the note is the place for "wait for the room", the things
+you would otherwise write on a sticky note on the laptop. Cues need not be evenly
+distributed: a phrase can carry six of them or none, and a cue can name one part
+or all four.
+
+### The desk
+
+The cue list runs down the right, grouped by phrase, with a chip per part showing
+at a glance who each cue touches. Click any cue to move the pointer there;
+`›`/`‹` or `→`/`←` step. The panel on the left is the cue on the stand: its
+number, its label, your note, and the exact instruction each named part will
+receive — plus a line naming the parts that will get nothing.
+
+Two presses, and the pointer advances by itself after the downbeat, so
+conducting a run is <kbd>space</kbd> <kbd>space</kbd> … <kbd>space</kbd>:
+
+| | |
+| --- | --- |
+| **PREP** / <kbd>space</kbd> | the named players' lights go amber and they read the incoming instruction under their current one |
+| **DOWNBEAT** / <kbd>space</kbd> | the lights flash white and the instruction swaps |
+| <kbd>esc</kbd> | never mind — the lights go out and nothing changed |
+| <kbd>→</kbd> <kbd>←</kbd> | move the pointer (this also drops an unfired prep) |
+
+Tick **count-in** and PREP starts a visible count instead: the players' lamps
+show `4 3 2 1` at the tempo you set, and the downbeat lands at the end of the
+count by itself. Pressing DOWNBEAT during the count fires early; <kbd>esc</kbd>
+stops it.
+
+The roster along the top is who is actually connected. Every player announces
+itself every few seconds with its part and the cue it is on, so a laptop that
+never got out of standby, or a player sitting on the wrong part, is visible
+before it becomes a problem in performance rather than after.
+
+A player who reloads or joins late is handled without you doing anything: the
+conductor repeats the standing cue quietly every couple of seconds, and a player
+who was not there for the downbeat picks up the instruction with no flash. They
+missed the downbeat; they should not be handed a fake one.
+
+### On a network
+
+The bridge listens on every interface, so the other laptops need only the
+conductor's address: it prints the URLs to hand out when it starts.
+
+```
+[scan-bridge] players  http://localhost:8080/
+[scan-bridge] conduct  http://localhost:8080/conduct.html
+[scan-bridge] on the network: http://192.168.1.42:8080   (en0)  + /conduct.html to conduct
+```
+
+**The bare address is the player's page** — a player types `192.168.1.42:8080`
+and nothing else; only the conductor adds `/conduct.html`. (Both are redirects to
+`/scan/` and `/scan/conduct.html`, so the old paths keep working and a query
+string survives: `192.168.1.42:8080?part=2` skips the part modal on a machine
+that is always the same part.) The page finds the WebSocket on the host it was
+served from, so nothing needs configuring per laptop. Everyone must be on the same
+network, and a Mac will ask to allow incoming connections the first time.
+`--host 127.0.0.1` keeps the bridge to the conductor's own machine. Writing
+`presets.json`, `parts.json` and `cues.json` stays restricted to the machine
+running the bridge whatever the players do, so a player cannot alter the piece.
+
+The cue messages are ordinary bridge traffic, so they also appear on UDP **7401**
+and can be sent from Max on **7400** if you ever want the cueing driven from a
+patch instead — `[udpsend]` to `/cue/prep`, `/cue/go`:
+
+| message | meaning |
+| --- | --- |
+| `/cue/prep <cue> <part> <instruction>` | arm that part: amber light, instruction shown as *next* |
+| `/cue/count <beat> <part>` | a count-in beat, shown in the lamp |
+| `/cue/go <cue> <part> <instruction>` | downbeat: flash, and the instruction becomes current |
+| `/cue/clear <part>` | cancel an unfired prep |
+| `/cue/state <cue> <part> <instruction>` | the standing cue, applied silently — for latecomers |
+| `/player/hello <part> <name> <cue>` | sent by each player; what the roster is built from |
 
 ## The phrases
 
@@ -232,8 +374,11 @@ churn, and each one can nudge the value. Parameters are now only re-scheduled
 when the target actually moves — which is also what makes a wobble of 0 hold an
 *exactly* constant pitch.
 
-The header pill shows how many patches applied. If upstream ever changes and one
-fails to match, it says so rather than silently sounding wrong.
+The patch report goes to the browser console rather than to the page — players
+should see a piece, not a build status. On a good load you get one line,
+`Tract: all 6 worklet patches applied (…)`; if upstream ever changes and a patch
+fails to match, it is a `console.warn` naming the ones that missed, rather than
+silently sounding wrong.
 
 ---
 
@@ -327,22 +472,58 @@ simplex drifts that no parameter turns off.
 
 ## Composer presets
 
-Open the page with `?composer=1` and a row appears at the top of *timing &
-voice*: save the current settings to the current phrase, revert, clear, choose
-whether **W E R** take the next word or a random one, and export. Presets cover
-every timing constant plus pitch, tract length, output, vibrato and whisper, and
-they are applied automatically when you change phrase.
+Open the page with **`?composer=1`** and a row appears at the top of *timing &
+voice* — that flag is what turns the whole thing on, and it sticks in that
+browser until you open `?composer=0`. Without it you are in player mode and the
+row is not there at all; the boot line in the console says which mode you are in.
+The row holds: a badge saying whether this phrase is **saved** or on the **defaults**,
+then save to this phrase, revert, clear, whether **W E R** take the next word or
+a random one, and the two write buttons. The dots at the top gain a green ring on
+every phrase that carries a preset, so the shape of what you have tuned is
+visible at a glance.
 
-They live in two places. Anything you save goes to this browser's local storage,
-which is what you want while tuning. `export presets.json` downloads the lot;
-commit it as `scan/presets.json` and it ships with the piece, so the players get
-your settings without touching anything. Local storage wins over the committed
-file, so your own machine keeps whatever you were last working on — clear it
-with `?composer=0` and the browser's site data if you want to hear exactly what
-the players will.
+A preset holds every timing constant plus tract length, output, vibrato,
+pronunciation choices and whisper. **Pitch is not in it** — that belongs to the
+part's note list for the phrase and to the player's choice on the keyboard, and a
+preset dragging the pitch around with it would only fight them.
+
+Every phrase lands somewhere definite when you arrive at it: its own preset if it
+has one, the shipped defaults (`DEFAULTS` + `VOICE`) if it does not. That is what
+makes saving audible — before, an unsaved phrase simply kept whatever the
+previous one was doing, so saving and moving away and back changed nothing and
+the buttons looked dead. (Whisper is the one exception: **Z** is a live control,
+so a phrase with no preset leaves it where you put it.)
+
+**Saving writes the file.** `save to this phrase` puts the preset straight into
+`scan/presets.json` in the repo, `clear` takes it back out, and editing an
+instruction line writes `scan/parts.json` when you click away from it — no trip
+through `~/Downloads`, nothing to move by hand, and `git diff` shows exactly what
+you changed. The bridge serving the page accepts a `PUT` for those two paths and
+no others. **write presets.json** and **write parts.json** are still there to
+write the whole file on demand, and those two fall back to a download when
+nothing can write.
+
+The badge says which way it is going: `phrase 3: saved · presets.json` when the
+file is being written, `· this browser only` when it is not. The browser copy is
+a cache for that second case, so with a writing bridge **the file always wins on
+load** and hand-editing `scan/presets.json` works as you would expect. Without
+one — an older bridge, a `file://` path, another machine — saving stays in local
+storage and the page says so rather than claiming a write.
+
+That distinction is load-bearing: the previous bridge had no `PUT` handler at
+all, so it answered a write by *serving the file back* — 200, valid JSON, and
+indistinguishable from success. The page now only believes the acknowledgement
+the write handler actually sends, and tells you to restart the bridge otherwise.
+The writer keeps whatever else the file carried, including the `_comment` at the
+top of `parts.json`, and keeps short arrays on one line so a hand-edited pitch
+list stays readable.
 
 The *timing & voice* sliders themselves stay visible for everyone; only the
-preset row is hidden.
+preset row is hidden. Every one of them has a plain-language tooltip — hover the
+label and you get a sentence with no phonetics in it ("the puff of breath between
+a p, t or k and the vowel after it"), so a player can be told to nudge something
+without a lesson in voice-onset time. The text is the `HELP` map in `scan.js`,
+next to the control list.
 
 ## The burst, and how to shape it
 
@@ -385,7 +566,10 @@ keeping a take of a scan you liked.
 ## Files
 
 ```
-scan/index.html                     the page
+scan/index.html                     the player's page
+scan/conduct.html                   the conductor's page
+scan/cues.json                      the cues, and which part each one speaks to
+scan/src/conduct.js                 cue list, prep/downbeat, roster (no audio)
 scan/src/engine.js                  the articulation engine (no DOM, no audio API)
 scan/src/patched-pink-trombone.js   the in-memory worklet repair
 scan/src/scan.js                    audio setup, strip UI, keyboard transport, transports

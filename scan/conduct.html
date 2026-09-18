@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Tract — conductor</title>
+    <style>
+      :root {
+        --bg: #000000;
+        --panel: #1d1b25;
+        --line: #322e3f;
+        --ink: #ece9f5;
+        --dim: #9b95ad;
+        --hot: #ff7ab6;
+        --prep: #e0b64a;
+        --go: #ffffff;
+        --live: #7ee2b8;
+      }
+      * { box-sizing: border-box; }
+      [hidden] { display: none !important; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, "Helvetica Neue", sans-serif;
+        padding: 16px 20px 40px;
+      }
+      header {
+        display: flex;
+        align-items: baseline;
+        gap: 14px;
+        flex-wrap: wrap;
+        border-bottom: 1px solid var(--line);
+        padding-bottom: 10px;
+      }
+      h1 { font-size: 20px; margin: 0; letter-spacing: 0.02em; }
+      .sub { color: var(--dim); }
+      .spacer { flex: 1; }
+      .pill {
+        font: 12px ui-monospace, SFMono-Regular, Menlo, monospace;
+        color: var(--dim);
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 3px 10px;
+      }
+      .pill.on { color: var(--live); border-color: #2e5c48; }
+      .pill.off { color: #ff9a8a; border-color: #5c3430; }
+      button {
+        font: inherit;
+        background: var(--panel);
+        color: var(--ink);
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        padding: 6px 12px;
+        cursor: pointer;
+      }
+      button:hover:not(:disabled) { border-color: var(--hot); }
+      button:disabled { opacity: 0.4; cursor: default; }
+
+      /* ---- who is out there ---- */
+      .roster { display: flex; gap: 10px; margin: 14px 0 4px; flex-wrap: wrap; }
+      .who {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        padding: 6px 12px;
+        background: var(--panel);
+        min-width: 116px;
+      }
+      .who .dot {
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        background: #4a4658;
+        flex: none;
+      }
+      .who.here .dot { background: var(--live); box-shadow: 0 0 10px -1px var(--live); }
+      .who .name { font-weight: 600; letter-spacing: 0.06em; }
+      .who .at { font: 11px ui-monospace, Menlo, monospace; color: var(--dim); }
+      .who.here .at { color: var(--ink); }
+
+      /* ---- the desk ---- */
+      .desk {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 320px;
+        gap: 18px;
+        margin-top: 14px;
+        align-items: start;
+      }
+      @media (max-width: 900px) { .desk { grid-template-columns: minmax(0, 1fr); } }
+
+      .standing {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 14px 16px;
+      }
+      .standing h2 {
+        font: 11px ui-monospace, Menlo, monospace;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--dim);
+        margin: 0 0 10px;
+      }
+      .cuehead { display: flex; align-items: baseline; gap: 10px; margin-bottom: 4px; }
+      .cuenum { font-size: 30px; font-weight: 700; line-height: 1; }
+      .cuelabel { color: var(--hot); }
+      .cuephrase { color: var(--dim); font: 12px ui-monospace, Menlo, monospace; }
+      .cuenote {
+        color: var(--dim);
+        font-style: italic;
+        border-left: 2px solid var(--line);
+        padding-left: 10px;
+        margin: 8px 0 12px;
+      }
+      .goes { display: flex; flex-direction: column; gap: 8px; }
+      .goes-row {
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+        padding: 8px 10px;
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        background: #24202e;
+      }
+      .goes-row.armed { border-color: var(--prep); }
+      .goes-row.landed { border-color: #3a5c4c; }
+      .goes-part {
+        flex: none;
+        width: 38px;
+        text-align: center;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        color: var(--hot);
+      }
+      .goes-text { min-width: 0; }
+      .silent { color: var(--dim); font-size: 12px; margin-top: 10px; }
+
+      /* ---- transport ---- */
+      .transport {
+        display: flex;
+        gap: 10px;
+        align-items: stretch;
+        margin-top: 14px;
+        flex-wrap: wrap;
+      }
+      .big {
+        flex: 1 1 150px;
+        font-size: 17px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        padding: 18px 12px;
+        border-radius: 11px;
+      }
+      .big.prep { border-color: #6b5a2f; color: var(--prep); }
+      .big.prep.armed { background: var(--prep); color: #23180a; border-color: var(--prep); }
+      .big.go { border-color: #4a4658; }
+      .big.go.ready { background: var(--go); color: #14131a; border-color: var(--go); }
+      .step { flex: 0 0 auto; padding: 18px 16px; border-radius: 11px; font-size: 17px; }
+      .countdown {
+        flex: 0 0 96px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid var(--line);
+        border-radius: 11px;
+        font: 34px/1 ui-monospace, Menlo, monospace;
+        color: var(--prep);
+        background: var(--panel);
+      }
+      .options {
+        display: flex;
+        gap: 14px;
+        align-items: center;
+        flex-wrap: wrap;
+        margin-top: 12px;
+        color: var(--dim);
+        font-size: 12px;
+      }
+      .options input[type="number"] {
+        width: 62px;
+        font: inherit;
+        background: var(--panel);
+        color: var(--ink);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 3px 6px;
+      }
+      .options label { display: flex; align-items: center; gap: 5px; }
+      kbd {
+        font: 11px ui-monospace, Menlo, monospace;
+        border: 1px solid var(--line);
+        border-bottom-width: 2px;
+        border-radius: 5px;
+        padding: 1px 5px;
+        color: var(--dim);
+      }
+
+      /* ---- the cue list ---- */
+      .list {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 10px;
+        max-height: 74vh;
+        overflow: auto;
+      }
+      .phrasehead {
+        font: 10px ui-monospace, Menlo, monospace;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--dim);
+        padding: 12px 6px 4px;
+        position: sticky;
+        top: -10px;
+        background: var(--panel);
+      }
+      .cuerow {
+        display: flex;
+        align-items: baseline;
+        gap: 9px;
+        width: 100%;
+        text-align: left;
+        border: 1px solid transparent;
+        border-radius: 8px;
+        padding: 7px 9px;
+        background: none;
+      }
+      .cuerow:hover { background: #2a2635; }
+      .cuerow.at { border-color: var(--hot); background: #2c2029; }
+      .cuerow.done { color: var(--dim); }
+      .cuerow .n {
+        flex: none;
+        width: 22px;
+        font: 12px ui-monospace, Menlo, monospace;
+        color: var(--dim);
+      }
+      .cuerow.at .n { color: var(--hot); }
+      .cuerow .who-chips { margin-left: auto; display: flex; gap: 3px; flex: none; }
+      .chip {
+        font: 10px ui-monospace, Menlo, monospace;
+        border: 1px solid var(--line);
+        border-radius: 4px;
+        padding: 0 4px;
+        color: var(--dim);
+      }
+      .chip.on { color: var(--ink); border-color: var(--hot); }
+      .foot { color: var(--dim); font-size: 12px; margin-top: 18px; }
+      code {
+        font: 12px ui-monospace, Menlo, monospace;
+        background: #24202e;
+        border: 1px solid var(--line);
+        border-radius: 5px;
+        padding: 1px 5px;
+      }
+    </style>
+  </head>
+
+  <body>
+    <header>
+      <h1>Tract</h1>
+      <span class="sub">conductor</span>
+      <span class="spacer"></span>
+      <span id="wsStatus" class="pill">bridge: —</span>
+      <button id="reloadCues">reload cues.json</button>
+    </header>
+
+    <div class="roster" id="roster"></div>
+
+    <div class="desk">
+      <div>
+        <div class="standing">
+          <h2>on the stand</h2>
+          <div class="cuehead">
+            <span class="cuenum" id="cueNum">—</span>
+            <span class="cuelabel" id="cueLabel"></span>
+            <span class="cuephrase" id="cuePhrase"></span>
+          </div>
+          <div class="cuenote" id="cueNote" hidden></div>
+          <div class="goes" id="goes"></div>
+          <div class="silent" id="silent"></div>
+        </div>
+
+        <div class="transport">
+          <button class="big prep" id="prep">PREP</button>
+          <div class="countdown" id="countdown">—</div>
+          <button class="big go" id="go" disabled>DOWNBEAT</button>
+          <button class="step" id="prevCue" title="previous cue (←)">‹</button>
+          <button class="step" id="nextCue" title="next cue (→)">›</button>
+        </div>
+
+        <div class="options">
+          <label><input type="checkbox" id="useCount" /> count-in</label>
+          <label>beats <input type="number" id="countBeats" min="1" max="8" value="4" /></label>
+          <label>bpm <input type="number" id="countBpm" min="20" max="240" value="60" /></label>
+          <span class="spacer"></span>
+          <span>
+            <kbd>space</kbd> prep, then downbeat · <kbd>←</kbd> <kbd>→</kbd> move ·
+            <kbd>esc</kbd> cancel
+          </span>
+        </div>
+
+        <p class="foot">
+          A cue only speaks to the parts listed under it in <code>cues.json</code>. Everyone else
+          sees nothing at all — no flash, no change, no prep light. Players join at
+          <code>/scan/</code> on this machine's address; whoever is connected shows above, and a
+          player who arrives late picks up the standing cue by themselves.
+        </p>
+      </div>
+
+      <div class="list" id="list"></div>
+    </div>
+
+    <script type="module" src="/scan/src/conduct.js?v=2026-09-18d"></script>
+  </body>
+</html>

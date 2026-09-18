@@ -1,1 +1,84 @@
-{}
+{
+  "0": {
+    "cfg": {
+      "closeTime": 0.035,
+      "passClose": 0.022,
+      "burstTime": 0.012,
+      "votVoiceless": 0.055,
+      "votVoiced": 0.012,
+      "transition": 0.06,
+      "affricateClosure": 0.07,
+      "holdWordFinalStops": false,
+      "codaAt": 0.86,
+      "autoReleaseStops": false,
+      "maxClosure": 0.25,
+      "retriggerLockout": 0.14,
+      "smooth": 0.035,
+      "blend": 0.4,
+      "attack": 0.03,
+      "release": 0.08,
+      "burstIntensity": 1,
+      "burstLevel": 0.5,
+      "burstDecay": 500,
+      "pressureVoiceless": 0.3,
+      "closureIntensityVoiced": 0.28,
+      "voicenessVowel": 0.9,
+      "voicenessVoicedFric": 0.7,
+      "voicenessVoicelessFric": 0.08,
+      "stressSemitones": 0.75,
+      "glide": 0.05
+    },
+    "pronunciation": "fixed",
+    "wordChoices": [0, 0],
+    "gain": 0.4,
+    "wordMode": "next",
+    "whisper": false,
+    "vibrato": {
+      "rate": 2.7,
+      "depth": 0.004,
+      "wobble": 0
+    },
+    "tractLength": 50
+  },
+  "1": {
+    "cfg": {
+      "closeTime": 0.035,
+      "passClose": 0.022,
+      "burstTime": 0.015,
+      "votVoiceless": 0.055,
+      "votVoiced": 0.016,
+      "transition": 0.06,
+      "affricateClosure": 0.07,
+      "holdWordFinalStops": false,
+      "codaAt": 0.86,
+      "autoReleaseStops": false,
+      "maxClosure": 0.25,
+      "retriggerLockout": 0.14,
+      "smooth": 0.035,
+      "blend": 0.4,
+      "attack": 0.03,
+      "release": 0.08,
+      "burstIntensity": 1,
+      "burstLevel": 1,
+      "burstDecay": 2000,
+      "pressureVoiceless": 0.82,
+      "closureIntensityVoiced": 0.28,
+      "voicenessVowel": 0.9,
+      "voicenessVoicedFric": 0.7,
+      "voicenessVoicelessFric": 0.08,
+      "stressSemitones": 0.75,
+      "glide": 0.05
+    },
+    "pronunciation": "fixed",
+    "wordChoices": [0],
+    "gain": 0.4,
+    "wordMode": "next",
+    "whisper": false,
+    "vibrato": {
+      "rate": 6,
+      "depth": 0.005,
+      "wobble": 0
+    },
+    "tractLength": 44
+  }
+}

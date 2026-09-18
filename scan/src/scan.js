@@ -7,6 +7,10 @@
 import { ScanVoice, buildTrack, DEFAULTS, OPEN } from "./engine.js";
 import { loadPatchedPinkTrombone } from "./patched-pink-trombone.js";
 
+/** bump alongside the ?v= in index.html; printed on load so there is never a
+ *  question about which build a browser is actually running */
+const BUILD = "2026-09-18d";
+
 const $ = (id) => document.getElementById(id);
 const strip = $("strip");
 const cursor = $("cursor");
@@ -53,15 +57,16 @@ let phraseIndex = 0;
 // four parts, at least two players each. Loaded from parts.json; this is the
 // fallback so the page still works if the file is missing.
 const DEFAULT_PARTS = [
-  { id: "1", name: "Part 1", tractDelta: -6, phrases: [] },
-  { id: "2", name: "Part 2", tractDelta: -2, phrases: [] },
-  { id: "3", name: "Part 3", tractDelta: 2, phrases: [] },
-  { id: "4", name: "Part 4", tractDelta: 8, phrases: [] },
+  { id: "1", name: "I", tractDelta: -6, phrases: [] },
+  { id: "2", name: "II", tractDelta: -2, phrases: [] },
+  { id: "3", name: "III", tractDelta: 2, phrases: [] },
+  { id: "4", name: "IV", tractDelta: 8, phrases: [] },
 ];
 let parts = DEFAULT_PARTS;
+let partsDoc = {}; // whatever else parts.json carries — the _comment, mainly — so
+// that writing the file back does not quietly delete it
 let partIndex = 0;
-const BASE_NOTE = 45.5;
-const BASE_TRACT = 44;
+
 const part = () => parts[partIndex] || { tractDelta: 0, phrases: [] };
 const partPhrase = () => {
   const p = part();
@@ -97,11 +102,30 @@ function allowedNotes() {
  *  half as long as a vowel, a word gap about two thirds.
  * ----------------------------------------------------------------- */
 const RATES = {
-  slow: [4, 6], // A
-  mid: [0.5, 1], // S
-  fast: [0.25, 0.75], // D — near speaking tempo
+  slow: [3, 5], // A and W
+  mid: [0.25, 0.75], // S and E
+  fast: [0.1, 0.25], // D and R — near speaking tempo
 };
 const rand = (a, b) => a + Math.random() * (b - a);
+
+/* ----------------------------------------------------------------- *
+ *  VOICE DEFAULTS — tune these.
+ *  These are what the page starts with, and they are what the sliders
+ *  read on load. They are NOT the defaultValue fields in the worklet:
+ *  those are overwritten the moment audio starts, so editing
+ *  pink-trombone-worklet-processor.min.js has no effect here.
+ *  A phrase preset, once saved, overrides all of them.
+ * ----------------------------------------------------------------- */
+const VOICE = {
+  note: 45.5, // MIDI note, B♭2 ≈ 113 Hz. Fractions allowed.
+  gain: 0.4, // output level, 0–1
+  tractLength: 44, // 15–88; bigger = larger body, same pitch
+  vibrato: {
+    rate: 6, // Hz
+    depth: 0.005, // 0 = no periodic vibrato
+    wobble: 1, // 0 = dead steady pitch; 1 = the synth's own slow drift
+  },
+};
 
 let ctx = null;
 let element = null;
@@ -114,6 +138,7 @@ let cells = [];
 let cellEls = [];
 let rects = [];
 let wordLabels = [];
+let currentIpa = "";
 
 let targetPos = 0.5;
 let pressed = false; // pointer is down
@@ -121,11 +146,11 @@ let insideStrip = false;
 let explicitGate = null; // null = follow the pointer, 0/1 = forced by OSC/MIDI
 let lastGesture = "—";
 let lastGestureAt = 0;
-let note = 45.5; // ≈140 Hz, the Pink Trombone default
+let note = VOICE.note;
 let ws = null;
 
-let gain = 0.4; // the tract is hot and impulsive; see the limiter below
-const vibrato = { rate: 6, depth: 0.005, wobble: 1 };
+let gain = VOICE.gain;
+const vibrato = Object.assign({}, VOICE.vibrato);
 let wordMode = "next"; // or "random", per phrase
 let wordSpans = [];
 let spanWord = []; // span index -> index into words[]
@@ -162,12 +187,14 @@ async function enableAudio() {
     patch: !NO_PATCH,
     names: PATCH_NAMES,
   });
-  const patchPill = $("patchStatus");
-  patchPill.textContent = `worklet: ${applied.length}/${missed.length + applied.length} patched`;
-  patchPill.className = "pill " + (missed.length === 0 ? "on" : "off");
-  patchPill.title = missed.length
-    ? `could not apply: ${missed.join(", ")} — upstream source changed?`
-    : "plosive burst transients repaired";
+  if (missed.length) {
+    console.warn(
+      `Tract: ${applied.length}/${applied.length + missed.length} worklet patches applied. ` +
+        `Could not apply: ${missed.join(", ")} — has the upstream source changed?`
+    );
+  } else {
+    console.log(`Tract: all ${applied.length} worklet patches applied (${applied.join(", ")}).`);
+  }
 
   element = document.createElement("pink-trombone");
   $("tractHost").appendChild(element);
@@ -295,6 +322,7 @@ function setPhrase(index, { announce = true } = {}) {
   $("phraseNum").textContent = `${phraseIndex + 1}/${count}`;
   $("phraseText").textContent = phrase;
   paintDots();
+  wordCursor = -1; // a new phrase starts from its first word
   applyPreset(phraseIndex); // brings this phrase's cfg, pitch and word choices
   if (pronunciation !== "fixed") randomizeChoices();
   renderAlts();
@@ -352,9 +380,9 @@ function rebuildFromWords() {
       wordLabels.push("");
     }
   });
-  const ipa = parts.join(" ");
-  ipaLine.textContent = ipa;
-  setTrack(ipa);
+  currentIpa = parts.join(" ");
+  if (ipaLine) ipaLine.textContent = currentIpa;
+  setTrack(currentIpa);
 }
 
 function renderAlts() {
@@ -441,7 +469,10 @@ function computeWordSpans() {
     }
   });
   if (start !== null) wordSpans.push({ start, end: cells.length });
-  wordCursor = -1;
+  // NB: the word cursor is deliberately not reset here. Re-rolling a
+  // pronunciation rebuilds the track mid-performance, and losing your place in
+  // the phrase every time would leave W/E/R stuck on the first word.
+  if (wordCursor >= wordSpans.length) wordCursor = wordSpans.length - 1;
 }
 
 /* ================================================================ *
@@ -767,6 +798,7 @@ export function applyRemote(address, args = []) {
       break;
     }
     case "/scan/phonemes":
+      currentIpa = String(a0 ?? "");
       wordLabels = [];
       $("phraseText").textContent = String(a0 ?? "");
       $("phraseNum").textContent = "—";
@@ -778,7 +810,7 @@ export function applyRemote(address, args = []) {
       if (typeof a0 === "string" && a0 in cfg) {
         cfg[a0] = typeof cfg[a0] === "boolean" ? num(args[1]) > 0.5 : num(args[1], cfg[a0]);
         syncControl(a0, cfg[a0]);
-        if (a0 === "holdWordFinalStops") setTrack(ipaLine.textContent);
+        if (a0 === "holdWordFinalStops") setTrack(currentIpa);
       }
       break;
     case "/scan/speed": {
@@ -825,6 +857,26 @@ export function applyRemote(address, args = []) {
       applyVibrato();
       syncControl("wobble", vibrato.wobble);
       break;
+
+    /* ---- from the conductor page; args are [cue, partId, instruction] ---- */
+    case "/cue/prep":
+      cuePrep(a0, args[1], String(args[2] ?? ""));
+      break;
+    case "/cue/count":
+      cueCount(num(a0), args[1]);
+      break;
+    case "/cue/go":
+      cueGo(a0, args[1], String(args[2] ?? ""));
+      break;
+    case "/cue/clear":
+      cueClear(args[0]);
+      break;
+    case "/cue/state":
+      cueState(a0, args[1], String(args[2] ?? ""));
+      break;
+    case "/cue/ping": // a conductor just opened: say who is here
+      sayHello();
+      break;
     default:
       break;
   }
@@ -859,6 +911,7 @@ function connectWS() {
   ws.addEventListener("open", () => {
     pill.textContent = `bridge: ${location.hostname}:${port}`;
     pill.className = "pill on";
+    sayHello(); // and every few seconds after, so the conductor's roster is live
   });
   ws.addEventListener("message", (event) => {
     let message;
@@ -982,12 +1035,49 @@ const CONTROLS = [
   { key: "autoReleaseStops", label: "held stops release themselves", toggle: true },
 ];
 
+/** plain-language descriptions, shown on hover */
+const HELP = {
+  "closeTime": "How quickly the mouth closes when it arrives at a consonant it is going to hold. Longer feels more deliberate.",
+  "passClose": "How long the mouth stays shut before a consonant pops open — the wind-up before a k, t or p. Very short.",
+  "burstTime": "The length of the little explosion when a consonant lets go. Shorter is crisper.",
+  "burstLevel": "How loud that explosion is. Down for a soft, breathy consonant; up for a sharp click.",
+  "burstDecay": "The tone of the explosion. Higher is a short bright tick; lower is a deeper thump, like a balloon popping.",
+  "pressureVoiceless": "How much air builds up behind a closed p, t or k before it opens. More gives a punchier release.",
+  "votVoiceless": "The puff of breath between a p, t or k and the vowel after it. Longer sounds more aspirated, like a whispered h.",
+  "votVoiced": "The same gap for b, d and g. Normally very short — that shortness is what makes them sound voiced rather than breathy.",
+  "transition": "How long the mouth takes to travel from a released consonant into the vowel that follows it.",
+  "affricateClosure": "How long ch and j stay shut before letting go into their hiss.",
+  "smooth": "How closely the mouth follows your hand. Larger is smoother and more blurred; smaller is immediate, and can sound jumpy.",
+  "blend": "How much of each block is spent gliding into the next. Small values give abrupt changes between sounds; large values are always sliding.",
+  "glide": "How long the pitch takes to slide when the note changes. 0 jumps straight there.",
+  "note": "The note being sung. Click the piano below to pick one, or drag here for pitches in between the keys.",
+  "tractLength": "The size of the throat and mouth. Longer sounds like a bigger body — deeper and darker — without changing the note.",
+  "gain": "How loud this voice is.",
+  "vibratoRate": "How fast the pitch wavers, in wobbles per second.",
+  "vibratoDepth": "How far the pitch wavers. 0 is a perfectly even note.",
+  "wobble": "Slow, random drifting of the pitch — the natural unsteadiness of a real voice. 0 holds a dead-steady pitch, which is usually what a choir wants.",
+  "holdWordFinalStops": "On: a consonant at the end of a word waits silently until you leave the word, then pops. Off: it happens as you arrive, taking no time.",
+  "autoReleaseStops": "On: a consonant being held lets go by itself after a moment instead of waiting for you.",
+  "whisper": "Sing with breath instead of voice — no pitch, just the shape of the words, like whispering."
+};
+
 const controlEls = {};
 
 function buildControls() {
+  // keep focus off the controls so the playback keys always reach the page
+  controlsHost.addEventListener("pointerup", (event) => {
+    const el = event.target;
+    if (el && /^(INPUT|SELECT)$/.test(el.tagName)) setTimeout(() => el.blur(), 0);
+  });
+  controlsHost.addEventListener("change", (event) => {
+    const el = event.target;
+    if (el && el.blur) setTimeout(() => el.blur(), 0);
+  });
+
   CONTROLS.forEach((spec) => {
     const wrap = document.createElement("div");
     wrap.className = "ctl" + (spec.toggle ? " toggle" : "");
+    if (HELP[spec.key]) wrap.title = HELP[spec.key];
     const label = document.createElement("label");
     label.textContent = spec.label;
     const row = document.createElement("div");
@@ -1047,7 +1137,7 @@ function formatValue(value, spec) {
 function onControl(spec, value) {
   if (!spec.special) {
     cfg[spec.key] = value;
-    if (spec.key === "holdWordFinalStops") setTrack(ipaLine.textContent);
+    if (spec.key === "holdWordFinalStops") setTrack(currentIpa);
     return;
   }
   switch (spec.key) {
@@ -1202,6 +1292,17 @@ function restoreWhisper() {
     voice.setWhisper(presetWhisper, ctx.currentTime);
     syncControl("whisper", presetWhisper);
   }
+}
+
+/** Z: breath instead of voice, and back. Latching, so it survives T and Q. */
+function toggleWhisper() {
+  whisperRestoreAt = 0; // whatever the percussion key was going to hand back
+  presetWhisper = !presetWhisper;
+  syncControl("whisper", presetWhisper);
+  applyRemote("/scan/whisper", [presetWhisper ? 1 : 0]);
+  lastGesture = presetWhisper ? "whisper on" : "whisper off";
+  lastGestureAt = performance.now();
+  sendOut("/scan/out/gesture", [lastGesture]);
 }
 
 function startScan(rateName, key) {
@@ -1465,33 +1566,38 @@ let presetWhisper = false;
 let composerMode = false;
 
 function capturePreset() {
-  // store what is written, not what this part happens to sound
+  // store what is written, not what this part happens to sound.
+  // Pitch is deliberately NOT stored: it belongs to the part's note list and
+  // the player's choice on the keyboard, and a preset that dragged the pitch
+  // around with it would fight both.
   const p = part();
   const out = {
     cfg: {},
     pronunciation,
     wordChoices: words.map((w) => w.choice),
-    note,
     gain,
     wordMode,
     whisper: presetWhisper,
     vibrato: Object.assign({}, vibrato),
   };
   Object.keys(DEFAULTS).forEach((k) => (out.cfg[k] = cfg[k]));
-  out.tractLength = (voice ? voice.tractLength : BASE_TRACT) - (p.tractDelta || 0);
+  out.tractLength = (voice ? voice.tractLength : VOICE.tractLength) - (p.tractDelta || 0);
   return out;
 }
 
 /**
- * A preset holds the *written* settings; the part transposes them. What the
- * slider and the piano show is always what you hear.
+ * A preset holds the *written* settings; the part adds its body to them. What
+ * the slider shows is always what you hear.
+ *
+ * Every phrase lands somewhere definite: its own preset if it has one, the
+ * shipped defaults (DEFAULTS + VOICE) if it does not. Before, an unsaved phrase
+ * simply kept whatever the previous phrase was doing, so saving a preset and
+ * moving away and back changed nothing audible and the buttons looked dead.
  */
 function applyPreset(index) {
   const preset = presets[index] || null;
   const p = part();
   wordMode = (preset && preset.wordMode) || "next";
-  // pronunciation mode persists until a preset says otherwise: a phrase with no
-  // preset saved should not silently switch it back
   const sel = $("wordModeSel");
   if (sel) sel.value = wordMode;
 
@@ -1504,48 +1610,67 @@ function applyPreset(index) {
         if (words[index] && choice < words[index].alts.length) words[index].choice = choice;
       });
     }
-    Object.keys(DEFAULTS).forEach((k) => {
-      if (preset.cfg && k in preset.cfg) {
-        cfg[k] = preset.cfg[k];
-        syncControl(k, cfg[k]);
-      }
-    });
-    if (typeof preset.gain === "number") {
-      gain = preset.gain;
-      syncControl("gain", gain);
-      if (master) master.gain.value = gain;
-    }
-    if (preset.vibrato) {
-      Object.assign(vibrato, preset.vibrato);
-      syncControl("vibratoRate", vibrato.rate);
-      syncControl("vibratoDepth", vibrato.depth);
-      syncControl("wobble", vibrato.wobble);
-      applyVibrato();
-    }
+  }
+
+  Object.keys(DEFAULTS).forEach((k) => {
+    cfg[k] = preset && preset.cfg && k in preset.cfg ? preset.cfg[k] : DEFAULTS[k];
+    syncControl(k, cfg[k]);
+  });
+
+  gain = preset && typeof preset.gain === "number" ? preset.gain : VOICE.gain;
+  syncControl("gain", gain);
+  if (master) master.gain.value = gain;
+
+  Object.assign(vibrato, VOICE.vibrato, (preset && preset.vibrato) || {});
+  syncControl("vibratoRate", vibrato.rate);
+  syncControl("vibratoDepth", vibrato.depth);
+  syncControl("wobble", vibrato.wobble);
+  applyVibrato();
+
+  // whisper is the exception: Z is a live performance control, so a phrase with
+  // no preset of its own leaves it where the player put it
+  if (preset) {
     presetWhisper = !!preset.whisper;
     syncControl("whisper", presetWhisper);
     if (ready) voice.setWhisper(presetWhisper, ctx.currentTime);
   }
 
-  // pitch comes from the part's list for this phrase, not from a transposition
+  // pitch is the part's business, never the preset's: the note list for this
+  // phrase decides what is available and the player picks from it
   const allowed = allowedNotes();
-  if (allowed.length > 0) {
-    if (!allowed.some((n) => Math.abs(n - note) < 0.01)) note = allowed[0];
-  } else if (preset && typeof preset.note === "number") {
-    note = preset.note;
-  }
+  if (allowed.length > 0 && !allowed.some((n) => Math.abs(n - note) < 0.01)) note = allowed[0];
   syncControl("note", note);
   paintPiano();
   paintNoteChoices();
   if (ready) voice.setNote(note, ctx.currentTime, 0);
 
   const writtenTract =
-    preset && typeof preset.tractLength === "number" ? preset.tractLength : BASE_TRACT;
+    preset && typeof preset.tractLength === "number" ? preset.tractLength : VOICE.tractLength;
   const tract = Math.max(15, Math.min(88, writtenTract + (p.tractDelta || 0)));
   syncControl("tractLength", tract);
   if (ready) voice.setTractLength(tract, ctx.currentTime);
 
   paintInstruction();
+  paintPresetState();
+}
+
+/** says, at a glance, whether the phrase you are on carries a preset */
+function paintPresetState() {
+  const el = $("presetState");
+  if (el) {
+    const saved = !!presets[phraseIndex];
+    const where = bridgeWrites ? "presets.json" : "this browser only";
+    el.textContent =
+      (saved ? `phrase ${phraseIndex + 1}: saved` : `phrase ${phraseIndex + 1}: defaults`) +
+      ` · ${where}`;
+    el.title = bridgeWrites
+      ? "saving writes scan/presets.json in the repo"
+      : "this page is not served by a bridge that can write, so saving stays in this browser";
+    el.classList.toggle("saved", saved);
+  }
+  document.querySelectorAll("#phraseDots .dot").forEach((dot, i) => {
+    dot.classList.toggle("has-preset", !!presets[i]);
+  });
 }
 
 async function loadParts() {
@@ -1553,6 +1678,7 @@ async function loadParts() {
     const response = await fetch("/scan/parts.json", { cache: "no-cache" });
     if (response.ok) {
       const data = await response.json();
+      if (data && typeof data === "object") partsDoc = data;
       if (data && Array.isArray(data.parts) && data.parts.length) {
         parts = data.parts.map((p) => {
           if (!p.phrases && Array.isArray(p.instructions)) {
@@ -1581,6 +1707,30 @@ async function loadParts() {
   paintInstruction();
 }
 
+/** on opening the page a player must say which part they are on */
+function openPartModal() {
+  const modal = $("partModal");
+  const list = $("partChoices");
+  if (!modal || !list) return;
+  list.innerHTML = "";
+  parts.forEach((p, i) => {
+    const button = document.createElement("button");
+    button.className = "partchoice" + (i === partIndex ? " remembered" : "");
+    // the name and nothing else: a player knows which part they are on, and
+    // showing phrase 1's pitches here only invites choosing by ear
+    button.textContent = p.name;
+    button.addEventListener("click", async () => {
+      setPart(i);
+      modal.hidden = true;
+      document.body.classList.remove("modal-open");
+      await enableAudio(); // the click doubles as the gesture that starts audio
+    });
+    list.appendChild(button);
+  });
+  modal.hidden = false;
+  document.body.classList.add("modal-open");
+}
+
 function setPart(index) {
   partIndex = Math.max(0, Math.min(parts.length - 1, index));
   try {
@@ -1588,20 +1738,126 @@ function setPart(index) {
   } catch (e) {}
   const sel = $("partSel");
   if (sel) sel.value = String(partIndex);
+  // a cue belongs to the part it was sent to, so changing part drops it; the
+  // conductor's next heartbeat hands this part its own standing instruction
+  cued.instruction = null;
+  cued.cue = null;
+  cued.oncoming = null;
+  showOncoming(null);
+  cueLight("idle", "—");
   applyPreset(phraseIndex); // re-reads the written settings through the new part
   sendOut("/scan/out/part", [partIndex + 1, parts[partIndex].name]);
+  sayHello();
 }
 
 function paintInstruction() {
   const el = $("instruction");
   if (!el) return;
-  const text = partPhrase().instruction || "";
+  // a cue the conductor has landed outranks the phrase's written instruction
+  const text = cued.instruction !== null ? cued.instruction : partPhrase().instruction || "";
   el.textContent = text || "—";
   el.classList.toggle("empty", !text);
   const tag = $("partTag");
   if (tag) tag.textContent = part().name || "—";
   paintNoteChoices();
 }
+
+/* ================================================================ *
+ *  the conductor's cues
+ *
+ *  The conductor page broadcasts one message per part it is speaking to.
+ *  A player keeps only the messages addressed to its own part, so a cue that
+ *  says nothing about you leaves your light dark and your instruction alone —
+ *  which is the whole point: silence from the conductor is not a cue.
+ * ================================================================ */
+
+const cued = { instruction: null, cue: null, oncoming: null };
+let goFlashTimer = null;
+
+function cueLight(state, label) {
+  const light = $("cueLight");
+  const lamp = $("cueLamp");
+  const text = $("cueLabel");
+  if (!light) return;
+  light.dataset.state = state;
+  if (lamp) lamp.textContent = state === "count" ? label : "";
+  if (text) text.textContent = state === "count" ? "count" : label;
+}
+
+function showOncoming(instruction) {
+  const row = $("oncoming");
+  const text = $("oncomingText");
+  if (!row || !text) return;
+  if (instruction === null) {
+    row.hidden = true;
+    text.textContent = "";
+    return;
+  }
+  text.textContent = instruction;
+  row.hidden = false;
+}
+
+/** is this cue message for me? */
+function forMe(partId) {
+  const mine = part().id;
+  return String(partId) === String(mine);
+}
+
+function cuePrep(cue, partId, instruction) {
+  if (!forMe(partId)) return;
+  clearTimeout(goFlashTimer);
+  cued.oncoming = instruction;
+  cueLight("prep", `cue ${cue}`);
+  showOncoming(instruction);
+}
+
+function cueCount(beat, partId) {
+  if (partId !== undefined && partId !== null && !forMe(partId)) return;
+  if (cued.oncoming === null) return; // not my cue: no counting either
+  cueLight("count", String(beat));
+}
+
+function cueGo(cue, partId, instruction) {
+  if (!forMe(partId)) return;
+  cued.instruction = instruction;
+  cued.cue = cue;
+  cued.oncoming = null;
+  showOncoming(null);
+  paintInstruction();
+  cueLight("go", `cue ${cue}`);
+  clearTimeout(goFlashTimer);
+  goFlashTimer = setTimeout(() => cueLight("idle", `cue ${cue}`), 900);
+}
+
+function cueClear(partId) {
+  if (partId !== undefined && partId !== null && !forMe(partId)) return;
+  cued.oncoming = null;
+  showOncoming(null);
+  cueLight("idle", cued.cue === null ? "—" : `cue ${cued.cue}`);
+}
+
+/**
+ * The conductor repeats the standing cue every couple of seconds. A player who
+ * reloads, joins late or switches part picks the instruction back up without a
+ * flash — they missed the downbeat, they should not be given a fake one.
+ */
+function cueState(cue, partId, instruction) {
+  if (!forMe(partId)) return;
+  if (cued.instruction === instruction && cued.cue === cue) return;
+  cued.instruction = instruction;
+  cued.cue = cue;
+  paintInstruction();
+  if (!$("cueLight") || $("cueLight").dataset.state === "idle") cueLight("idle", `cue ${cue}`);
+}
+
+/** tell the conductor this part is here, so the roster lights up */
+function sayHello() {
+  const p = part();
+  sendOut("/player/hello", [p.id, p.name, cued.cue === null ? -1 : Number(cued.cue) || 0]);
+}
+setInterval(() => {
+  if (ws && ws.readyState === 1) sayHello();
+}, 4000);
 
 function saveInstruction(text) {
   const p = part();
@@ -1633,19 +1889,39 @@ function paintNoteChoices() {
   });
 }
 
+/** does the thing serving this page accept writes? decides who owns the data */
+let bridgeWrites = false;
+async function probeBridge() {
+  try {
+    const response = await fetch("/bridge-info", { cache: "no-store" });
+    if (response.ok) {
+      const info = await response.json();
+      bridgeWrites = !!(info && info.write === true);
+    }
+  } catch (e) {
+    bridgeWrites = false;
+  }
+  return bridgeWrites;
+}
+
 async function loadPresets() {
-  // a presets.json committed beside the page is the shipped set...
+  await probeBridge();
+  // scan/presets.json is the document...
   try {
     const response = await fetch("/scan/presets.json", { cache: "no-cache" });
     if (response.ok) presets = await response.json();
   } catch (e) {
     /* none bundled */
   }
-  // ...and anything saved in this browser wins over it, for tuning in place
-  try {
-    const local = localStorage.getItem(PRESET_STORE);
-    if (local) Object.assign(presets, JSON.parse(local));
-  } catch (e) {}
+  // ...and when saving cannot reach the file — no bridge, or an older one —
+  // this browser's copy is all there is, so it wins. With a writing bridge the
+  // file always wins, which is what makes hand-editing presets.json work.
+  if (!bridgeWrites) {
+    try {
+      const local = localStorage.getItem(PRESET_STORE);
+      if (local) Object.assign(presets, JSON.parse(local));
+    } catch (e) {}
+  }
   applyPreset(phraseIndex);
 }
 
@@ -1672,59 +1948,57 @@ function setupComposer() {
   const row = $("presetRow");
   if (!row) return;
   row.hidden = !composerMode;
-  if (!composerMode) return;
 
-  $("presetSave").addEventListener("click", () => {
+  // The buttons are wired whether or not the row is showing. They used to be
+  // wired only in composer mode, so anything that put the row on screen — a CSS
+  // rule beating the hidden attribute, which is exactly what happened — left a
+  // panel of controls that did nothing at all when clicked.
+  $("presetSave").addEventListener("click", async () => {
     presets[phraseIndex] = capturePreset();
     persistPresets();
-    flashPreset(`saved to phrase ${phraseIndex + 1}`);
+    paintPresetState();
+    const wrote = await writeJSON("/scan/presets.json", presets, {
+      fallback: "none",
+      quiet: true,
+    });
+    if (wrote) flashPreset(`phrase ${phraseIndex + 1} → scan/presets.json`);
   });
   $("presetRevert").addEventListener("click", () => {
     applyPreset(phraseIndex);
-    flashPreset("reverted");
+    flashPreset(presets[phraseIndex] ? "back to the saved preset" : "back to the defaults");
   });
-  $("presetClear").addEventListener("click", () => {
+  $("presetClear").addEventListener("click", async () => {
     delete presets[phraseIndex];
     persistPresets();
-    Object.keys(DEFAULTS).forEach((k) => {
-      cfg[k] = DEFAULTS[k];
-      syncControl(k, cfg[k]);
+    applyPreset(phraseIndex); // straight back to DEFAULTS + VOICE, audibly
+    const wrote = await writeJSON("/scan/presets.json", presets, {
+      fallback: "none",
+      quiet: true,
     });
-    flashPreset(`phrase ${phraseIndex + 1} cleared`);
+    if (wrote) flashPreset(`phrase ${phraseIndex + 1} cleared in scan/presets.json`);
   });
   $("wordModeSel").addEventListener("input", (event) => {
     wordMode = event.target.value;
   });
   const instruction = $("instruction");
-  if (instruction) {
+  if (instruction && composerMode) {
     instruction.setAttribute("contenteditable", "true");
     instruction.classList.add("editable");
     instruction.addEventListener("input", () => saveInstruction(instruction.textContent.trim()));
-    instruction.addEventListener("blur", () => {
+    instruction.addEventListener("blur", async () => {
       saveInstruction(instruction.textContent.trim());
-      flashPreset("instruction updated — export parts.json to keep it");
+      const wrote = await writeJSON(
+        "/scan/parts.json",
+        Object.assign({}, partsDoc, { parts }),
+        { fallback: "none", quiet: true }
+      );
+      if (wrote) flashPreset(`instruction for ${part().name} → scan/parts.json`);
     });
   }
-  $("partsExport").addEventListener("click", () => {
-    const blob = new Blob([JSON.stringify({ parts }, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "parts.json";
-    link.click();
-    setTimeout(() => URL.revokeObjectURL(url), 4000);
-    flashPreset("exported — commit it as scan/parts.json");
-  });
-  $("presetExport").addEventListener("click", () => {
-    const blob = new Blob([JSON.stringify(presets, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "presets.json";
-    link.click();
-    setTimeout(() => URL.revokeObjectURL(url), 4000);
-    flashPreset("exported — commit it as scan/presets.json");
-  });
+  $("partsExport").addEventListener("click", () =>
+    writeJSON("/scan/parts.json", Object.assign({}, partsDoc, { parts }))
+  );
+  $("presetExport").addEventListener("click", () => writeJSON("/scan/presets.json", presets));
   $("presetImport").addEventListener("change", async (event) => {
     const file = event.target.files && event.target.files[0];
     if (!file) return;
@@ -1740,6 +2014,68 @@ function setupComposer() {
   });
 }
 
+/**
+ * Save straight into the repo. The bridge that serves this page accepts a PUT
+ * for exactly these two files, so "write presets.json" writes
+ * `scan/presets.json` where it belongs instead of dropping a copy in Downloads
+ * for you to move by hand. Opened without the bridge — off a file:// path, or
+ * from another machine — it falls back to the old download.
+ */
+/** JSON.stringify's indenting, but with short arrays kept on one line, so a
+ *  hand-edited parts.json does not explode to one pitch per line. */
+function prettyJSON(data) {
+  return JSON.stringify(data, null, 2).replace(
+    /\[\s*\n\s*((?:"[^"\n]*"|-?[\d.]+)(?:,\s*\n\s*(?:"[^"\n]*"|-?[\d.]+))*)\s*\n\s*\]/g,
+    (whole, inner) => "[" + inner.replace(/\s*\n\s*/g, " ") + "]"
+  );
+}
+
+async function writeJSON(url, data, { fallback = "download", quiet = false } = {}) {
+  const text = prettyJSON(data);
+  const name = url.split("/").pop();
+  let why = "";
+  try {
+    const response = await fetch(url, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: text,
+    });
+    let result = null;
+    try {
+      result = await response.json();
+    } catch (e) {
+      /* not our answer */
+    }
+    // An older bridge has no PUT handler at all: it ignores the method and
+    // serves the file back, 200 and valid JSON. That looked exactly like a
+    // successful write, which is why saving appeared to do nothing. Only the
+    // acknowledgement the write handler sends counts.
+    if (response.ok && result && result.ok === true) {
+      if (!quiet) flashPreset(`wrote ${result.path || name}`);
+      return true;
+    }
+    why = response.ok
+      ? "the bridge is an older build — restart node scan-bridge/scan-bridge.js"
+      : `the bridge refused it (${response.status})`;
+  } catch (e) {
+    why = "nothing is serving this page over HTTP";
+  }
+
+  if (fallback === "download") {
+    const blob = new Blob([text], { type: "application/json" });
+    const href = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = href;
+    link.download = name;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(href), 4000);
+    flashPreset(`downloaded ${name}: ${why}`);
+  } else {
+    flashPreset(`saved in this browser only: ${why}`);
+  }
+  return false;
+}
+
 let flashTimer = null;
 function flashPreset(message) {
   const el = $("presetStatus");
@@ -1753,8 +2089,54 @@ function flashPreset(message) {
  *  boot
  * ================================================================ */
 
+/**
+ * `scan.selftest()` in the console — saves a preset to this phrase, steps away,
+ * comes back and checks that it returned, then puts the phrase back exactly as
+ * it was. Answers "is saving broken, or is my browser running an old build?"
+ * in one line.
+ */
+function selftest() {
+  const where = phraseIndex;
+  const had = presets[where] ? JSON.parse(JSON.stringify(presets[where])) : null;
+  const canary = 0.0777;
+  const lines = [`build ${BUILD}`, `composer ${composerMode}`, `bridge writes ${bridgeWrites}`];
+
+  cfg.closeTime = canary;
+  presets[where] = capturePreset();
+  persistPresets();
+  setPhrase((where + 1) % PHRASES.length, { announce: false });
+  const away = cfg.closeTime;
+  setPhrase(where, { announce: false });
+  const back = cfg.closeTime;
+  lines.push(`away ${away}`, `back ${back}`);
+  lines.push(back === canary ? "RECALL OK" : "RECALL FAILED");
+
+  let stored = null;
+  try {
+    stored = JSON.parse(localStorage.getItem(PRESET_STORE) || "null");
+  } catch (e) {}
+  lines.push(
+    stored && stored[where] && stored[where].cfg.closeTime === canary
+      ? "localStorage OK"
+      : "localStorage FAILED"
+  );
+
+  // put it back the way it was
+  if (had) presets[where] = had;
+  else delete presets[where];
+  persistPresets();
+  applyPreset(where); // the phrase goes back to whatever it really was
+
+  const report = lines.join(" · ");
+  console.log("Tract selftest: " + report);
+  flashPreset(report);
+  return report;
+}
+
 window.scan = {
   applyRemote,
+  selftest,
+  BUILD,
   cfg,
   startRecording,
   collectRecording,
@@ -1792,6 +2174,14 @@ window.scan = {
   capturePreset,
   applyPreset,
   setPart,
+  openPartModal,
+  toggleWhisper,
+  get presets() {
+    return presets;
+  },
+  get whisper() {
+    return presetWhisper;
+  },
   get part() {
     return parts[partIndex];
   },
@@ -1853,12 +2243,23 @@ function toggleTract() {
 const HOLD_KEYS = { a: "slow", s: "mid", d: "fast" };
 const SHOT_KEYS = { w: "slow", e: "mid", r: "fast" };
 
+/** only somewhere you can type should swallow a keystroke */
+function isTyping(target) {
+  if (!target) return false;
+  if (target.isContentEditable) return true;
+  const tag = target.tagName;
+  if (tag === "TEXTAREA") return true;
+  if (tag !== "INPUT") return false;
+  const type = (target.getAttribute("type") || "text").toLowerCase();
+  return !["range", "checkbox", "radio", "button", "submit", "color", "file"].includes(type);
+}
+
 document.addEventListener("keydown", async (event) => {
-  if (event.target && /^(INPUT|SELECT|TEXTAREA)$/.test(event.target.tagName)) return;
+  if (isTyping(event.target)) return;
   if (event.metaKey || event.ctrlKey || event.altKey) return;
   const key = event.key.toLowerCase();
 
-  if (key in HOLD_KEYS || key in SHOT_KEYS || key === "q" || key === "t") {
+  if (key in HOLD_KEYS || key in SHOT_KEYS || key === "q" || key === "t" || key === "z") {
     event.preventDefault();
     if (event.repeat) return;
     if (!ctx) await enableAudio();
@@ -1866,10 +2267,14 @@ document.addEventListener("keydown", async (event) => {
     else if (key in SHOT_KEYS) startWord(SHOT_KEYS[key]);
     else if (key === "q") startRandomPhoneme();
     else if (key === "t") startPercussion();
+    else if (key === "z") toggleWhisper();
     return;
   }
 
   const stepSize = event.shiftKey ? 0.02 : 0.1;
+  if (["ArrowRight", "ArrowLeft", "ArrowUp", "ArrowDown", " ", "Home"].includes(event.key)) {
+    event.preventDefault(); // a focused slider should answer the mouse, not the keys
+  }
   switch (event.key) {
     case "ArrowRight":
       applyRemote("/scan/position", [targetPos + stepSize]);
@@ -1899,6 +2304,7 @@ document.addEventListener("keydown", async (event) => {
 });
 
 document.addEventListener("keyup", (event) => {
+  if (isTyping(event.target)) return;
   const key = event.key.toLowerCase();
   if (key in HOLD_KEYS) {
     event.preventDefault();
@@ -1910,9 +2316,21 @@ window.addEventListener("blur", () => stopScan());
 // the dictionary loads itself over XHR; wait for it, then seed the strip
 (function waitForDict(tries = 0) {
   if (dictReady() || tries > 200) {
-    Promise.all([loadParts(), loadPresets()]).then(() =>
-      setPhrase(0, { announce: false })
-    );
+    Promise.all([loadParts(), loadPresets()]).then(() => {
+      setPhrase(0, { announce: false });
+      const forced = SEARCH.get("part");
+      if (forced !== null) {
+        const index = parts.findIndex((p) => p.id === forced || p.name === forced);
+        setPart(index > -1 ? index : Number(forced) - 1 || 0);
+      } else {
+        openPartModal();
+      }
+      console.log(
+        `Tract build ${BUILD} · presets: ${Object.keys(presets).length} saved, ` +
+          `saving writes ${bridgeWrites ? "scan/presets.json" : "this browser only"} · ` +
+          `${composerMode ? "composer mode" : "player mode — open ?composer=1 for the preset row"}`
+      );
+    });
     return;
   }
   setTimeout(() => waitForDict(tries + 1), 100);

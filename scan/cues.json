@@ -1,0 +1,128 @@
+{
+  "_comment": "Cues for the conductor page (scan/conduct.html). One entry per cue, in order. `phrase` groups cues under a phrase in the conductor's list and is not sent to anyone — a cue never moves a player's phrase or pitch, it only rewrites what they read. `label` and `note` are for the conductor's eyes only. `parts` holds the new instruction for each part that this cue speaks to, keyed by the part id in parts.json: a part that is not listed gets no downbeat, no flash, and keeps whatever instruction it already had. All text here is placeholder.",
+  "cues": [
+    {
+      "id": "1",
+      "phrase": 1,
+      "label": "opening",
+      "note": "wait for the room to settle",
+      "parts": {
+        "1": { "instruction": "Enter alone on G3. Hold A and let one phoneme last as long as it wants." }
+      }
+    },
+    {
+      "id": "2",
+      "phrase": 1,
+      "label": "II joins",
+      "parts": {
+        "2": { "instruction": "Join on G3 or D3. Match I's rate, then drift behind." },
+        "1": { "instruction": "Keep going. Do not adjust to II." }
+      }
+    },
+    {
+      "id": "3",
+      "phrase": 1,
+      "label": "lower pair",
+      "parts": {
+        "3": { "instruction": "Enter on G2. S key. Sustain under the others." },
+        "4": { "instruction": "Enter on G2 or D2. Long tones only, whisper off." }
+      }
+    },
+    {
+      "id": "4",
+      "phrase": 2,
+      "label": "CRACK — first",
+      "note": "listen: they choose the spacing themselves here",
+      "parts": {
+        "1": { "instruction": "Silence. Listen for the lower parts." },
+        "2": { "instruction": "Silence. Listen for the lower parts." },
+        "3": { "instruction": "T on your own. Not together — let them scatter." },
+        "4": { "instruction": "T on your own. Not together — let them scatter." }
+      }
+    },
+    {
+      "id": "5",
+      "phrase": 2,
+      "label": "CRACK — answer",
+      "parts": {
+        "1": { "instruction": "Answer once with T, then hold still." },
+        "2": { "instruction": "Answer once with T, then hold still." }
+      }
+    },
+    {
+      "id": "6",
+      "phrase": 3,
+      "label": "burden",
+      "parts": {
+        "1": { "instruction": "W on single words, slowly. Leave gaps you could walk through." },
+        "2": { "instruction": "E on single words. Land between I's words." },
+        "3": { "instruction": "Hold. One vowel, no consonants." },
+        "4": { "instruction": "Hold. One vowel, no consonants." }
+      }
+    },
+    {
+      "id": "7",
+      "phrase": 4,
+      "label": "tension",
+      "parts": {
+        "3": { "instruction": "D key, continuous. Do not stop for breath." },
+        "4": { "instruction": "D key, continuous, half a phrase behind III." }
+      }
+    },
+    {
+      "id": "8",
+      "phrase": 5,
+      "label": "slip, slide, perish",
+      "parts": {
+        "1": { "instruction": "Mouse only. Scan by hand, as unevenly as you can." },
+        "2": { "instruction": "Mouse only. Follow I's shape, not their timing." },
+        "3": { "instruction": "Whisper on (Z). Mouse only." },
+        "4": { "instruction": "Whisper on (Z). Mouse only." }
+      }
+    },
+    {
+      "id": "9",
+      "phrase": 6,
+      "label": "decay with imprecision",
+      "note": "quarter-tones — do not let them correct the beating",
+      "parts": {
+        "1": { "instruction": "Quarter-tone above II. Hold. Do not correct the beating." },
+        "2": { "instruction": "Hold your pitch. Do not correct the beating." }
+      }
+    },
+    {
+      "id": "10",
+      "phrase": 7,
+      "label": "will not stay in place",
+      "parts": {
+        "1": { "instruction": "A key. One pass through the phrase, then stop where you are." },
+        "2": { "instruction": "A key. One pass, then stop." },
+        "3": { "instruction": "A key. One pass, then stop." },
+        "4": { "instruction": "A key. One pass, then stop." }
+      }
+    },
+    {
+      "id": "11",
+      "phrase": 8,
+      "label": "unison — hold",
+      "note": "everyone on B♭2; hold until the last one runs out",
+      "parts": {
+        "1": { "instruction": "Unison. Hold the vowel. Release only when you must breathe." },
+        "2": { "instruction": "Unison. Hold the vowel. Release only when you must breathe." },
+        "3": { "instruction": "Unison. Hold the vowel. Release only when you must breathe." },
+        "4": { "instruction": "Unison. Hold the vowel. Release only when you must breathe." }
+      }
+    },
+    {
+      "id": "12",
+      "phrase": 8,
+      "label": "end",
+      "parts": {
+        "1": { "instruction": "Close the gate. Hands off the trackpad." },
+        "2": { "instruction": "Close the gate. Hands off the trackpad." },
+        "3": { "instruction": "Close the gate. Hands off the trackpad." },
+        "4": { "instruction": "Close the gate. Hands off the trackpad." }
+      }
+    }
+  ]
+}

@@ -3,12 +3,12 @@
   "parts": [
     {
       "id": "1",
-      "name": "Part 1",
+      "name": "I",
       "tractDelta": -6,
       "phrases": [
         {
-          "notes": ["Eb3", "G3"],
-          "instruction": "PLACEHOLDER — enter first, on either pitch. A, held, letting each vowel find its own length. Do not hurry the /s/."
+          "notes": ["G3"],
+          "instruction": "Unison pitch. Enter first. Hold A to scan slowly."
         },
         {
           "notes": ["F3"],
@@ -42,12 +42,12 @@
     },
     {
       "id": "2",
-      "name": "Part 2",
+      "name": "II",
       "tractDelta": -2,
       "phrases": [
         {
-          "notes": ["Bb2", "Eb3"],
-          "instruction": "PLACEHOLDER — join Part 1 after their second word, S rate."
+          "notes": ["G3", "D3"],
+          "instruction": "Join I after their second word. Hold S key to scan slowly."
         },
         {
           "notes": ["C3"],
@@ -55,11 +55,11 @@
         },
         {
           "notes": ["A2", "D3"],
-          "instruction": "PLACEHOLDER — W on random words. Let them land between Part 1's."
+          "instruction": "PLACEHOLDER — W on random words. Let them land between I's."
         },
         {
           "notes": ["G2", "C3"],
-          "instruction": "PLACEHOLDER — S throughout, drifting behind Part 1."
+          "instruction": "PLACEHOLDER — S throughout, drifting behind I."
         },
         {
           "notes": ["G2", "B2"],
@@ -67,7 +67,7 @@
         },
         {
           "notes": [49.5, 51.5],
-          "instruction": "PLACEHOLDER — quarter-tones, beating against Part 1. Do not correct the beating."
+          "instruction": "PLACEHOLDER — quarter-tones, beating against I. Do not correct the beating."
         },
         {
           "notes": ["F2", "C3"],
@@ -81,12 +81,12 @@
     },
     {
       "id": "3",
-      "name": "Part 3",
+      "name": "III",
       "tractDelta": 2,
       "phrases": [
         {
           "notes": ["G2", "Bb2"],
-          "instruction": "PLACEHOLDER — D rate, speaking, under the upper parts."
+          "instruction": "Enter after II. Hold A key to scan slowly."
         },
         {
           "notes": ["Ab2"],
@@ -110,22 +110,22 @@
         },
         {
           "notes": ["Bb2", "Eb2"],
-          "instruction": "PLACEHOLDER — trade words with Part 4, one each."
+          "instruction": "PLACEHOLDER — trade words with IV, one each."
         },
         {
           "notes": ["Bb2"],
-          "instruction": "PLACEHOLDER — hold the final consonant closure. Release only when Part 1 does."
+          "instruction": "PLACEHOLDER — hold the final consonant closure. Release only when I does."
         }
       ]
     },
     {
       "id": "4",
-      "name": "Part 4",
+      "name": "IV",
       "tractDelta": 8,
       "phrases": [
         {
-          "notes": ["Eb2", "G2"],
-          "instruction": "PLACEHOLDER — lowest, almost subsonic. One word for the whole phrase."
+          "notes": ["G2", "D2"],
+          "instruction": "Hold A key to scan slowly."
         },
         {
           "notes": [],
@@ -137,7 +137,7 @@
         },
         {
           "notes": ["C2", "Eb2"],
-          "instruction": "PLACEHOLDER — sustain a single vowel. Move only when Part 3 moves."
+          "instruction": "PLACEHOLDER — sustain a single vowel. Move only when III moves."
         },
         {
           "notes": ["E2", "B1"],
@@ -149,7 +149,7 @@
         },
         {
           "notes": ["F2", "Bb1"],
-          "instruction": "PLACEHOLDER — trade words with Part 3, one each."
+          "instruction": "PLACEHOLDER — trade words with III, one each."
         },
         {
           "notes": ["Bb2"],

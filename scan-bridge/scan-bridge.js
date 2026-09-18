@@ -12,9 +12,10 @@
   usage:
       node scan-bridge/scan-bridge.js [--port 8080] [--udp-in 7400]
                                       [--udp-out 7401] [--out-host 127.0.0.1]
-                                      [--root <repo root>]
+                                      [--root <repo root>] [--host 0.0.0.0]
 
-  then open   http://localhost:8080/scan/
+  then open   http://localhost:8080            (a player)
+              http://localhost:8080/conduct.html  (the conductor)
 
   In Max:   [udpsend 127.0.0.1 7400]   <- messages beginning with "/" are sent
                                           as OSC automatically
@@ -25,6 +26,7 @@ const http = require("http");
 const dgram = require("dgram");
 const crypto = require("crypto");
 const fs = require("fs");
+const os = require("os");
 const path = require("path");
 
 /* ---------------------------------------------------------------- *
@@ -42,6 +44,9 @@ const UDP_IN = Number(arg("udp-in", 7400));
 const UDP_OUT = Number(arg("udp-out", 7401));
 const OUT_HOST = arg("out-host", "127.0.0.1");
 const ROOT = path.resolve(arg("root", path.join(__dirname, "..")));
+// every interface by default, so the other laptops in the room can reach it;
+// --host 127.0.0.1 keeps it to this machine
+const HOST = arg("host", "0.0.0.0");
 
 /* ---------------------------------------------------------------- *
  *  OSC (just enough of it)
@@ -191,8 +196,84 @@ const MIME = {
   ".maxpat": "application/json; charset=utf-8",
 };
 
+/* The composer's save buttons POST here, so "save" writes the real file in the
+ * repo instead of dropping a copy in ~/Downloads to be moved by hand. Only the
+ * two data files, only from this machine, and only JSON: the bridge is a
+ * development tool and should not become a way to write anything anywhere. */
+const WRITABLE = new Set(["/scan/presets.json", "/scan/parts.json", "/scan/cues.json"]);
+
+function handleWrite(request, response, url) {
+  const local =
+    request.socket.remoteAddress === "127.0.0.1" ||
+    request.socket.remoteAddress === "::1" ||
+    request.socket.remoteAddress === "::ffff:127.0.0.1";
+  if (!local) {
+    response.writeHead(403, { "content-type": "text/plain" }).end("local writes only");
+    return;
+  }
+  let body = "";
+  request.on("data", (chunk) => {
+    body += chunk;
+    if (body.length > 4e6) request.destroy();
+  });
+  request.on("end", () => {
+    try {
+      JSON.parse(body); // never write something the page cannot read back
+    } catch (e) {
+      response.writeHead(400, { "content-type": "text/plain" }).end("not JSON");
+      return;
+    }
+    const target = path.join(ROOT, url.slice(1));
+    fs.writeFile(target, body.endsWith("\n") ? body : body + "\n", (error) => {
+      if (error) {
+        response.writeHead(500, { "content-type": "text/plain" }).end(String(error.message));
+        log(`write ${url} failed: ${error.message}`);
+        return;
+      }
+      log(`wrote ${path.relative(ROOT, target)} (${body.length} bytes)`);
+      response
+        .writeHead(200, { "content-type": "application/json" })
+        .end(JSON.stringify({ ok: true, path: path.relative(ROOT, target) }));
+    });
+  });
+}
+
+/* What a player should have to type is the address and nothing else. The bare
+ * address is the player's page; only the conductor types anything after the
+ * slash. The query string is carried across, so `address:8080?part=2` still
+ * lands on part 2. */
+const SHORTCUTS = {
+  "/": "/scan/",
+  "/scan": "/scan/",
+  "/conduct": "/scan/conduct.html",
+  "/conduct.html": "/scan/conduct.html",
+};
+
 const server = http.createServer((request, response) => {
   const url = decodeURIComponent((request.url || "/").split("?")[0]);
+  if (SHORTCUTS[url]) {
+    const query = (request.url || "").slice(url.length);
+    response
+      .writeHead(302, { location: SHORTCUTS[url] + (query.startsWith("?") ? query : "") })
+      .end();
+    return;
+  }
+  // how the page knows this bridge can write the data files: an older build
+  // simply 404s here, and the page then treats its own copies as the document
+  if (url === "/bridge-info") {
+    response
+      .writeHead(200, { "content-type": "application/json", "cache-control": "no-store" })
+      .end(JSON.stringify({ ok: true, write: true, writable: [...WRITABLE] }));
+    return;
+  }
+  if (request.method === "PUT" || request.method === "POST") {
+    if (WRITABLE.has(url)) {
+      handleWrite(request, response, url);
+      return;
+    }
+    response.writeHead(404, { "content-type": "text/plain" }).end("not writable");
+    return;
+  }
   let filePath = path.join(ROOT, path.normalize(url).replace(/^(\.\.[/\\])+/, ""));
   if (!filePath.startsWith(ROOT)) {
     response.writeHead(403).end("forbidden");
@@ -207,7 +288,9 @@ const server = http.createServer((request, response) => {
       }
       response.writeHead(200, {
         "content-type": MIME[path.extname(filePath)] || "application/octet-stream",
-        "cache-control": "no-cache",
+        // no-store, not no-cache: a browser quietly re-running yesterday's
+        // scan.js is an hour of debugging every time it happens
+        "cache-control": "no-store, max-age=0",
       });
       response.end(data);
     });
@@ -256,7 +339,7 @@ server.on("upgrade", (request, socket) => {
         socket.write(encodeFrame(frame.payload, 0xa));
         continue;
       }
-      if (frame.opcode === 0x1) onPageMessage(frame.payload.toString("utf8"));
+      if (frame.opcode === 0x1) onPageMessage(frame.payload.toString("utf8"), socket);
     }
   });
   const drop = () => {
@@ -316,10 +399,10 @@ function encodeFrame(payload, opcode = 0x1) {
   return Buffer.concat([header, data]);
 }
 
-function broadcast(object) {
+function broadcast(object, except = null) {
   const frame = encodeFrame(JSON.stringify(object));
   for (const socket of clients) {
-    if (socket.writable) socket.write(frame);
+    if (socket !== except && socket.writable) socket.write(frame);
   }
 }
 
@@ -346,7 +429,13 @@ udpIn.on("message", (message) => {
   broadcast(decoded.length === 1 ? decoded[0] : decoded);
 });
 
-function onPageMessage(text) {
+/* Addresses that one page sends to the others: the conductor cueing the
+ * players, and the players saying who they are. Everything else a page sends is
+ * feedback meant for Max, and relaying it would echo one page's state onto the
+ * rest. */
+const RELAYED = /^\/(cue|player|conductor)\//;
+
+function onPageMessage(text, from) {
   let message;
   try {
     message = JSON.parse(text);
@@ -354,12 +443,16 @@ function onPageMessage(text) {
     return;
   }
   const list = Array.isArray(message) ? message : [message];
+  const relay = [];
   for (const item of list) {
     if (!item || !item.address) continue;
+    if (RELAYED.test(item.address)) relay.push(item);
     const packet = encodeOSC(item.address, item.args || []);
     udpOut.send(packet, UDP_OUT, OUT_HOST);
     if (VERBOSE) log(`out ${item.address} ${(item.args || []).join(" ")}`);
   }
+  // to every other page, never back to the sender
+  if (relay.length) broadcast(relay.length === 1 ? relay[0] : relay, from);
 }
 
 /* ---------------------------------------------------------------- *
@@ -372,10 +465,22 @@ function log(...args) {
 }
 
 udpIn.bind(UDP_IN, () => log(`OSC in   udp ${UDP_IN}`));
-server.listen(PORT, () => {
+server.listen(PORT, HOST, () => {
   log(`serving  ${ROOT}`);
   log(`OSC out  udp ${OUT_HOST}:${UDP_OUT}`);
-  log(`open     http://localhost:${PORT}/scan/`);
+  log(`players  http://localhost:${PORT}/`);
+  log(`conduct  http://localhost:${PORT}/conduct.html`);
+  if (HOST === "0.0.0.0") {
+    // the addresses the other laptops in the room should type
+    const nets = os.networkInterfaces();
+    for (const name of Object.keys(nets)) {
+      for (const net of nets[name] || []) {
+        if (net.family === "IPv4" && !net.internal) {
+          log(`on the network: http://${net.address}:${PORT}   (${name})  + /conduct.html to conduct`);
+        }
+      }
+    }
+  }
 });
 
 process.on("SIGINT", () => {
