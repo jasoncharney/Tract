@@ -10,15 +10,13 @@ import { loadPatchedPinkTrombone } from "./patched-pink-trombone.js";
 const $ = (id) => document.getElementById(id);
 const strip = $("strip");
 const cursor = $("cursor");
-const textInput = $("text");
-const ipaInput = $("ipa");
+const ipaLine = $("ipaLine");
 const altsHost = $("alts");
 const readout = $("readout");
 const controlsHost = $("controls");
 
 const cfg = Object.assign({}, DEFAULTS);
 
-// ?nopatch=1 loads the upstream worklet untouched, for A/B-ing the burst fix
 const SEARCH = new URLSearchParams(location.search);
 const NO_PATCH = SEARCH.has("nopatch");
 const PATCH_NAMES = SEARCH.has("patches") ? SEARCH.get("patches").split(",") : null;
@@ -30,10 +28,41 @@ function phonemeTable() {
   return window.phonemes || {};
 }
 
+/* ================================================================ *
+ *  the phrases
+ * ================================================================ */
+
+const PHRASES = [
+  "words strain",
+  "CRACK",
+  "and sometimes break under the burden",
+  "under the tension",
+  "slip, slide, perish",
+  "decay with imprecision",
+  "will not stay in place",
+  "will not stay still",
+];
+
+// not in the CMU dictionary; built from its own "precision" (pɹisɪˈʒʌn)
+const WORD_IPA = {
+  imprecision: "ɪmpɹisɪˈʒʌn",
+};
+
+let phraseIndex = 0;
+
+// seconds per phoneme for each scan rate; a fresh value is drawn per cell
+const RATES = {
+  slow: [4, 6],
+  mid: [1, 3],
+  fast: [0.5, 1],
+};
+const rand = (a, b) => a + Math.random() * (b - a);
+
 let ctx = null;
 let element = null;
 let voice = null;
 let master = null;
+let limiterNode = null;
 let ready = false;
 
 let cells = [];
@@ -42,11 +71,33 @@ let rects = [];
 let wordLabels = [];
 
 let targetPos = 0.5;
-let explicitGate = null; // null = follow the pointer, 0/1 = forced
+let pressed = false; // pointer is down
+let insideStrip = false;
+let explicitGate = null; // null = follow the pointer, 0/1 = forced by OSC/MIDI
 let lastGesture = "—";
 let lastGestureAt = 0;
 let note = 45.5; // ≈140 Hz, the Pink Trombone default
 let ws = null;
+
+let gain = 0.9;
+const vibrato = { rate: 6, depth: 0.005, wobble: 1 };
+let wordMode = "next"; // or "random", per phrase
+let wordSpans = [];
+let wordCursor = -1;
+let atEnd = false; // the last scan ran off the end of the phrase
+let whisperRestoreAt = 0;
+
+/** keyboard transport: A S D hold to scan, Q W E R T are one-shots */
+const transport = {
+  mode: null, // null | "scan" | "word" | "phoneme" | "perc"
+  rate: "mid",
+  last: 0,
+  cellIndex: -1,
+  cellDur: 1,
+  stopAt: 0,
+  until: 0,
+  key: null,
+};
 
 /* ================================================================ *
  *  audio
@@ -59,7 +110,10 @@ async function enableAudio() {
   }
   ctx = new AudioContext();
 
-  const { applied, missed } = await loadPatchedPinkTrombone({ patch: !NO_PATCH, names: PATCH_NAMES });
+  const { applied, missed } = await loadPatchedPinkTrombone({
+    patch: !NO_PATCH,
+    names: PATCH_NAMES,
+  });
   const patchPill = $("patchStatus");
   patchPill.textContent = `worklet: ${applied.length}/${missed.length + applied.length} patched`;
   patchPill.className = "pill " + (missed.length === 0 ? "on" : "off");
@@ -69,13 +123,21 @@ async function enableAudio() {
 
   element = document.createElement("pink-trombone");
   $("tractHost").appendChild(element);
-  element.style.display = "none";
   await element.setAudioContext(ctx);
 
   master = ctx.createGain();
   master.gain.value = 0.9;
+  // a safety limiter: burst transients are impulsive and were peaking near 0 dBFS
+  const limiter = ctx.createDynamicsCompressor();
+  limiter.threshold.value = -3;
+  limiter.knee.value = 0;
+  limiter.ratio.value = 20;
+  limiter.attack.value = 0.002;
+  limiter.release.value = 0.15;
   element.connect(master);
-  master.connect(ctx.destination);
+  master.connect(limiter);
+  limiter.connect(ctx.destination);
+  limiterNode = limiter;
   element.pinkTrombone.start();
 
   const front = element.newConstriction(41, OPEN);
@@ -109,6 +171,9 @@ async function enableAudio() {
   voice.gate = 0;
   voice.params.intensity.value = 0;
 
+  applyVibrato();
+  master.gain.value = gain;
+
   ready = true;
   $("startAudio").textContent = "audio running";
   $("startAudio").classList.remove("primary");
@@ -118,7 +183,7 @@ async function enableAudio() {
 }
 
 /* ================================================================ *
- *  text / IPA
+ *  phrase -> words -> IPA -> cells
  * ================================================================ */
 
 let words = [];
@@ -131,36 +196,68 @@ function dictReady() {
   );
 }
 
-function setText(value, { rebuild = true } = {}) {
-  if (textInput.value !== value) textInput.value = value;
-  words = value
-    .toLowerCase()
+function lookup(word) {
+  if (WORD_IPA[word]) return [WORD_IPA[word]];
+  if (!dictReady()) return [];
+  return (TextToIPA._IPADict[word] || []).slice();
+}
+
+function setPhrase(index, { announce = true } = {}) {
+  const count = PHRASES.length;
+  phraseIndex = ((index % count) + count) % count;
+  const phrase = PHRASES[phraseIndex];
+
+  words = phrase
     .split(/\s+/)
     .filter(Boolean)
-    .map((word) => {
-      const alts = dictReady() ? (TextToIPA._IPADict[word] || []).slice() : [];
-      return { word, alts, choice: 0 };
+    .map((token) => {
+      const clean = token.toLowerCase().replace(/[^a-z']/g, "");
+      return {
+        token,
+        word: clean,
+        alts: lookup(clean),
+        choice: 0,
+        // a comma is a longer breath: it earns an extra gap cell
+        pause: /[,;:.]$/.test(token),
+      };
     });
+
+  $("phraseNum").textContent = `${phraseIndex + 1}/${count}`;
+  $("phraseText").textContent = phrase;
+  paintDots();
   renderAlts();
-  if (rebuild) rebuildFromWords();
+  rebuildFromWords();
+  applyPreset(phraseIndex);
+  wordCursor = -1;
+  atEnd = false;
+  targetPos = 0;
+  if (announce) sendOut("/scan/out/phrase", [phraseIndex + 1, phrase]);
 }
 
 function rebuildFromWords() {
-  const used = words.filter((w) => w.alts.length > 0);
-  wordLabels = used.map((w) => w.word);
-  const ipa = used.map((w) => w.alts[w.choice]).join(" ");
-  ipaInput.value = ipa;
+  const parts = [];
+  wordLabels = [];
+  words.forEach((w) => {
+    if (w.alts.length === 0) return;
+    parts.push(w.alts[w.choice]);
+    wordLabels.push(w.token);
+    if (w.pause) {
+      parts.push(""); // an empty part between two spaces = a second gap cell
+      wordLabels.push("");
+    }
+  });
+  const ipa = parts.join(" ");
+  ipaLine.textContent = ipa;
   setTrack(ipa);
 }
 
 function renderAlts() {
   altsHost.innerHTML = "";
-  words.forEach((w, i) => {
+  words.forEach((w) => {
     if (w.alts.length <= 1) return;
     const select = document.createElement("select");
     w.alts.forEach((alt, index) => {
-      const option = new Option(`${w.word}: ${alt}`, String(index));
-      select.appendChild(option);
+      select.appendChild(new Option(`${w.word}: ${alt}`, String(index)));
     });
     select.value = String(w.choice);
     select.addEventListener("input", () => {
@@ -171,27 +268,67 @@ function renderAlts() {
   });
 }
 
+function paintDots() {
+  const host = $("phraseDots");
+  host.innerHTML = "";
+  PHRASES.forEach((phrase, i) => {
+    const dot = document.createElement("button");
+    dot.className = "dot" + (i === phraseIndex ? " on" : "");
+    dot.title = phrase;
+    dot.setAttribute("aria-label", phrase);
+    dot.addEventListener("click", () => setPhrase(i));
+    host.appendChild(dot);
+  });
+}
+
 function setTrack(ipa) {
   cells = buildTrack(ipa, phonemeTable(), cfg);
+  computeWordSpans();
   renderStrip();
   if (voice) voice.setTrack(cells);
   targetPos = Math.min(targetPos, Math.max(0.001, cells.length - 0.001));
+}
+
+/** the runs of non-silent cells, so a key can play exactly one word */
+function computeWordSpans() {
+  wordSpans = [];
+  let start = null;
+  cells.forEach((cell, i) => {
+    if (cell.cls === "silence") {
+      if (start !== null) {
+        wordSpans.push({ start, end: i });
+        start = null;
+      }
+    } else if (start === null) {
+      start = i;
+    }
+  });
+  if (start !== null) wordSpans.push({ start, end: cells.length });
+  wordCursor = -1;
 }
 
 /* ================================================================ *
  *  the strip
  * ================================================================ */
 
-const CLASS_TAG = {
-  vowel: "vowel",
-  stop: "stop",
-  affricate: "affr",
-  fricative: "fric",
-  aspirate: "asp",
-  nasal: "nasal",
-  approximant: "appr",
-  silence: "",
-};
+function cellTag(cell) {
+  switch (cell.cls) {
+    case "stop":
+      return cell.passThrough ? "stop" : "hold";
+    case "affricate":
+      return "affr";
+    case "fricative":
+      return "fric";
+    case "aspirate":
+      return "asp";
+    case "approximant":
+      return "appr";
+    case "silence":
+      return "";
+    default:
+      return cell.cls;
+  }
+}
 
 function renderStrip() {
   strip.innerHTML = "";
@@ -210,7 +347,7 @@ function renderStrip() {
     groupWeight = 0;
   };
 
-  cells.forEach((cell, i) => {
+  cells.forEach((cell) => {
     const standalone = cell.cls === "silence";
     if (!group || standalone || cell.wordIndex !== groupWord || groupWord === -1) {
       closeGroup();
@@ -230,11 +367,16 @@ function renderStrip() {
     const el = document.createElement("div");
     el.className = "cell";
     el.dataset.cls = cell.cls;
+    if (cell.passThrough) el.dataset.pass = "1";
+    if (cell.closes && cell.cls === "stop") el.dataset.hold = "1";
     el.style.flex = String(cell.width);
-    el.title = `${cell.ipa} — ${cell.cls}${cell.example ? ` (as in "${cell.example}")` : ""}`;
+    el.title =
+      `${cell.ipa} — ${cell.cls}` +
+      (cell.passThrough ? " (passes through)" : cell.closes ? " (holds)" : "") +
+      (cell.example ? ` · as in "${cell.example}"` : "");
     el.innerHTML =
       `<div class="bar"></div><span class="ipa">${cell.ipa}</span>` +
-      `<span class="tag">${CLASS_TAG[cell.cls] || ""}</span>`;
+      `<span class="tag">${cellTag(cell)}</span>`;
     groupCells.appendChild(el);
     cellEls.push(el);
     groupWeight += cell.width;
@@ -269,22 +411,61 @@ function xFromPos(pos) {
   return r.left + (pos - i) * r.width;
 }
 
-strip.addEventListener("pointermove", (event) => {
-  targetPos = posFromX(event.clientX);
-  if (explicitGate === null && voice && ready) openGate(true);
-});
-strip.addEventListener("pointerenter", (event) => {
+function withinStrip(event) {
+  const r = strip.getBoundingClientRect();
+  return (
+    event.clientX >= r.left &&
+    event.clientX <= r.right &&
+    event.clientY >= r.top &&
+    event.clientY <= r.bottom
+  );
+}
+
+/* the gate follows the mouse button: sound only while held down on the strip */
+
+strip.addEventListener("pointerdown", async (event) => {
+  event.preventDefault();
+  strip.setPointerCapture(event.pointerId);
+  pressed = true;
+  insideStrip = true;
+  strip.classList.add("live");
   measure();
   targetPos = posFromX(event.clientX);
+  if (!ctx) await enableAudio();
   if (explicitGate === null) openGate(true);
 });
-strip.addEventListener("pointerleave", () => {
+
+strip.addEventListener("pointermove", (event) => {
+  const inside = withinStrip(event);
+  targetPos = posFromX(event.clientX);
+  if (pressed && inside !== insideStrip) {
+    insideStrip = inside;
+    if (explicitGate === null) openGate(inside);
+    strip.classList.toggle("live", inside);
+  } else {
+    insideStrip = inside;
+  }
+});
+
+const liftPointer = (event) => {
+  if (!pressed) return;
+  pressed = false;
+  strip.classList.remove("live");
+  if (event && event.pointerId !== undefined) {
+    try {
+      strip.releasePointerCapture(event.pointerId);
+    } catch (e) {}
+  }
   if (explicitGate === null) openGate(false);
+};
+strip.addEventListener("pointerup", liftPointer);
+strip.addEventListener("pointercancel", liftPointer);
+window.addEventListener("pointerup", liftPointer);
+strip.addEventListener("pointerleave", () => {
+  insideStrip = false;
+  if (pressed && explicitGate === null) openGate(false);
 });
-strip.addEventListener("pointerdown", (event) => {
-  strip.setPointerCapture(event.pointerId);
-  if (!ctx) enableAudio();
-});
+strip.addEventListener("contextmenu", (e) => e.preventDefault());
 
 function openGate(on) {
   if (!ready) return;
@@ -303,14 +484,19 @@ function frame() {
   requestAnimationFrame(frame);
   if (!ready) return;
 
-  voice.update(targetPos, ctx.currentTime);
+  const now = ctx.currentTime;
+  tickTransport(now);
+  if (whisperRestoreAt && now >= whisperRestoreAt) {
+    whisperRestoreAt = 0;
+    voice.setWhisper(presetWhisper, now);
+    syncControl("whisper", presetWhisper);
+  }
+  voice.update(targetPos, now);
 
-  // cursor
   const stripRect = strip.getBoundingClientRect();
-  cursor.style.opacity = voice.gate > 0 ? "1" : "0.25";
+  cursor.style.opacity = voice.gate > 0 ? "1" : "0.28";
   cursor.style.left = `${xFromPos(targetPos) - stripRect.left}px`;
 
-  // active / closed cell
   const i = voice.cellAt(targetPos);
   const closed = voice.closed && !voice.released;
   if (i !== paintedCell || closed !== paintedClosed) {
@@ -333,9 +519,16 @@ let lastReadout = "";
 function paintReadout(i) {
   const cell = cells[i];
   const fresh = performance.now() - lastGestureAt < 400;
+  const kind = !cell
+    ? "—"
+    : cell.cls === "stop"
+      ? cell.passThrough
+        ? "stop · passes through"
+        : "stop · holds"
+      : cell.cls;
   const text =
     `pos <b>${targetPos.toFixed(2)}</b>` +
-    ` · cell <b>${cell ? cell.ipa : "—"}</b> (${cell ? cell.cls : "—"})` +
+    ` · cell <b>${cell ? cell.ipa : "—"}</b> (${kind})` +
     ` · gesture <b style="color:${fresh ? "#ff7ab6" : "inherit"}">${lastGesture}</b>` +
     ` · note <b>${note.toFixed(2)}</b> = <b>${voice.frequency().toFixed(1)} Hz</b>` +
     ` · gate <b>${voice.gate > 0 ? "on" : "off"}</b>`;
@@ -361,15 +554,15 @@ export function applyRemote(address, args = []) {
   switch (address) {
     case "/scan/position":
       targetPos = Math.max(0, Math.min(cells.length - 0.001, num(a0)));
-      if (explicitGate === null) openGate(true);
+      if (explicitGate === null && !pressed) openGate(true);
       break;
     case "/scan/norm":
       targetPos = Math.max(0, Math.min(cells.length - 0.001, num(a0) * cells.length));
-      if (explicitGate === null) openGate(true);
+      if (explicitGate === null && !pressed) openGate(true);
       break;
     case "/scan/index":
       targetPos = Math.max(0, Math.min(cells.length - 0.001, Math.floor(num(a0)) + 0.5));
-      if (explicitGate === null) openGate(true);
+      if (explicitGate === null && !pressed) openGate(true);
       break;
     case "/scan/gate": {
       const on = num(a0) > 0.5;
@@ -380,10 +573,20 @@ export function applyRemote(address, args = []) {
     case "/scan/auto":
       explicitGate = null;
       break;
+    case "/scan/phrase":
+      setPhrase(Math.round(num(a0, 1)) - 1);
+      break;
+    case "/scan/next":
+      setPhrase(phraseIndex + 1);
+      break;
+    case "/scan/prev":
+      setPhrase(phraseIndex - 1);
+      break;
     case "/scan/note":
       note = num(a0, note);
       if (ready) voice.setNote(note, now);
       syncControl("note", note);
+      paintPiano();
       break;
     case "/scan/bend":
       if (ready) voice.setBend(num(a0), now);
@@ -392,13 +595,29 @@ export function applyRemote(address, args = []) {
       cfg.glide = num(a0, cfg.glide);
       syncControl("glide", cfg.glide);
       break;
-    case "/scan/text":
-      setText(String(a0 ?? ""));
+    case "/scan/text": {
+      // still accepted from Max, for anything outside the phrase list
+      const text = String(a0 ?? "");
+      words = text
+        .split(/\s+/)
+        .filter(Boolean)
+        .map((token) => {
+          const clean = token.toLowerCase().replace(/[^a-z']/g, "");
+          return { token, word: clean, alts: lookup(clean), choice: 0, pause: /[,;:.]$/.test(token) };
+        });
+      $("phraseText").textContent = text;
+      $("phraseNum").textContent = "—";
+      renderAlts();
+      rebuildFromWords();
       break;
+    }
     case "/scan/phonemes":
-      ipaInput.value = String(a0 ?? "");
       wordLabels = [];
-      setTrack(ipaInput.value);
+      $("phraseText").textContent = String(a0 ?? "");
+      $("phraseNum").textContent = "—";
+      ipaLine.textContent = String(a0 ?? "");
+      altsHost.innerHTML = "";
+      setTrack(String(a0 ?? ""));
       break;
     case "/scan/param":
       if (typeof a0 === "string" && a0 in cfg) {
@@ -407,14 +626,19 @@ export function applyRemote(address, args = []) {
       }
       break;
     case "/scan/speed": {
-      // scale every gesture time at once: 1 = as written, 2 = twice as fast
       const k = Math.max(0.1, num(a0, 1));
-      ["closeTime", "burstTime", "votVoiceless", "votVoiced", "transition", "affricateClosure"].forEach(
-        (key) => {
-          cfg[key] = DEFAULTS[key] / k;
-          syncControl(key, cfg[key]);
-        }
-      );
+      [
+        "closeTime",
+        "passClose",
+        "burstTime",
+        "votVoiceless",
+        "votVoiced",
+        "transition",
+        "affricateClosure",
+      ].forEach((key) => {
+        cfg[key] = DEFAULTS[key] / k;
+        syncControl(key, cfg[key]);
+      });
       break;
     }
     case "/scan/tract":
@@ -426,17 +650,24 @@ export function applyRemote(address, args = []) {
       syncControl("whisper", num(a0) > 0.5);
       break;
     case "/scan/gain":
-      if (master) master.gain.setTargetAtTime(num(a0, 0.9), now, 0.02);
-      syncControl("gain", num(a0, 0.9));
+      gain = num(a0, gain);
+      if (master) master.gain.setTargetAtTime(gain, now, 0.02);
+      syncControl("gain", gain);
       break;
     case "/scan/vibrato/rate":
-      if (ready) element.vibrato.frequency.setTargetAtTime(num(a0, 6), now, 0.02);
+      vibrato.rate = num(a0, vibrato.rate);
+      applyVibrato();
+      syncControl("vibratoRate", vibrato.rate);
       break;
     case "/scan/vibrato/depth":
-      if (ready) element.vibrato.gain.setTargetAtTime(num(a0, 0.005), now, 0.02);
+      vibrato.depth = num(a0, vibrato.depth);
+      applyVibrato();
+      syncControl("vibratoDepth", vibrato.depth);
       break;
     case "/scan/vibrato/wobble":
-      if (ready) element.vibrato.wobble.setTargetAtTime(num(a0, 1), now, 0.02);
+      vibrato.wobble = num(a0, vibrato.wobble);
+      applyVibrato();
+      syncControl("wobble", vibrato.wobble);
       break;
     default:
       break;
@@ -525,6 +756,9 @@ function connectMax() {
   bind("norm", "/scan/norm");
   bind("index", "/scan/index");
   bind("gate", "/scan/gate");
+  bind("phrase", "/scan/phrase");
+  bind("next", "/scan/next");
+  bind("prev", "/scan/prev");
   bind("note", "/scan/note");
   bind("bend", "/scan/bend");
   bind("text", "/scan/text");
@@ -569,6 +803,7 @@ async function connectMIDI() {
 
 const CONTROLS = [
   { key: "closeTime", label: "closure time", min: 0.005, max: 0.15, step: 0.005, unit: "s" },
+  { key: "passClose", label: "pass-through closure", min: 0.005, max: 0.1, step: 0.002, unit: "s" },
   { key: "burstTime", label: "burst", min: 0.002, max: 0.05, step: 0.001, unit: "s" },
   { key: "burstLevel", label: "burst strength", min: 0, max: 1, step: 0.01, unit: "" },
   { key: "votVoiceless", label: "VOT  p t k", min: 0, max: 0.15, step: 0.005, unit: "s" },
@@ -581,8 +816,11 @@ const CONTROLS = [
   { key: "note", label: "pitch (MIDI note)", min: 24, max: 84, step: 0.01, unit: "", special: true },
   { key: "tractLength", label: "tract length", min: 15, max: 88, step: 1, unit: "", special: true },
   { key: "gain", label: "output", min: 0, max: 1.5, step: 0.01, unit: "", special: true },
+  { key: "vibratoRate", label: "vibrato rate", min: 0.1, max: 12, step: 0.1, unit: "", special: true },
+  { key: "vibratoDepth", label: "vibrato depth", min: 0, max: 0.04, step: 0.001, unit: "", special: true },
+  { key: "wobble", label: "wobble (pitch drift)", min: 0, max: 1, step: 0.01, unit: "", special: true },
   { key: "whisper", label: "whisper", toggle: true, special: true },
-  { key: "autoReleaseStops", label: "stops release themselves", toggle: true },
+  { key: "autoReleaseStops", label: "held stops release themselves", toggle: true },
 ];
 
 const controlEls = {};
@@ -630,14 +868,21 @@ function buildControls() {
 
 function specialValue(key) {
   if (key === "note") return note;
-  if (key === "tractLength") return 44;
-  if (key === "gain") return 0.9;
+  if (key === "tractLength") return voice ? voice.tractLength : 44;
+  if (key === "gain") return gain;
+  if (key === "vibratoRate") return vibrato.rate;
+  if (key === "vibratoDepth") return vibrato.depth;
+  if (key === "wobble") return vibrato.wobble;
   return 0;
 }
 
 function formatValue(value, spec) {
   const n = Number(value);
-  return spec.unit === "s" ? `${(n * 1000).toFixed(0)} ms` : n.toFixed(2);
+  if (spec.unit === "s") return `${(n * 1000).toFixed(0)} ms`;
+  if (spec.key === "vibratoRate") return `${n.toFixed(1)} Hz`;
+  if (spec.key === "vibratoDepth") return n === 0 ? "off" : `${(n * 1731).toFixed(0)}¢`;
+  if (spec.key === "note") return `${n.toFixed(2)}  ${noteName(n)}`;
+  return n.toFixed(2);
 }
 
 function onControl(spec, value) {
@@ -656,7 +901,20 @@ function onControl(spec, value) {
       applyRemote("/scan/gain", [value]);
       break;
     case "whisper":
+      presetWhisper = !!value;
       applyRemote("/scan/whisper", [value ? 1 : 0]);
+      break;
+    case "vibratoRate":
+      vibrato.rate = value;
+      applyVibrato();
+      break;
+    case "vibratoDepth":
+      vibrato.depth = value;
+      applyVibrato();
+      break;
+    case "wobble":
+      vibrato.wobble = value;
+      applyVibrato();
       break;
   }
 }
@@ -675,8 +933,7 @@ function syncControl(key, value) {
 }
 
 /* ================================================================ *
- *  recording — taps the master output and writes a .wav.
- *  Handy for keeping a take, and it is also what the test harness uses.
+ *  recording — taps the master output and writes a .wav
  * ================================================================ */
 
 let recorder = null;
@@ -689,7 +946,7 @@ function startRecording() {
     chunks.push(new Float32Array(event.inputBuffer.getChannelData(0)));
     event.outputBuffer.getChannelData(0).fill(0);
   };
-  master.connect(node);
+  limiterNode.connect(node);
   node.connect(ctx.destination);
   recorder = { node, chunks, sampleRate: ctx.sampleRate };
   $("record").textContent = "stop recording";
@@ -701,7 +958,7 @@ function collectRecording() {
   if (!recorder) return null;
   const { chunks, sampleRate, node } = recorder;
   try {
-    master.disconnect(node);
+    limiterNode.disconnect(node);
   } catch (e) {}
   node.disconnect();
   node.onaudioprocess = null;
@@ -757,6 +1014,386 @@ function stopRecordingAndDownload() {
 }
 
 /* ================================================================ *
+ *  keyboard transport
+ *
+ *  A S D are held: the position advances by itself at slow / mid / fast,
+ *  a fresh duration drawn per phoneme, and the gate closes when you let go —
+ *  keeping the position, so the next press carries on from there.
+ *  Q W E R T are one-shots.
+ * ================================================================ */
+
+function startScan(rateName, key) {
+  if (!ready || pressed) return;
+  if (atEnd || targetPos >= cells.length - 0.01) {
+    targetPos = 0;
+    atEnd = false;
+  }
+  transport.mode = "scan";
+  transport.rate = rateName;
+  transport.key = key;
+  transport.last = ctx.currentTime;
+  transport.cellIndex = -1;
+  explicitGate = null;
+  openGate(true);
+  paintTransport();
+}
+
+function stopScan(key) {
+  if (transport.mode !== "scan") return;
+  if (key && transport.key && key !== transport.key) return;
+  transport.mode = null;
+  transport.key = null;
+  openGate(false);
+  paintTransport();
+}
+
+/** which word a W/E/R press should play: the next one, or a random one */
+function pickWord() {
+  if (wordSpans.length === 0) return null;
+  if (wordMode === "random") {
+    let i = Math.floor(Math.random() * wordSpans.length);
+    if (wordSpans.length > 1 && i === wordCursor) i = (i + 1) % wordSpans.length;
+    wordCursor = i;
+  } else {
+    wordCursor = (wordCursor + 1) % wordSpans.length;
+  }
+  return wordSpans[wordCursor];
+}
+
+function startWord(rateName) {
+  if (!ready || pressed) return;
+  const span = pickWord();
+  if (!span) return;
+  transport.mode = "word";
+  transport.rate = rateName;
+  transport.last = ctx.currentTime;
+  transport.cellIndex = -1;
+  transport.stopAt = span.end;
+  targetPos = span.start + 0.02;
+  explicitGate = null;
+  openGate(true);
+  paintTransport();
+}
+
+function startRandomPhoneme() {
+  if (!ready || pressed) return;
+  const candidates = cells
+    .map((c, i) => ({ c, i }))
+    .filter(({ c }) => c.cls !== "silence");
+  if (candidates.length === 0) return;
+  const { i } = candidates[Math.floor(Math.random() * candidates.length)];
+  targetPos = i + 0.5;
+  transport.mode = "phoneme";
+  transport.until = ctx.currentTime + rand(0.35, 0.9);
+  explicitGate = null;
+  openGate(true);
+  paintTransport();
+}
+
+/** a percussive, unvoiced hit on a random stop or fricative of the phrase */
+function startPercussion() {
+  if (!ready || pressed) return;
+  const candidates = cells
+    .map((c, i) => ({ c, i }))
+    .filter(({ c }) => c.cls === "stop" || c.cls === "affricate" || c.cls === "fricative");
+  if (candidates.length === 0) return;
+  const { c, i } = candidates[Math.floor(Math.random() * candidates.length)];
+  const now = ctx.currentTime;
+  targetPos = i + 0.5;
+  voice.setWhisper(true, now);
+  whisperRestoreAt = 0;
+  transport.mode = "perc";
+  transport.until = now + (c.cls === "fricative" ? rand(0.09, 0.2) : 0.07);
+  explicitGate = null;
+  openGate(true);
+  paintTransport();
+}
+
+function tickTransport(now) {
+  if (!transport.mode) return;
+
+  if (transport.mode === "phoneme" || transport.mode === "perc") {
+    if (now < transport.until) return;
+    const wasPerc = transport.mode === "perc";
+    transport.mode = null;
+    openGate(false);
+    // let the release stay unvoiced, then hand whisper back to the preset
+    if (wasPerc) whisperRestoreAt = now + 0.3;
+    paintTransport();
+    return;
+  }
+
+  const dt = Math.max(0, Math.min(0.25, now - transport.last));
+  transport.last = now;
+
+  const i = Math.max(0, Math.min(cells.length - 1, Math.floor(targetPos)));
+  if (i !== transport.cellIndex) {
+    transport.cellIndex = i;
+    const [lo, hi] = RATES[transport.rate] || RATES.mid;
+    const width = cells[i] ? cells[i].width : 1;
+    transport.cellDur = Math.max(0.05, rand(lo, hi) * width);
+  }
+  targetPos += dt / transport.cellDur;
+
+  const limit = transport.mode === "word" ? transport.stopAt : cells.length;
+  if (targetPos >= limit) {
+    targetPos = Math.max(0, Math.min(limit, cells.length) - 0.001);
+    if (transport.mode === "scan") atEnd = true;
+    transport.mode = null;
+    transport.key = null;
+    openGate(false);
+    paintTransport();
+  }
+}
+
+function paintTransport() {
+  const el = $("transportState");
+  if (!el) return;
+  const label = transport.mode
+    ? transport.mode === "scan" || transport.mode === "word"
+      ? `${transport.mode} · ${transport.rate}`
+      : transport.mode
+    : "—";
+  el.textContent = label;
+  el.classList.toggle("on", !!transport.mode);
+}
+
+/* ================================================================ *
+ *  vibrato
+ * ================================================================ */
+
+function applyVibrato() {
+  if (!ready && !element) return;
+  if (!element || !element.vibrato) return;
+  const now = ctx.currentTime;
+  element.vibrato.frequency.setTargetAtTime(vibrato.rate, now, 0.02);
+  element.vibrato.gain.setTargetAtTime(vibrato.depth, now, 0.02);
+  element.vibrato.wobble.setTargetAtTime(vibrato.wobble, now, 0.02);
+}
+
+/* ================================================================ *
+ *  the little piano
+ * ================================================================ */
+
+const NOTE_NAMES = ["C", "C♯", "D", "E♭", "E", "F", "F♯", "G", "A♭", "A", "B♭", "B"];
+const PIANO_LOW = 36; // C2
+const PIANO_HIGH = 84; // C6
+const BLACK = [1, 3, 6, 8, 10];
+
+function noteName(midi) {
+  const n = Math.round(midi);
+  return `${NOTE_NAMES[((n % 12) + 12) % 12]}${Math.floor(n / 12) - 1}`;
+}
+
+function buildPiano() {
+  const host = $("piano");
+  if (!host) return;
+  host.innerHTML = "";
+  const whites = [];
+  for (let m = PIANO_LOW; m <= PIANO_HIGH; m++) {
+    if (!BLACK.includes(((m % 12) + 12) % 12)) whites.push(m);
+  }
+  const whiteWidth = 100 / whites.length;
+
+  whites.forEach((m, index) => {
+    const key = document.createElement("button");
+    key.className = "pkey white";
+    key.dataset.note = String(m);
+    key.style.left = `${index * whiteWidth}%`;
+    key.style.width = `${whiteWidth}%`;
+    key.title = noteName(m);
+    if (m % 12 === 0) {
+      const tag = document.createElement("span");
+      tag.textContent = noteName(m);
+      key.appendChild(tag);
+    }
+    key.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      applyRemote("/scan/note", [m]);
+    });
+    host.appendChild(key);
+  });
+
+  for (let m = PIANO_LOW; m <= PIANO_HIGH; m++) {
+    if (!BLACK.includes(((m % 12) + 12) % 12)) continue;
+    const below = whites.filter((w) => w < m).length; // white keys to its left
+    const key = document.createElement("button");
+    key.className = "pkey black";
+    key.dataset.note = String(m);
+    key.style.left = `${below * whiteWidth - whiteWidth * 0.3}%`;
+    key.style.width = `${whiteWidth * 0.6}%`;
+    key.title = noteName(m);
+    key.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      applyRemote("/scan/note", [m]);
+    });
+    host.appendChild(key);
+  }
+  paintPiano();
+}
+
+function paintPiano() {
+  const host = $("piano");
+  if (!host) return;
+  const nearest = Math.round(note);
+  host.querySelectorAll(".pkey").forEach((key) => {
+    key.classList.toggle("on", Number(key.dataset.note) === nearest);
+  });
+  const label = $("pianoNote");
+  if (label) label.textContent = `${noteName(note)} · ${note.toFixed(2)} · ${(440 * Math.pow(2, (note - 69) / 12)).toFixed(1)} Hz`;
+}
+
+/* ================================================================ *
+ *  presets, per phrase — for the composer, not the players
+ * ================================================================ */
+
+const PRESET_STORE = "tract.presets.v1";
+let presets = {}; // phraseIndex -> preset
+let presetWhisper = false;
+let composerMode = false;
+
+function capturePreset() {
+  const out = { cfg: {}, note, gain, wordMode, whisper: presetWhisper, vibrato: Object.assign({}, vibrato) };
+  Object.keys(DEFAULTS).forEach((k) => (out.cfg[k] = cfg[k]));
+  out.tractLength = voice ? voice.tractLength : 44;
+  return out;
+}
+
+function applyPreset(index) {
+  const preset = presets[index];
+  wordMode = (preset && preset.wordMode) || "next";
+  const sel = $("wordModeSel");
+  if (sel) sel.value = wordMode;
+  if (!preset) return;
+
+  Object.keys(DEFAULTS).forEach((k) => {
+    if (preset.cfg && k in preset.cfg) {
+      cfg[k] = preset.cfg[k];
+      syncControl(k, cfg[k]);
+    }
+  });
+  if (typeof preset.note === "number") {
+    note = preset.note;
+    syncControl("note", note);
+    paintPiano();
+    if (ready) voice.setNote(note, ctx.currentTime, 0);
+  }
+  if (typeof preset.gain === "number") {
+    gain = preset.gain;
+    syncControl("gain", gain);
+    if (master) master.gain.value = gain;
+  }
+  if (preset.vibrato) {
+    Object.assign(vibrato, preset.vibrato);
+    syncControl("vibratoRate", vibrato.rate);
+    syncControl("vibratoDepth", vibrato.depth);
+    syncControl("wobble", vibrato.wobble);
+    applyVibrato();
+  }
+  if (typeof preset.tractLength === "number") {
+    syncControl("tractLength", preset.tractLength);
+    if (ready) voice.setTractLength(preset.tractLength, ctx.currentTime);
+  }
+  presetWhisper = !!preset.whisper;
+  syncControl("whisper", presetWhisper);
+  if (ready) voice.setWhisper(presetWhisper, ctx.currentTime);
+}
+
+async function loadPresets() {
+  // a presets.json committed beside the page is the shipped set...
+  try {
+    const response = await fetch("/scan/presets.json", { cache: "no-cache" });
+    if (response.ok) presets = await response.json();
+  } catch (e) {
+    /* none bundled */
+  }
+  // ...and anything saved in this browser wins over it, for tuning in place
+  try {
+    const local = localStorage.getItem(PRESET_STORE);
+    if (local) Object.assign(presets, JSON.parse(local));
+  } catch (e) {}
+  applyPreset(phraseIndex);
+}
+
+function persistPresets() {
+  try {
+    localStorage.setItem(PRESET_STORE, JSON.stringify(presets));
+  } catch (e) {}
+}
+
+function setupComposer() {
+  if (SEARCH.get("composer") === "0") localStorage.removeItem("tract.composer");
+  else if (SEARCH.has("composer")) {
+    try {
+      localStorage.setItem("tract.composer", "1");
+    } catch (e) {}
+  }
+  try {
+    composerMode = localStorage.getItem("tract.composer") === "1";
+  } catch (e) {
+    composerMode = SEARCH.has("composer") && SEARCH.get("composer") !== "0";
+  }
+  const row = $("presetRow");
+  if (!row) return;
+  row.hidden = !composerMode;
+  if (!composerMode) return;
+
+  $("presetSave").addEventListener("click", () => {
+    presets[phraseIndex] = capturePreset();
+    persistPresets();
+    flashPreset(`saved to phrase ${phraseIndex + 1}`);
+  });
+  $("presetRevert").addEventListener("click", () => {
+    applyPreset(phraseIndex);
+    flashPreset("reverted");
+  });
+  $("presetClear").addEventListener("click", () => {
+    delete presets[phraseIndex];
+    persistPresets();
+    Object.keys(DEFAULTS).forEach((k) => {
+      cfg[k] = DEFAULTS[k];
+      syncControl(k, cfg[k]);
+    });
+    flashPreset(`phrase ${phraseIndex + 1} cleared`);
+  });
+  $("wordModeSel").addEventListener("input", (event) => {
+    wordMode = event.target.value;
+  });
+  $("presetExport").addEventListener("click", () => {
+    const blob = new Blob([JSON.stringify(presets, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "presets.json";
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    flashPreset("exported — commit it as scan/presets.json");
+  });
+  $("presetImport").addEventListener("change", async (event) => {
+    const file = event.target.files && event.target.files[0];
+    if (!file) return;
+    try {
+      presets = JSON.parse(await file.text());
+      persistPresets();
+      applyPreset(phraseIndex);
+      flashPreset("imported");
+    } catch (e) {
+      flashPreset("could not read that file");
+    }
+    event.target.value = "";
+  });
+}
+
+let flashTimer = null;
+function flashPreset(message) {
+  const el = $("presetStatus");
+  if (!el) return;
+  el.textContent = message;
+  clearTimeout(flashTimer);
+  flashTimer = setTimeout(() => (el.textContent = ""), 2500);
+}
+
+/* ================================================================ *
  *  boot
  * ================================================================ */
 
@@ -766,8 +1403,12 @@ window.scan = {
   startRecording,
   collectRecording,
   stopRecordingAndDownload,
+  connectMIDI,
   get cells() {
     return cells;
+  },
+  get phrase() {
+    return phraseIndex + 1;
   },
   get position() {
     return targetPos;
@@ -775,11 +1416,30 @@ window.scan = {
   set position(p) {
     applyRemote("/scan/position", [p]);
   },
+  get pressed() {
+    return pressed;
+  },
   isReady: () => ready,
   enableAudio,
+  get transport() {
+    return transport;
+  },
+  get wordSpans() {
+    return wordSpans;
+  },
+  get vibrato() {
+    return vibrato;
+  },
+  get presets() {
+    return presets;
+  },
+  capturePreset,
+  applyPreset,
 };
 
 buildControls();
+buildPiano();
+setupComposer();
 connectWS();
 connectBroadcast();
 connectMax();
@@ -789,42 +1449,96 @@ $("record").addEventListener("click", () => {
   if (recorder) stopRecordingAndDownload();
   else if (!startRecording()) enableAudio();
 });
+$("prevPhrase").addEventListener("click", () => setPhrase(phraseIndex - 1));
+$("nextPhrase").addEventListener("click", () => setPhrase(phraseIndex + 1));
+
 $("toggleTract").addEventListener("click", () => {
   if (!element) return;
-  const hidden = element.style.display === "none";
-  if (hidden) {
-    element.style.display = "";
+  const host = $("tractHost");
+  const showing = host.classList.toggle("on");
+  if (showing) {
     element.enableUI();
     element.startUI();
+    // the upstream UI lays out a 600x500 canvas plus glottis and button panels
+    // inside a grid that does not reserve room for it, so it spills out of the
+    // page. Keep the tract, drop the panels, and let the host clip.
+    const ui = element.UI;
+    if (ui && ui._container) {
+      ui._container.style.gridTemplateRows = "auto";
+      ui._container.style.gridTemplateColumns = "auto";
+      if (ui._buttonsUI && ui._buttonsUI._container)
+        ui._buttonsUI._container.style.display = "none";
+      if (ui._glottisUI && ui._glottisUI._container)
+        ui._glottisUI._container.style.display = "none";
+    }
     $("toggleTract").textContent = "hide tract";
   } else {
-    element.style.display = "none";
     element.stopUI();
     $("toggleTract").textContent = "show tract";
   }
 });
 
-textInput.addEventListener("input", () => setText(textInput.value));
-ipaInput.addEventListener("input", () => {
-  wordLabels = [];
-  setTrack(ipaInput.value);
+const HOLD_KEYS = { a: "slow", s: "mid", d: "fast" };
+const SHOT_KEYS = { w: "slow", e: "mid", r: "fast" };
+
+document.addEventListener("keydown", async (event) => {
+  if (event.target && /^(INPUT|SELECT|TEXTAREA)$/.test(event.target.tagName)) return;
+  if (event.metaKey || event.ctrlKey || event.altKey) return;
+  const key = event.key.toLowerCase();
+
+  if (key in HOLD_KEYS || key in SHOT_KEYS || key === "q" || key === "t") {
+    event.preventDefault();
+    if (event.repeat) return;
+    if (!ctx) await enableAudio();
+    if (key in HOLD_KEYS) startScan(HOLD_KEYS[key], key);
+    else if (key in SHOT_KEYS) startWord(SHOT_KEYS[key]);
+    else if (key === "q") startRandomPhoneme();
+    else if (key === "t") startPercussion();
+    return;
+  }
+
+  const stepSize = event.shiftKey ? 0.02 : 0.1;
+  switch (event.key) {
+    case "ArrowRight":
+      applyRemote("/scan/position", [targetPos + stepSize]);
+      break;
+    case "ArrowLeft":
+      applyRemote("/scan/position", [targetPos - stepSize]);
+      break;
+    case "ArrowDown":
+    case "]":
+      setPhrase(phraseIndex + 1);
+      break;
+    case "ArrowUp":
+    case "[":
+      setPhrase(phraseIndex - 1);
+      break;
+    case " ":
+      event.preventDefault();
+      applyRemote("/scan/gate", [voice && voice.gate > 0 ? 0 : 1]);
+      break;
+    case "Home":
+      targetPos = 0;
+      atEnd = false;
+      break;
+    default:
+      if (/^[1-8]$/.test(event.key)) setPhrase(Number(event.key) - 1);
+  }
 });
 
-strip.addEventListener("keydown", (event) => {
-  const stepSize = event.shiftKey ? 0.02 : 0.1;
-  if (event.key === "ArrowRight") applyRemote("/scan/position", [targetPos + stepSize]);
-  if (event.key === "ArrowLeft") applyRemote("/scan/position", [targetPos - stepSize]);
-  if (event.key === " ") applyRemote("/scan/gate", [voice && voice.gate > 0 ? 0 : 1]);
+document.addEventListener("keyup", (event) => {
+  const key = event.key.toLowerCase();
+  if (key in HOLD_KEYS) {
+    event.preventDefault();
+    stopScan(key);
+  }
 });
+window.addEventListener("blur", () => stopScan());
 
 // the dictionary loads itself over XHR; wait for it, then seed the strip
 (function waitForDict(tries = 0) {
-  if (dictReady()) {
-    setText(textInput.value);
-    return;
-  }
-  if (tries > 200) {
-    setTrack("hɛloʊ wɝld");
+  if (dictReady() || tries > 200) {
+    loadPresets().then(() => setPhrase(0, { announce: false }));
     return;
   }
   setTimeout(() => waitForDict(tries + 1), 100);

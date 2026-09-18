@@ -3,41 +3,49 @@
   ------------------
   A "scannable" articulation engine for Pink Trombone.
 
-  The idea: a phoneme string becomes a strip of cells. A continuous position
-  (mouse x, an OSC float, a MIDI CC...) scans the strip. Dwelling on a cell
-  holds that articulation indefinitely; moving between cells performs the
-  transition.
-
-  Two kinds of transition, chosen automatically:
+  A phoneme string becomes a strip of cells. A continuous position (mouse x, an
+  OSC float, a MIDI CC...) scans the strip. Dwelling holds; moving performs the
+  transition. Which kind of transition is decided per boundary:
 
     * POSITION-LOCKED (continuants: vowels, nasals, fricatives, approximants)
-      The tract interpolates with your pointer. Slow down and the diphthong
-      glide slows down. This is the "scan" behaviour.
+      The tract interpolates with your pointer. Slow down and the glide slows
+      down. This is the "scan" behaviour.
 
     * TIME-LOCKED (stops, affricates)
-      A stop is a closure plus a burst. The closure can be held forever (it is
-      silent, or a voice bar for /b d g/), but the *release* is a ballistic
-      gesture: burst -> VOT/aspiration -> onset of the next phoneme, on its own
-      fixed clock no matter how slowly you are moving. That is what makes /t/
-      and /d/ intelligible at any scan speed; interpolating through them just
-      smears them into fricatives.
+      A stop is a closure plus a burst, and those want opposite timing. The
+      release is ballistic: burst -> VOT/aspiration -> onset of the next
+      phoneme, on its own fixed clock however slowly you are moving. That is
+      what keeps stops intelligible at any scan speed.
 
-  The engine is driven by an explicit clock (`now`, in AudioContext seconds) so
-  the exact same code runs live (rAF) and offline (OfflineAudioContext render).
+  Stops come in two kinds, decided by position in the word:
+
+    * WORD-FINAL stops are holdable. Dwell and the closure sits there — silent
+      for /p t k/, a voice bar for /b d g/ — and it releases when you leave the
+      word, when the gate closes, or when you lift the mouse.
+
+    * EVERY OTHER STOP is pass-through. There is nothing to dwell on in a
+      word-initial or medial stop, so arriving at one fires the whole gesture
+      at once and lands on the next continuant. Its cell is drawn narrow to
+      say so.
+
+  The engine is driven by an explicit clock — voice.update(position, now) — and
+  touches nothing but AudioParams, so it can be hosted anywhere.
 */
 
 export const OPEN = 5; // constriction diameter that means "no constriction"
 
 export const DEFAULTS = {
   // --- time-locked gesture timings (seconds) ---
-  closeTime: 0.035, // how fast the tract closes when you arrive at a stop
+  closeTime: 0.035, // arriving at a holdable stop
+  passClose: 0.022, // arriving at a pass-through stop: brief, just enough pressure
   burstTime: 0.012, // closure -> open, the burst itself
   votVoiceless: 0.055, // aspiration after /p t k/ before voicing starts
   votVoiced: 0.012, // after /b d g/
   transition: 0.06, // post-burst move onto the next phoneme
   affricateClosure: 0.07, // how long /tʃ dʒ/ hold closure before self-releasing
-  autoReleaseStops: false, // if true, a held stop releases on its own
-  maxClosure: 0.25, // ...after this long
+  autoReleaseStops: false, // a held stop lets go by itself...
+  maxClosure: 0.25, // ...after this long. It does not re-close.
+  retriggerLockout: 0.14, // ignore a re-entry into the same stop within this
 
   // --- position-locked tracking ---
   smooth: 0.035, // ramp time for continuous tracking
@@ -72,6 +80,14 @@ const STRESS_MARKS = ["ˈ", "ˌ"];
 // affricates in the source table only carry their fricative shape, so borrow a
 // closure from the matching stop
 const AFFRICATE_CLOSURE = { "tʃ": "t", "ʧ": "t", "dʒ": "d", "ʤ": "d" };
+
+// cell widths, in units of an ordinary phoneme
+const WIDTHS = {
+  passThroughStop: 0.5,
+  heldStop: 1.15,
+  silence: 0.6,
+  normal: 1,
+};
 
 export function classify(ipa, info) {
   if (STOPS.includes(ipa)) return "stop";
@@ -130,13 +146,12 @@ function pose(constriction, voiceness, intensity) {
 }
 
 const TRACT_KEYS = ["ti", "td", "fi", "fd", "bi", "bd"];
+const POSE_KEYS = ["ti", "td", "fi", "fd", "bi", "bd", "v", "a"];
 
 export function lerpPose(a, b, t) {
   t = Math.max(0, Math.min(1, t));
   const out = {};
-  for (const k of ["ti", "td", "fi", "fd", "bi", "bd", "v", "a"]) {
-    out[k] = a[k] + (b[k] - a[k]) * t;
-  }
+  for (const k of POSE_KEYS) out[k] = a[k] + (b[k] - a[k]) * t;
   return out;
 }
 
@@ -152,7 +167,7 @@ function withTract(base, tractSource) {
 
 /**
  * Turn an IPA string into scannable cells.
- * @param {string} ipaString  e.g. "hɛˈloʊ wɝld" (spaces become silent cells)
+ * @param {string} ipaString  e.g. "kɹæˈk" (spaces become silent cells)
  * @param {object} table      the global `phonemes` table from src/utils.js
  * @param {object} cfg
  */
@@ -171,7 +186,7 @@ export function buildTrack(ipaString, table, cfg = DEFAULTS) {
     const ch = chars[i];
 
     if (ch === " ") {
-      cells.push(makeSilence(wordIndex, cfg));
+      cells.push(makeSilence(wordIndex));
       wordIndex++;
       i++;
       continue;
@@ -184,7 +199,7 @@ export function buildTrack(ipaString, table, cfg = DEFAULTS) {
       continue;
     }
     if (ch === ".") {
-      cells.push(makeSilence(wordIndex, cfg));
+      cells.push(makeSilence(wordIndex));
       i++;
       continue;
     }
@@ -198,20 +213,25 @@ export function buildTrack(ipaString, table, cfg = DEFAULTS) {
     i += key.length;
   }
 
+  markStops(cells);
   resolveInheritance(cells);
+  resolvePassThroughTargets(cells);
   return cells;
 }
 
-function makeSilence(wordIndex, cfg) {
+function makeSilence(wordIndex) {
   return {
     ipa: "·",
     cls: "silence",
     wordIndex,
-    width: 0.5,
+    width: WIDTHS.silence,
     voiced: false,
     closes: false,
-    blendIn: true,
-    blendOut: true,
+    passThrough: false,
+    autoRelease: false,
+    // a word gap is a gate closure, not something to interpolate through
+    blendIn: false,
+    blendOut: false,
     poses: [{ ti: null, td: null, fi: null, fd: OPEN, bi: null, bd: OPEN, v: 0.9, a: 0 }],
     stress: 0,
   };
@@ -230,28 +250,33 @@ function makeCell(ipa, table, cfg, wordIndex) {
     cls,
     voiced,
     wordIndex,
-    width: 1,
+    width: WIDTHS.normal,
     example: info.example || "",
     stress: 0,
     closes: false,
+    passThrough: false,
     autoRelease: false,
+    wordFinal: false,
     blendIn: true,
     blendOut: true,
     poses: [],
+    closurePose: null,
     releasePose: null,
+    sustainPose: null,
   };
 
   switch (cls) {
     case "stop": {
-      const closure = cons[0];
-      const release = cons[1] || cons[0];
-      cell.closes = true;
+      // markStops() decides holdable vs pass-through once neighbours are known
+      cell.closurePose = pose(
+        cons[0],
+        voiced ? cfg.voicenessVowel : 0.05,
+        voiced ? cfg.closureIntensityVoiced : 0
+      );
+      cell.releasePose = pose(cons[1] || cons[0], voiced ? 0.85 : 0.02, cfg.burstIntensity);
+      cell.poses = [cell.closurePose];
       cell.blendIn = false;
       cell.blendOut = false;
-      cell.poses = [
-        pose(closure, voiced ? cfg.voicenessVowel : 0.05, voiced ? cfg.closureIntensityVoiced : 0),
-      ];
-      cell.releasePose = pose(release, voiced ? 0.85 : 0.02, cfg.burstIntensity);
       break;
     }
     case "affricate": {
@@ -266,9 +291,12 @@ function makeCell(ipa, table, cfg, wordIndex) {
       cell.autoRelease = true;
       cell.blendIn = false;
       cell.blendOut = true;
-      cell.poses = [
-        pose(closure, voiced ? cfg.voicenessVowel : 0.05, voiced ? cfg.closureIntensityVoiced : 0),
-      ];
+      cell.closurePose = pose(
+        closure,
+        voiced ? cfg.voicenessVowel : 0.05,
+        voiced ? cfg.closureIntensityVoiced : 0
+      );
+      cell.poses = [cell.closurePose];
       // after the burst it settles into its own frication and sustains there
       cell.releasePose = pose(
         cons[0],
@@ -302,11 +330,32 @@ function makeCell(ipa, table, cfg, wordIndex) {
   return cell;
 }
 
+/** a stop is holdable only at the end of a word; everywhere else it passes through */
+function markStops(cells) {
+  cells.forEach((cell, i) => {
+    if (cell.cls !== "stop") return;
+    const next = cells[i + 1];
+    cell.wordFinal = !next || next.cls === "silence";
+    if (cell.wordFinal) {
+      cell.closes = true;
+      cell.passThrough = false;
+      cell.width = WIDTHS.heldStop;
+    } else {
+      cell.closes = false;
+      cell.passThrough = true;
+      cell.width = WIDTHS.passThroughStop;
+    }
+  });
+}
+
 /** fill in unspecified articulators by carrying the previous shape forward */
 function resolveInheritance(cells) {
   const all = [];
   cells.forEach((cell) => {
-    cell.poses.forEach((p) => all.push(p));
+    if (cell.closurePose) all.push(cell.closurePose);
+    cell.poses.forEach((p) => {
+      if (p !== cell.closurePose) all.push(p);
+    });
     if (cell.releasePose) all.push(cell.releasePose);
   });
 
@@ -317,13 +366,36 @@ function resolveInheritance(cells) {
     }
     last = p;
   }
+
   // /h/ takes the shape of the following cell
   cells.forEach((cell, i) => {
     if (cell.inheritFrom !== "next") return;
     const next = cells[i + 1];
     if (!next) return;
-    const src = next.poses[0];
-    cell.poses = cell.poses.map((p) => withTract(p, src));
+    cell.poses = cell.poses.map((p) => withTract(p, next.poses[0]));
+  });
+}
+
+/**
+ * A pass-through stop has no sustainable state, so what it *tracks* as is the
+ * onset of the next thing you can actually hold. Dwell on the /k/ of "crack"
+ * and you are already on the /ɹ/.
+ */
+function resolvePassThroughTargets(cells) {
+  cells.forEach((cell, i) => {
+    if (!cell.passThrough) return;
+    let target = null;
+    for (let j = i + 1; j < cells.length; j++) {
+      if (cells[j].passThrough) continue;
+      target = cells[j].poses[0];
+      break;
+    }
+    if (!target) {
+      // nothing ahead: fall back to its own release shape
+      target = cell.releasePose;
+    }
+    cell.trackPose = Object.assign({}, target);
+    cell.poses = [cell.trackPose];
   });
 }
 
@@ -335,7 +407,7 @@ export class ScanVoice {
   /**
    * @param {object} params  AudioParams: tongueIndex, tongueDiameter,
    *   frontIndex, frontDiameter, backIndex, backDiameter, tenseness, loudness,
-   *   intensity, frequency, tractLength
+   *   intensity, frequency, tractLength, burst
    * @param {object} cfg
    */
   constructor(params, cfg = {}) {
@@ -391,6 +463,16 @@ export class ScanVoice {
     param.linearRampToValueAtTime(value, time);
   }
 
+  /** a short rectangular pulse on a parameter: the burst trigger */
+  _pulse(param, value, at, width = 0.008) {
+    if (!param) return;
+    try {
+      param.cancelScheduledValues(at);
+    } catch (e) {}
+    param.setValueAtTime(value, at);
+    param.setValueAtTime(0, at + width);
+  }
+
   _poseValues(p) {
     const v = this.whisper ? 0 : p.v;
     const { tenseness, loudness } = deconstructVoiceness(v);
@@ -411,16 +493,6 @@ export class ScanVoice {
     const vals = this._poseValues(p);
     for (const key in vals) this._ramp(this.params[key], vals[key], now, time);
     this.lastPose = p;
-  }
-
-  /** a short rectangular pulse on a parameter: the burst trigger */
-  _pulse(param, value, at, width = 0.008) {
-    if (!param) return;
-    try {
-      param.cancelScheduledValues(at);
-    } catch (e) {}
-    param.setValueAtTime(value, at);
-    param.setValueAtTime(0, at + width);
   }
 
   /** schedule a sequence of [{t, pose}] as absolute ramps from `now` */
@@ -454,17 +526,27 @@ export class ScanVoice {
 
   startPose(i) {
     const c = this.cells[i];
-    return c && (c.released && c.sustainPose ? c.sustainPose : c.poses[0]);
+    if (!c) return this.lastPose;
+    if (c.released && c.sustainPose) return c.sustainPose;
+    return c.poses[0];
   }
 
   endPose(i) {
     const c = this.cells[i];
-    if (!c) return null;
+    if (!c) return this.lastPose;
     if (c.cls === "affricate" && c.sustainPose) return c.sustainPose;
     return c.poses[c.poses.length - 1];
   }
 
-  /** the articulation implied by a continuous position, ignoring stops */
+  /** the pose a gesture should land on when it arrives at cell i */
+  entryPose(i) {
+    const cell = this.cells[i];
+    if (!cell) return this.lastPose;
+    if (cell.passThrough) return cell.trackPose;
+    return cell.poses[0];
+  }
+
+  /** the articulation implied by a continuous position */
   poseAtPosition(pos) {
     const i = this.cellAt(pos);
     const cell = this.cells[i];
@@ -500,17 +582,11 @@ export class ScanVoice {
 
   /* ---------------- gestures ---------------- */
 
-  entryPose(i) {
-    const cell = this.cells[i];
-    if (!cell) return this.lastPose;
-    return cell.poses[0];
-  }
-
+  /** arrive at a holdable stop and sit on the closure */
   fireClosure(i, now) {
     const cell = this.cells[i];
-    const target = cell.poses[0];
     this.scheduleGesture(
-      [{ t: this.cfg.closeTime, pose: target }],
+      [{ t: this.cfg.closeTime, pose: cell.closurePose }],
       now,
       this.cfg.closeTime,
       "close",
@@ -521,78 +597,124 @@ export class ScanVoice {
     this.released = false;
     this.closedAt = now;
     cell.released = false;
+    cell.firedAt = now;
   }
 
   /**
    * The burst. Fixed duration regardless of how fast the pointer is moving:
-   * closure -> pressure -> open + noise -> VOT/aspiration -> next phoneme.
+   * pressure -> open + noise -> VOT/aspiration -> next phoneme.
    */
-  fireRelease(fromIndex, toIndex, now, { toSilence = false } = {}) {
-    const from = this.cells[fromIndex];
+  _burstSteps(cell, target, closeTime, now) {
     const cfg = this.cfg;
-    const closure = from.poses[0];
-    const rel = from.releasePose || closure;
-    const voiced = from.voiced;
+    const closure = cell.closurePose;
+    const rel = cell.releasePose || closure;
+    const voiced = cell.voiced;
     const vot = voiced ? cfg.votVoiced : cfg.votVoiceless;
 
-    let target;
-    if (toSilence) {
-      target = Object.assign({}, rel, { a: 0, v: rel.v });
-    } else if (from.cls === "affricate") {
-      target = from.sustainPose || rel;
-    } else {
-      const toCell = this.cells[toIndex];
-      target = toCell ? toCell.poses[0] : Object.assign({}, rel, { a: 0 });
-    }
-
-    // pressure: still closed, but the glottal source is already on
     const pressure = Object.assign({}, closure, {
       a: voiced ? Math.max(closure.a, 0.5) : cfg.burstIntensity * 0.9,
       v: voiced ? 0.85 : 0.02,
     });
-    // burst: constriction snaps open, full noise
     const burst = Object.assign({}, rel, {
       a: cfg.burstIntensity,
       v: voiced ? 0.85 : 0.02,
     });
-    // aspiration window: tract already moving toward the target, voicing off
     const aspirate = Object.assign({}, lerpPose(rel, target, 0.55), {
       v: voiced ? 0.85 : 0.05,
       a: Math.max(0.6, target.a),
     });
 
     const steps = [
-      { t: 0.001, pose: pressure },
-      { t: cfg.burstTime, pose: burst },
-      { t: cfg.burstTime + vot, pose: aspirate },
-      { t: cfg.burstTime + vot + cfg.transition, pose: target },
+      { t: closeTime + 0.001, pose: pressure },
+      { t: closeTime + cfg.burstTime, pose: burst },
+      { t: closeTime + cfg.burstTime + vot, pose: aspirate },
+      { t: closeTime + cfg.burstTime + vot + cfg.transition, pose: target },
     ];
-    const lock = cfg.burstTime + vot + cfg.transition;
-    this.scheduleGesture(steps, now, lock, "burst", from);
+    const lock = closeTime + cfg.burstTime + vot + cfg.transition;
 
-    // the transient itself, fired exactly as the closure lets go
-    if (cfg.burstLevel > 0 && !this.whisper) {
+    // the transient is turbulence, not voicing, so it fires even when whispering
+    if (cfg.burstLevel > 0) {
       this._pulse(
         this.params.burst,
         cfg.burstLevel * (voiced ? 0.6 : 1),
-        now + Math.max(0.002, cfg.burstTime - 0.002)
+        now + closeTime + Math.max(0.002, cfg.burstTime - 0.002)
       );
     }
+    return { steps, lock };
+  }
+
+  /** let go of a closure that was being held */
+  fireRelease(fromIndex, toIndex, now, { toSilence = false } = {}) {
+    const from = this.cells[fromIndex];
+    if (!from) return;
+    const rel = from.releasePose || from.closurePose;
+
+    let target;
+    if (toSilence) {
+      target = Object.assign({}, rel, { a: 0 });
+    } else if (from.cls === "affricate") {
+      target = from.sustainPose || rel;
+    } else {
+      const toCell = this.cells[toIndex];
+      target =
+        toCell && toCell.cls !== "silence"
+          ? this.entryPose(toIndex)
+          : Object.assign({}, rel, { a: 0 });
+    }
+
+    const { steps, lock } = this._burstSteps(from, target, 0, now);
+    this.scheduleGesture(steps, now, lock, "burst", from);
 
     from.released = true;
+    from.firedAt = now;
     this.released = true;
+    this.closed = false;
+
+    if (toSilence) {
+      this.curCell = fromIndex;
+      return;
+    }
 
     const toCell = this.cells[toIndex];
-    if (!toSilence && toCell && toCell.closes) {
-      // released straight into another stop: it is closed again at the end
+    if (toCell && toCell.closes) {
+      // released straight into another holdable closure
       this.closed = true;
       this.closedAt = now + lock;
       this.released = false;
       toCell.released = false;
-    } else {
-      this.closed = from.cls === "affricate" ? false : false;
     }
-    this.curCell = toSilence ? fromIndex : toIndex;
+    this.curCell = toIndex;
+  }
+
+  /**
+   * A word-initial or medial stop: closure and burst in one movement, landing
+   * on the next thing you can hold. There is no dwelling on it.
+   */
+  firePassThrough(i, now) {
+    const cell = this.cells[i];
+    const target = cell.trackPose;
+    const { steps, lock } = this._burstSteps(cell, target, this.cfg.passClose, now);
+    this.scheduleGesture(steps, now, lock, "stop", cell);
+    this.curCell = i;
+    this.closed = false;
+    this.released = true;
+    cell.firedAt = now;
+  }
+
+  /** a word gap: close the gate rather than interpolating across it */
+  enterSilence(i, now) {
+    const prev = this.cells[this.curCell];
+    if (prev && prev.closes && this.closed && !this.released) {
+      this.fireRelease(this.curCell, i, now);
+      this.curCell = i;
+      return;
+    }
+    this._ramp(this.params.intensity, 0, now, this.cfg.release);
+    this.lockUntil = now + this.cfg.release;
+    this.curCell = i;
+    this.closed = false;
+    this.released = true;
+    if (this.onGesture) this.onGesture("gap", this.cells[i]);
   }
 
   enterCell(i, now) {
@@ -600,14 +722,37 @@ export class ScanVoice {
     const next = this.cells[i];
     if (!next) return;
 
+    // leaving a held closure always releases it, wherever you are going
     if (prev && prev.closes && this.closed && !this.released) {
       this.fireRelease(this.curCell, i, now);
       return;
     }
+
+    if (next.cls === "silence") {
+      this.enterSilence(i, now);
+      return;
+    }
+
+    const recentlyFired =
+      next.firedAt !== undefined && now - next.firedAt < this.cfg.retriggerLockout;
+
+    if (next.passThrough) {
+      if (recentlyFired) {
+        this.curCell = i;
+        return;
+      }
+      this.firePassThrough(i, now);
+      return;
+    }
     if (next.closes) {
+      if (recentlyFired) {
+        this.curCell = i;
+        return;
+      }
       this.fireClosure(i, now);
       return;
     }
+
     this.curCell = i;
     this.closed = false;
     this.released = true;
@@ -631,20 +776,34 @@ export class ScanVoice {
     }
 
     const cell = this.cells[i];
+    if (!cell) return;
 
-    // affricates let go of their own closure after a moment and sustain
+    if (cell.cls === "silence") {
+      this._ramp(this.params.intensity, 0, now, this.cfg.release);
+      return;
+    }
+
+    // a held closure: silent, or a voice bar, until you leave
     if (cell.closes && this.closed && !this.released) {
       const held = now - this.closedAt;
       if (cell.autoRelease && held >= this.cfg.affricateClosure) {
         this.fireRelease(i, i, now);
-        return;
-      }
-      if (this.cfg.autoReleaseStops && held >= this.cfg.maxClosure) {
-        this.fireRelease(i, i, now, { toSilence: false });
         this.curCell = i;
         return;
       }
-      return; // hold the closure: silent, or a voice bar
+      if (this.cfg.autoReleaseStops && held >= this.cfg.maxClosure) {
+        // let go into its own release shape and STAY there — no re-closing
+        const target = Object.assign({}, cell.releasePose, { a: 1 });
+        const { steps, lock } = this._burstSteps(cell, target, 0, now);
+        this.scheduleGesture(steps, now, lock, "burst", cell);
+        cell.released = true;
+        cell.firedAt = now;
+        this.closed = false;
+        this.released = true;
+        this.curCell = i;
+        return;
+      }
+      return;
     }
 
     this.applyPose(this.poseAtPosition(pos), now, this.cfg.smooth);
@@ -654,18 +813,30 @@ export class ScanVoice {
 
   setGate(on, now) {
     const wasOn = this.gate > 0;
-    this.gate = on ? 1 : 0;
     if (!on) {
       const cell = this.cells[this.curCell];
       if (cell && cell.closes && this.closed && !this.released) {
+        // a held stop still gets its burst on the way out — schedule it while
+        // the gate is still open, or every step of it would be multiplied by 0
         this.fireRelease(this.curCell, this.curCell, now, { toSilence: true });
+        this.gate = 0;
         return;
       }
+      this.gate = 0;
       this._ramp(this.params.intensity, 0, now, this.cfg.release);
       this.lockUntil = now + this.cfg.release;
-    } else if (!wasOn) {
+      return;
+    }
+    this.gate = 1;
+    if (!wasOn) {
       this.lockUntil = 0;
-      this.curCell = -1; // re-enter, so landing on a stop closes properly
+      this.curCell = -1; // re-enter, so landing on a stop articulates it
+      this.closed = false;
+      this.released = true;
+      this.cells.forEach((cell) => {
+        cell.firedAt = undefined;
+        cell.released = false;
+      });
     }
   }
 
@@ -685,9 +856,8 @@ export class ScanVoice {
   }
 
   frequency() {
-    const stress = this.cells[this.curCell]
-      ? this.cells[this.curCell].stress * this.cfg.stressSemitones
-      : 0;
+    const cell = this.cells[this.curCell];
+    const stress = cell ? cell.stress * this.cfg.stressSemitones : 0;
     return 440 * Math.pow(2, (this.note + this.bend + stress - 69) / 12);
   }
 

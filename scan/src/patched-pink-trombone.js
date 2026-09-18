@@ -40,6 +40,12 @@
   fires it at the exact moment it opens the closure, so the burst is a musical
   event you schedule and level, not a side effect of geometry. The two
   obstruction bugs are left alone, which keeps the automatic path inert.
+
+  One more, unrelated: the glottis adds two simplex-noise drifts to the pitch
+  unconditionally, so `vibratoGain = 0` still wanders about a quarter-tone. A
+  fourth patch scales those by `vibratoWobble`, so setting wobble to 0 gives a
+  genuinely steady pitch — which a choir needs. (The separate tenseness drift is
+  left alone: it colours the tone, not the pitch.)
 */
 
 const LOADER_URL = "/pink-trombone/src/pink-trombone.min.js";
@@ -104,6 +110,14 @@ const WORKLET_PATCHES = [
   }
 
   _processTransients(seconds) {`,
+  },
+  {
+    name: "steady-pitch",
+    why: "the glottis adds two unconditional simplex drifts to the pitch; scale them by vibratoWobble so a wobble of 0 can actually sing steady",
+    from: `    vibrato += 0.02 * this.noise.simplex1(seconds * 4.07);
+    vibrato += 0.04 * this.noise.simplex1(seconds * 2.15);`,
+    to: `    vibrato += parameterSamples.vibratoWobble * 0.02 * this.noise.simplex1(seconds * 4.07);
+    vibrato += parameterSamples.vibratoWobble * 0.04 * this.noise.simplex1(seconds * 2.15);`,
   },
   {
     name: "burst-call",

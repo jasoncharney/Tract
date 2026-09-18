@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Scan — Pink Trombone</title>
+    <title>Tract — Jason Charney</title>
     <script src="/src/utils.js"></script>
     <script src="/src/text-to-ipa.js"></script>
     <style>
@@ -61,20 +61,55 @@
       .pill.on { color: #7ee2b8; border-color: #2e5c48; }
       .pill.off { color: #ff9a8a; border-color: #5c3430; }
 
-      .io { display: flex; gap: 10px; margin: 16px 0 6px; flex-wrap: wrap; }
-      input[type="text"] {
-        font: inherit;
-        flex: 1 1 260px;
-        min-width: 200px;
-        background: var(--panel);
-        color: var(--ink);
-        border: 1px solid var(--line);
-        border-radius: 7px;
-        padding: 9px 12px;
+      /* ---- phrase picker ---- */
+      .phrases {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin: 18px 0 8px;
+        flex-wrap: wrap;
       }
-      input[type="text"]:focus { outline: none; border-color: var(--hot); }
-      #ipa { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-      .alts { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+      .phrases button.nav {
+        font-size: 17px;
+        line-height: 1;
+        padding: 7px 14px;
+        border-radius: 9px;
+      }
+      .phrase-current {
+        flex: 1 1 320px;
+        display: flex;
+        align-items: baseline;
+        gap: 12px;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        padding: 9px 14px;
+        min-width: 0;
+      }
+      #phraseNum {
+        font: 12px ui-monospace, Menlo, monospace;
+        color: var(--hot);
+        flex: none;
+      }
+      #phraseText {
+        font-size: 18px;
+        letter-spacing: 0.01em;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .phrase-dots { display: flex; gap: 6px; flex: none; }
+      .dot {
+        width: 11px;
+        height: 11px;
+        padding: 0;
+        border-radius: 50%;
+        border: 1px solid var(--line);
+        background: #2a2735;
+        cursor: pointer;
+      }
+      .dot.on { background: var(--hot); border-color: var(--hot); }
+      .alts { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 6px; }
       .alts select {
         font: 12px ui-monospace, Menlo, monospace;
         background: var(--panel);
@@ -82,6 +117,12 @@
         border: 1px solid var(--line);
         border-radius: 6px;
         padding: 3px 6px;
+      }
+      #ipaLine {
+        font: 13px ui-monospace, Menlo, monospace;
+        color: var(--dim);
+        padding: 2px 2px 8px;
+        user-select: text;
       }
 
       /* ---- the scan surface ---- */
@@ -92,15 +133,20 @@
         align-items: stretch;
         min-height: 132px;
         padding: 10px;
-        margin: 10px 0 4px;
+        margin: 4px 0 4px;
         background: var(--panel);
         border: 1px solid var(--line);
         border-radius: 12px;
         touch-action: none;
         cursor: crosshair;
         user-select: none;
+        transition: border-color 120ms linear, box-shadow 120ms linear;
       }
-      .word { display: flex; flex-direction: column; gap: 4px; }
+      .strip.live {
+        border-color: var(--hot);
+        box-shadow: 0 0 0 1px rgba(255, 122, 182, 0.35), 0 8px 30px -14px var(--hot);
+      }
+      .word { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
       .wlabel {
         font: 11px ui-monospace, Menlo, monospace;
         color: var(--dim);
@@ -117,7 +163,7 @@
         align-items: center;
         justify-content: center;
         gap: 4px;
-        min-width: 44px;
+        min-width: 26px;
         border-radius: 9px;
         border: 1px solid var(--line);
         background: #23202d;
@@ -134,7 +180,23 @@
       .cell[data-cls="nasal"] .bar { background: var(--nasal); }
       .cell[data-cls="approximant"] .bar { background: var(--appr); }
       .cell[data-cls="silence"] .bar { background: var(--sil); }
-      .cell[data-cls="silence"] { min-width: 22px; opacity: 0.6; }
+      .cell[data-cls="silence"] { min-width: 20px; opacity: 0.55; }
+      /* a stop you cannot dwell on: narrow, and drawn as a seam rather than a box */
+      .cell[data-pass="1"] {
+        background: repeating-linear-gradient(
+          -45deg,
+          #262130,
+          #262130 4px,
+          #2d2532 4px,
+          #2d2532 8px
+        );
+        border-style: dashed;
+      }
+      .cell[data-pass="1"] .ipa { font-size: 20px; }
+      .cell[data-pass="1"] .tag { opacity: 0.7; }
+      /* a stop you can hold */
+      .cell[data-hold="1"] { border-color: #5a3a2e; }
+      .cell[data-hold="1"] .tag { color: var(--stop); }
       .cell.active { background: #2f2a3d; border-color: var(--hot); transform: translateY(-2px); }
       .cell.closed .ipa { opacity: 0.35; }
       .cell.closed::after {
@@ -166,6 +228,105 @@
         padding: 8px 2px 14px;
       }
       .readout b { color: var(--ink); font-weight: 600; }
+      #transportState {
+        font: 11px ui-monospace, Menlo, monospace;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 2px 9px;
+        color: var(--dim);
+      }
+      #transportState.on { color: #23111a; background: var(--hot); border-color: var(--hot); }
+
+      /* ---- key legend ---- */
+      .keys { display: flex; flex-direction: column; gap: 6px; margin: 2px 0 12px; }
+      .keyrow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+      .keycap {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 26px;
+        height: 26px;
+        padding: 0 6px;
+        border-radius: 6px;
+        border: 1px solid var(--line);
+        border-bottom-width: 2px;
+        background: #262231;
+        font: 12px ui-monospace, Menlo, monospace;
+        color: var(--ink);
+      }
+      .keycap.wide { min-width: 40px; }
+      .keyhelp { color: var(--dim); font-size: 12px; }
+
+      /* ---- piano ---- */
+      .pitchbar { display: flex; align-items: center; gap: 14px; margin: 0 0 14px; flex-wrap: wrap; }
+      .piano {
+        position: relative;
+        flex: 1 1 420px;
+        height: 78px;
+        min-width: 300px;
+        background: #0f0e14;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        overflow: hidden;
+        touch-action: none;
+      }
+      .pkey {
+        position: absolute;
+        top: 0;
+        padding: 0;
+        border-radius: 0 0 4px 4px;
+        cursor: pointer;
+        font: 9px ui-monospace, Menlo, monospace;
+      }
+      .pkey.white {
+        height: 100%;
+        background: #e8e4f0;
+        border: 1px solid #0f0e14;
+        color: #6a6478;
+        display: flex;
+        align-items: flex-end;
+        justify-content: center;
+        padding-bottom: 4px;
+      }
+      .pkey.black {
+        height: 62%;
+        background: #26222e;
+        border: 1px solid #0f0e14;
+        z-index: 2;
+      }
+      .pkey.white:hover { background: #fff; }
+      .pkey.black:hover { background: #3a3346; }
+      .pkey.white.on { background: var(--hot); color: #23111a; }
+      .pkey.black.on { background: var(--hot); }
+      .pnote { font: 13px ui-monospace, Menlo, monospace; color: var(--ink); min-width: 190px; }
+
+      /* ---- composer preset row ---- */
+      .preset-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+        padding: 8px 0 4px;
+        border-bottom: 1px dashed var(--line);
+      }
+      .preset-row button { font-size: 12px; padding: 4px 9px; }
+      .preset-label {
+        font: 11px ui-monospace, Menlo, monospace;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--hot);
+      }
+      .preset-row select, .wordmode, .importer { font-size: 12px; color: var(--dim); }
+      .preset-row select {
+        background: var(--panel);
+        color: var(--ink);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 3px 6px;
+      }
+      .importer input { display: none; }
+      .importer { cursor: pointer; border: 1px solid var(--line); border-radius: 7px; padding: 4px 9px; }
+      #presetStatus { font-size: 12px; color: #7ee2b8; }
 
       details {
         background: var(--panel);
@@ -189,15 +350,34 @@
       .ctl.toggle .row { gap: 6px; }
       code { font-family: ui-monospace, Menlo, monospace; color: #cbb8ff; }
       a { color: var(--hot); }
-      #tractHost pink-trombone { display: block; filter: hue-rotate(-10deg); }
       .note { color: var(--dim); font-size: 12px; }
+
+      /* the upstream tract view draws a 600x500 canvas with position:absolute,
+         inside a grid that reserves no room for it — so it must be clipped */
+      #tractHost {
+        position: relative;
+        overflow: hidden;
+        height: 0;
+        margin-top: 10px;
+        border-radius: 8px;
+        transition: height 160ms ease;
+      }
+      #tractHost.on { height: 500px; }
+      #tractHost pink-trombone {
+        display: block;
+        position: relative;
+        width: 600px;
+        height: 500px;
+        margin: 0 auto;
+        filter: hue-rotate(-10deg);
+      }
     </style>
   </head>
 
   <body>
     <header>
-      <h1>scan</h1>
-      <span class="sub">hover-scannable Pink Trombone · flexible timing</span>
+      <h1>Tract</h1>
+      <span class="sub">by Jason Charney (2026)</span>
       <span class="spacer"></span>
       <span id="patchStatus" class="pill">worklet: —</span>
       <span id="wsStatus" class="pill">bridge: —</span>
@@ -205,30 +385,87 @@
       <button id="startAudio" class="primary">enable audio</button>
     </header>
 
-    <section class="io">
-      <input id="text" type="text" placeholder="type english words…" value="hello world" />
-      <input id="ipa" type="text" placeholder="…or IPA directly" />
-    </section>
+    <div class="phrases">
+      <button class="nav" id="prevPhrase" title="previous phrase (↑)">‹</button>
+      <div class="phrase-current">
+        <span id="phraseNum">1/8</span>
+        <span id="phraseText">—</span>
+      </div>
+      <button class="nav" id="nextPhrase" title="next phrase (↓)">›</button>
+      <div class="phrase-dots" id="phraseDots"></div>
+    </div>
     <div class="alts" id="alts"></div>
+    <div id="ipaLine"></div>
 
     <div class="strip" id="strip" tabindex="0"><div id="cursor"></div></div>
     <p class="hint">
-      Move across the strip to speak. Dwell on a phoneme and it holds — stops hold their
-      closure (silent, or a voice bar for <code>b d g</code>) and fire the burst the moment
-      you leave. Leave the strip to release.
+      <b>Hold the mouse down</b> and move across the strip to speak — release, or leave the
+      strip, and the gate closes. Dwell on a phoneme and it holds. Stops at the end of a word
+      hold their closure (silent, or a voice bar for <code>b d g</code>) and fire the burst
+      when you leave; every other stop is a seam you pass through, landing on the next vowel
+      or approximant. Word gaps close the gate. <code>↑ ↓</code> or <code>1–8</code> change
+      phrase.
     </p>
 
-    <div class="readout" id="readout"></div>
+    <div class="keys">
+      <div class="keyrow">
+        <span class="keycap">A</span><span class="keycap">S</span><span class="keycap">D</span>
+        <span class="keyhelp">hold to scan — slow (4–6 s per phoneme) · mid (1–3 s) · speaking (0.5–1 s).
+          Let go and the gate closes where you are; press again to carry on from there.</span>
+      </div>
+      <div class="keyrow">
+        <span class="keycap">W</span><span class="keycap">E</span><span class="keycap">R</span>
+        <span class="keyhelp">one word at slow · mid · speaking tempo</span>
+      </div>
+      <div class="keyrow">
+        <span class="keycap">Q</span>
+        <span class="keyhelp">a random phoneme from the phrase</span>
+        <span class="keycap">T</span>
+        <span class="keyhelp">a random stop or fricative, unvoiced — percussion</span>
+      </div>
+      <div class="keyrow">
+        <span class="keycap wide">1–8</span>
+        <span class="keyhelp">phrase · <span class="keycap wide">↑ ↓</span> step through them ·
+          <span class="keycap wide">Home</span> back to the start of the phrase</span>
+      </div>
+    </div>
+
+    <div class="readout">
+      <span id="transportState">—</span>
+      <span id="readout"></span>
+    </div>
+
+    <div class="pitchbar">
+      <div class="piano" id="piano"></div>
+      <div class="pnote" id="pianoNote">—</div>
+    </div>
 
     <details open>
       <summary>timing &amp; voice</summary>
+      <div class="preset-row" id="presetRow" hidden>
+        <span class="preset-label">composer presets</span>
+        <button id="presetSave">save to this phrase</button>
+        <button id="presetRevert">revert</button>
+        <button id="presetClear">clear</button>
+        <label class="wordmode">W E R play
+          <select id="wordModeSel">
+            <option value="next">the next word</option>
+            <option value="random">a random word</option>
+          </select>
+        </label>
+        <button id="presetExport">export presets.json</button>
+        <label class="importer">import<input type="file" id="presetImport" accept="application/json" /></label>
+        <span id="presetStatus"></span>
+      </div>
       <div class="grid" id="controls"></div>
     </details>
 
     <details>
       <summary>tract</summary>
-      <p class="note">The upstream Pink Trombone view. Costs a little CPU; it also lets you
-        grab the tract by hand while scanning.</p>
+      <p class="note">
+        The upstream Pink Trombone view, minus its glottis and button panels. Costs a little
+        CPU; it also lets you grab the tract by hand while scanning.
+      </p>
       <button id="toggleTract">show tract</button>
       <div id="tractHost"></div>
     </details>
@@ -243,10 +480,13 @@
 /scan/norm 0.5          same thing, normalised 0..1
 /scan/index 3           jump to the centre of cell 3
 /scan/gate 1            1 = sound, 0 = release
+/scan/phrase 3          choose phrase 1-8
+/scan/next              step to the next phrase
+/scan/prev              step back
 /scan/note 60.5         pitch as a MIDI note number (fractional ok)
 /scan/bend -2.          semitone offset
 /scan/glide 0.05        portamento seconds
-/scan/text "hello"      set the words
+/scan/text "hello"      set words outside the phrase list
 /scan/phonemes "hɛloʊ"  set IPA directly
 /scan/param burstTime 0.012
 /scan/tract 44          tract length
@@ -254,8 +494,8 @@
 /scan/gain 1.</code></pre>
       <p class="note">
         Feedback comes back on <code>127.0.0.1:7401</code>
-        (<code>/scan/out/cell</code>, <code>/scan/out/gesture</code>) — listen with
-        <code>[udpreceive 7401]</code>.
+        (<code>/scan/out/cell</code>, <code>/scan/out/gesture</code>,
+        <code>/scan/out/phrase</code>) — listen with <code>[udpreceive 7401]</code>.
       </p>
     </details>
 

@@ -1,7 +1,8 @@
-# scan — a scannable Pink Trombone
+# Tract — a scannable Pink Trombone
 
-A hover-scannable phoneme strip for `zakaton/pink-trombone-demos`. Drop the two
-folders (`scan/` and `scan-bridge/`) into the root of your clone.
+Jason Charney (2026). A phoneme strip you scan by hand or by key, built on
+`zakaton/pink-trombone-demos`, for a four-part laptop-ensemble choir painting
+text from Eliot's *Four Quartets*.
 
 ```
 node scan-bridge/scan-bridge.js
@@ -17,10 +18,11 @@ OSC on UDP **7400**, and sends feedback back out on UDP **7401**.
 
 ## How it behaves
 
-Type words (or IPA) and you get a strip of phoneme cells. Move across it and it
-speaks. Where you are is *what* is being articulated; how fast you move is *how
-fast* it is articulated. Two rules do the work, and which one applies is decided
-per boundary:
+Pick one of the eight phrases and you get a strip of phoneme cells. **Hold the
+mouse down** and move across it to speak; release, or leave the strip, and the
+gate closes. Where you are is *what* is being articulated; how fast you move is
+*how fast* it is articulated. Two rules do the work, and which one applies is
+decided per boundary:
 
 **Continuants scan with your hand.** Vowels, nasals, fricatives, approximants —
 the tract interpolates with the pointer. Dwell in the middle of a cell and it
@@ -28,20 +30,81 @@ holds that shape forever. Crawl across the `o → w` boundary and you hear the
 glide take as long as you took. The `transition zone` slider sets how much of a
 cell width is spent transitioning versus holding.
 
-**Stops are ballistic.** A stop is a closure plus a burst, and those want
-opposite timing. So the closure is held as long as you sit on the cell — silent
-for `p t k`, a low voice bar for `b d g` — and the moment you leave, the release
-fires on its own clock: burst → VOT/aspiration → onset of the next phoneme,
-*the same duration whether you crossed the boundary in 20 ms or 2 seconds*. That
-is the part that cannot be done by interpolating presets, and it is why stops
-stay intelligible at any scan speed. Affricates (`tʃ dʒ`) are the hybrid: they
-close, let go by themselves after `affricate hold`, and then sustain their
-frication for as long as you stay.
+**Stops are ballistic**, and they come in two kinds depending on where they fall
+in the word.
 
-Leaving the strip releases (a stop still gets its burst on the way out). `h`
-takes the shape of whatever follows it, which is what /h/ actually is.
+*Word-final stops hold.* Sit on the `k` of "crack" and the closure sits there —
+silent for `p t k`, a low voice bar for `b d g` — and the release fires the
+moment you leave the word, lift the mouse, or close the gate: burst →
+VOT/aspiration → onset of whatever comes next, *the same duration whether you
+crossed in 20 ms or 2 seconds*. That fixed clock is the part that cannot be done
+by interpolating presets, and it is why stops stay intelligible at any scan
+speed. These cells are drawn wide, with an orange border.
+
+*Every other stop passes through.* There is nothing to dwell on in a
+word-initial or medial stop — a held `k` at the start of "crack" is just silence
+— so arriving at one fires the whole gesture at once and lands on the next thing
+you can actually hold. Dwell on that `k` and you are already on the `ɹ`. These
+cells are drawn narrow and hatched, a seam rather than a box.
+
+Affricates (`tʃ dʒ`) are the hybrid: they close, let go by themselves after
+`affricate hold`, then sustain their frication for as long as you stay.
+
+**Word gaps close the gate.** Scanning between words is a real silence and a
+fresh attack, not a crossfade, so a held final stop releases into the gap.
+
+`h` takes the shape of whatever follows it, which is what /h/ actually is.
 Diphthongs written as two targets glide across their own cell, so you scan
 through them too.
+
+## Playing it from the keyboard
+
+The mouse is one way in; the keys are the other, and they need no trackpad
+gymnastics. Left hand only:
+
+| key | |
+| --- | --- |
+| **A** | hold to scan slowly — a fresh 4–6 s drawn for each phoneme |
+| **S** | hold to scan at a middle rate — 1–3 s per phoneme |
+| **D** | hold to scan near speaking tempo — 0.5–1 s per phoneme |
+| **W E R** | one-shot: play the whole next word, slow / mid / speaking |
+| **Q** | one-shot: a random phoneme from the phrase |
+| **T** | one-shot: a random stop or fricative, unvoiced — percussion |
+| **1**–**8**, **↑ ↓** | choose the phrase |
+| **Home** | back to the start of the phrase |
+
+A held key advances the position by itself and closes the gate when you let go —
+*keeping the position*, so pressing again carries on from where you stopped
+rather than restarting the phrase. Run off the end and the next press starts
+again from the beginning. The per-phoneme duration is redrawn for every cell, so
+two players on the same part holding the same key will drift apart, which is the
+point.
+
+**W E R** walk through the phrase word by word, or pick a word at random —
+that is per phrase, set in the composer presets below. **T** forces the voice
+unvoiced for the length of the hit and hands it back afterwards, so a `k` is a
+click and an `s` is a hiss whatever the pitch is doing.
+
+## The phrases
+
+Eight fixed phrases, stepped with the `‹ ›` buttons, the dots, `↑`/`↓`, or the
+number keys `1`–`8`:
+
+1. words strain
+2. CRACK
+3. and sometimes break under the burden
+4. under the tension
+5. slip, slide, perish
+6. decay with imprecision
+7. will not stay in place
+8. will not stay still
+
+A comma earns a second gap cell, so the breath in "slip, slide, perish" is
+longer than an ordinary word gap. Where the dictionary offers more than one
+pronunciation for a word, a small menu appears above the strip. "imprecision" is
+not in the CMU dictionary at all; its IPA is supplied in `scan.js`, built from
+the dictionary's own "precision". Anything outside the list can still be sent
+from Max with `/scan/text` or `/scan/phonemes`.
 
 ---
 
@@ -68,8 +131,8 @@ So no matter how well you interpolate the articulators from outside — a VST,
 OSC, keyframes — the click that makes a stop a stop is simply absent. You get the
 formant transitions and none of the release.
 
-`scan/src/patched-pink-trombone.js` fixes this without touching anything on
-disk: it fetches both upstream files as text, patches them in memory, and
+`scan/src/patched-pink-trombone.js` fixes this (and the vibrato drift described
+above) without touching anything on disk: it fetches both upstream files as text, patches them in memory, and
 imports them as blob modules. Load the page with `?nopatch=1` to A/B against the
 unmodified synth.
 
@@ -103,6 +166,8 @@ automatically for any message beginning with `/`.
 | `/scan/norm 0.5` | same, normalised 0.–1. across the whole strip |
 | `/scan/index 3` | jump to the centre of cell 3 |
 | `/scan/gate 1` \| `0` | sound / release. `0` releases a held stop properly |
+| `/scan/phrase 3` | choose phrase 1–8 |
+| `/scan/next`, `/scan/prev` | step through the phrases |
 | `/scan/note 60.5` | **pitch as a MIDI note number**, fractional welcome |
 | `/scan/bend -2.` | semitone offset on top |
 | `/scan/glide 0.05` | portamento, seconds |
@@ -115,9 +180,9 @@ automatically for any message beginning with `/`.
 | `/scan/gain 0.9` | output level |
 | `/scan/vibrato/rate`, `/scan/vibrato/depth`, `/scan/vibrato/wobble` | |
 
-Names accepted by `/scan/param`: `closeTime`, `burstTime`, `burstLevel`,
+Names accepted by `/scan/param`: `closeTime`, `passClose`, `burstTime`, `burstLevel`,
 `votVoiceless`, `votVoiced`, `transition`, `affricateClosure`, `smooth`, `blend`,
-`glide`, `autoReleaseStops`, `maxClosure`, `closureIntensityVoiced`,
+`glide`, `autoReleaseStops`, `maxClosure`, `retriggerLockout`, `closureIntensityVoiced`,
 `voicenessVowel`, `voicenessVoicedFric`, `voicenessVoicelessFric`,
 `stressSemitones`.
 
@@ -125,7 +190,8 @@ Feedback comes back on **7401** — `[udpreceive 7401]`:
 
 ```
 /scan/out/cell 4 "ɑ"        whenever the current cell changes
-/scan/out/gesture "burst"   close | burst
+/scan/out/gesture "burst"   close | burst | stop | gap
+/scan/out/phrase 3 "..."    whenever the phrase changes
 ```
 
 Fractional note numbers mean your microtonal tables drive it directly: send
@@ -147,6 +213,48 @@ over `glide`, so send a stream of values for a portamento line.
 
 ---
 
+## Notes on the tract view
+
+The upstream Pink Trombone view draws a 600×500 canvas with `position: absolute`
+inside a grid that reserves no room for it, so left alone it spills down the page
+over everything below. The panel here clips it and hides the glottis and button
+sub-panels, keeping the tract itself.
+
+## The piano
+
+The strip under the readout sets the pitch: click a key and the voice moves
+there, and it follows the pitch slider and `/scan/note` the other way, so
+whatever sets the pitch, the keyboard shows it. Fractional MIDI notes still
+work — the piano highlights the nearest key and the label gives you the exact
+value and frequency.
+
+## Vibrato, and singing without it
+
+`vibrato rate` and `vibrato depth` are the periodic vibrato; `wobble` is the
+slow random drift. Set both depth and wobble to 0 and the pitch is genuinely
+steady: measured over two seconds, 2 cents of standard deviation. That needs the
+`steady-pitch` patch, because the glottis otherwise adds two unconditional
+simplex drifts that no parameter turns off.
+
+## Composer presets
+
+Open the page with `?composer=1` and a row appears at the top of *timing &
+voice*: save the current settings to the current phrase, revert, clear, choose
+whether **W E R** take the next word or a random one, and export. Presets cover
+every timing constant plus pitch, tract length, output, vibrato and whisper, and
+they are applied automatically when you change phrase.
+
+They live in two places. Anything you save goes to this browser's local storage,
+which is what you want while tuning. `export presets.json` downloads the lot;
+commit it as `scan/presets.json` and it ships with the piece, so the players get
+your settings without touching anything. Local storage wins over the committed
+file, so your own machine keeps whatever you were last working on — clear it
+with `?composer=0` and the browser's site data if you want to hear exactly what
+the players will.
+
+The *timing & voice* sliders themselves stay visible for everyone; only the
+preset row is hidden.
+
 ## Recording
 
 `record` taps the master output and writes a `.wav` when you stop. Useful for
@@ -160,9 +268,10 @@ keeping a take of a scan you liked.
 scan/index.html                     the page
 scan/src/engine.js                  the articulation engine (no DOM, no audio API)
 scan/src/patched-pink-trombone.js   the in-memory worklet repair
-scan/src/scan.js                    audio setup, strip UI, transports
+scan/src/scan.js                    audio setup, strip UI, keyboard transport, transports
+scan/presets.json                   per-phrase settings that ship with the piece
 scan-bridge/scan-bridge.js          static server + WebSocket + OSC/UDP
-scan-bridge/scan-control.maxpat     Max control patch
+scan-bridge/scan-control.maxpat     Max control patch (optional — the piece needs no Max)
 ```
 
 `engine.js` is deliberately free of DOM and Web Audio calls beyond AudioParam
