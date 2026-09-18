@@ -33,6 +33,15 @@ Left hand, no trackpad needed:
 Letting a held key go closes the gate where you are; pressing again carries on
 from there.
 
+## Parts
+
+Four parts, chosen in the header and remembered per browser. No transposition:
+each part lists, per phrase, the pitches it may use, and those light up on the
+piano for the player to choose between — names or MIDI numbers, fractional ones
+included. A part also carries a `tractDelta`, so the lower parts sound larger as
+well as lower. It all lives in `scan/parts.json`, meant to be edited by hand;
+the instructions and pitch sets there now are placeholders.
+
 ## Layout
 
 ```
@@ -42,6 +51,7 @@ scan/                       the interface
   src/patched-pink-trombone.js   in-memory repair of the worklet's burst and pitch drift
   src/scan.js               audio setup, strip UI, keyboard transport
   presets.json              per-phrase settings that ship with the piece
+  parts.json                the four parts: offsets and per-phrase instructions
 scan-bridge/
   scan-bridge.js            static server + WebSocket + OSC/UDP, no dependencies
   scan-control.maxpat       Max control patch — optional, the piece needs no Max

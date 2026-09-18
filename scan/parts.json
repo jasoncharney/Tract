@@ -1,0 +1,161 @@
+{
+  "_comment": "Four parts, at least two players each. No transposition: each part's phrase entry lists the pitches that part may choose from, and those are the keys that light up on the piano. Write them as names (Eb3, G#4, A2) or as MIDI numbers, and fractional numbers for anything off the 12-tone grid — 57.5 is a quarter-tone above Bb2. An empty or missing notes list frees the pitch entirely. tractDelta is added to the phrase preset's tract length: the lower parts get a bigger body as well as lower notes. All instruction text is placeholder.",
+  "parts": [
+    {
+      "id": "1",
+      "name": "Part 1",
+      "tractDelta": -6,
+      "phrases": [
+        {
+          "notes": ["Eb3", "G3"],
+          "instruction": "PLACEHOLDER — enter first, on either pitch. A, held, letting each vowel find its own length. Do not hurry the /s/."
+        },
+        {
+          "notes": ["F3"],
+          "instruction": "PLACEHOLDER — silent until the lower parts have cracked twice, then answer once with T."
+        },
+        {
+          "notes": ["D3", "F3", "A3"],
+          "instruction": "PLACEHOLDER — E on single words, sparse. Change pitch between words, never during one."
+        },
+        {
+          "notes": ["C3", "Eb3"],
+          "instruction": "PLACEHOLDER — sustain. Hold the last vowel of each word until you run out of breath."
+        },
+        {
+          "notes": ["B2", "E3"],
+          "instruction": "PLACEHOLDER — Q only. Scattered phonemes, no words. Either pitch, changing freely."
+        },
+        {
+          "notes": [51.5, 55.5],
+          "instruction": "PLACEHOLDER — quarter-tones: sit between the other parts and stay there."
+        },
+        {
+          "notes": ["Bb2", "F3"],
+          "instruction": "PLACEHOLDER — repeat with A. Move between the two pitches without warning."
+        },
+        {
+          "notes": ["Bb2"],
+          "instruction": "PLACEHOLDER — last to stop. Let the final /l/ fade alone."
+        }
+      ]
+    },
+    {
+      "id": "2",
+      "name": "Part 2",
+      "tractDelta": -2,
+      "phrases": [
+        {
+          "notes": ["Bb2", "Eb3"],
+          "instruction": "PLACEHOLDER — join Part 1 after their second word, S rate."
+        },
+        {
+          "notes": ["C3"],
+          "instruction": "PLACEHOLDER — R, once, sharply, then silence for the length of a breath."
+        },
+        {
+          "notes": ["A2", "D3"],
+          "instruction": "PLACEHOLDER — W on random words. Let them land between Part 1's."
+        },
+        {
+          "notes": ["G2", "C3"],
+          "instruction": "PLACEHOLDER — S throughout, drifting behind Part 1."
+        },
+        {
+          "notes": ["G2", "B2"],
+          "instruction": "PLACEHOLDER — alternate Q and T, irregular."
+        },
+        {
+          "notes": [49.5, 51.5],
+          "instruction": "PLACEHOLDER — quarter-tones, beating against Part 1. Do not correct the beating."
+        },
+        {
+          "notes": ["F2", "C3"],
+          "instruction": "PLACEHOLDER — A, very slow, one phoneme per breath."
+        },
+        {
+          "notes": ["Bb2"],
+          "instruction": "PLACEHOLDER — fade out first, mid-phrase, mid-word."
+        }
+      ]
+    },
+    {
+      "id": "3",
+      "name": "Part 3",
+      "tractDelta": 2,
+      "phrases": [
+        {
+          "notes": ["G2", "Bb2"],
+          "instruction": "PLACEHOLDER — D rate, speaking, under the upper parts."
+        },
+        {
+          "notes": ["Ab2"],
+          "instruction": "PLACEHOLDER — the CRACK is yours. R twice, hard, then let the others answer."
+        },
+        {
+          "notes": ["F2", "A2"],
+          "instruction": "PLACEHOLDER — the text in full, S rate; the only part that is intelligible here."
+        },
+        {
+          "notes": ["Eb2", "G2"],
+          "instruction": "PLACEHOLDER — T only. Percussion under the sustained parts."
+        },
+        {
+          "notes": ["E2", "G2"],
+          "instruction": "PLACEHOLDER — W on the next word each time, in order, slow."
+        },
+        {
+          "notes": [45.5, 47.5],
+          "instruction": "PLACEHOLDER — quarter-tones. Let the vowels bend as far as they will."
+        },
+        {
+          "notes": ["Bb2", "Eb2"],
+          "instruction": "PLACEHOLDER — trade words with Part 4, one each."
+        },
+        {
+          "notes": ["Bb2"],
+          "instruction": "PLACEHOLDER — hold the final consonant closure. Release only when Part 1 does."
+        }
+      ]
+    },
+    {
+      "id": "4",
+      "name": "Part 4",
+      "tractDelta": 8,
+      "phrases": [
+        {
+          "notes": ["Eb2", "G2"],
+          "instruction": "PLACEHOLDER — lowest, almost subsonic. One word for the whole phrase."
+        },
+        {
+          "notes": [],
+          "instruction": "PLACEHOLDER — silent. Choose any pitch and wait."
+        },
+        {
+          "notes": ["D2", "F2"],
+          "instruction": "PLACEHOLDER — T, sparse, felt more than heard."
+        },
+        {
+          "notes": ["C2", "Eb2"],
+          "instruction": "PLACEHOLDER — sustain a single vowel. Move only when Part 3 moves."
+        },
+        {
+          "notes": ["E2", "B1"],
+          "instruction": "PLACEHOLDER — Q, slow, one every few seconds."
+        },
+        {
+          "notes": [38.5, 41.5],
+          "instruction": "PLACEHOLDER — quarter-tones, whispered (whisper on)."
+        },
+        {
+          "notes": ["F2", "Bb1"],
+          "instruction": "PLACEHOLDER — trade words with Part 3, one each."
+        },
+        {
+          "notes": ["Bb2"],
+          "instruction": "PLACEHOLDER — in unison with everyone, then stop halfway through."
+        }
+      ]
+    }
+  ]
+}

@@ -85,6 +85,47 @@ that is per phrase, set in the composer presets below. **T** forces the voice
 unvoiced for the length of the hit and hands it back afterwards, so a `k` is a
 click and an `s` is a hiss whatever the pitch is doing.
 
+## The four parts
+
+Pick a part in the header. There is **no transposition** — a part does not shift
+a written pitch. Instead each part's entry for each phrase lists the pitches that
+part may use, and those are the keys that light up on the piano. The player
+chooses among them by clicking a chip or the key itself. Two parts can perfectly
+well share a pitch, and the last phrase has all four in unison.
+
+```json
+{
+  "id": "1", "name": "Part 1", "tractDelta": -6,
+  "phrases": [
+    { "notes": ["Eb3", "G3"], "instruction": "enter first, on either pitch…" },
+    …one entry per phrase…
+  ]
+}
+```
+
+Pitches can be names (`Eb3`, `G#4`, `A 2`) or MIDI numbers, and **fractional
+numbers work**: `51.5` is a quarter-tone, and the app labels it `E3 −50¢` rather
+than pretending it is a semitone. An empty `notes` list frees the pitch
+entirely — the chips then read "any pitch". Changing phrase moves you to the
+first pitch of the new list, unless the one you are on is still allowed, in which
+case you keep it.
+
+What a part *does* carry is a body: `tractDelta` is added to the phrase preset's
+tract length, so the lower parts sound larger as well as lower. The defaults run
+−6, −2, +2, +8. Nothing about the parts is SATB; they are Part 1 to Part 4 and
+you can rename them.
+
+All of it lives in `scan/parts.json`, which is meant to be edited by hand as you
+compose. The instruction lines are also editable in the app with `?composer=1`,
+with an **export parts.json** button beside the preset one. Every instruction in
+the file right now is placeholder text, and the pitch sets are a sketch — a
+descending harmonic field over the eight phrases, quarter-tones for "decay with
+imprecision", unison for the last.
+
+The pitch chosen is not enforced: clicking an unlit key still works, on the
+assumption that the instruction line is the authority and a player may need to
+get out of trouble. Say if you would rather it were locked.
+
 ## The phrases
 
 Eight fixed phrases, stepped with the `‹ ›` buttons, the dots, `↑`/`↓`, or the
@@ -145,6 +186,29 @@ strength scaled by the parameter. The engine fires it at the instant it opens th
 closure. The burst is a scheduled musical event with a level control, not a side
 effect. (The two obstruction bugs are deliberately left alone, which keeps the
 automatic path inert.)
+
+### One more, in this repo's own code
+
+`newConstriction()` marks a constriction as taken only after a message
+round-trip to the worklet, so two synchronous calls hand back **the same
+constriction**. The front and back constrictions were therefore one object, and
+every frame scheduled two conflicting ramps onto one pair of parameters — the
+tract twitching visibly and clicking audibly even with nothing moving, since the
+tracking loop keeps writing after the gate closes. Measured with the position
+held still, the constriction index swung over a range of 8 and the diameter over
+4. Claiming each constriction immediately fixes it; the parameters are now
+exactly static when nothing moves.
+
+Worth knowing if you go back to the upstream demos: `pink-trombone/src/script.js`
+makes the same two calls, so its front and back constrictions are the same one
+too.
+
+A second cause of drift, fixed alongside: the tracking loop re-scheduled every
+parameter every frame even when the target had not changed. Sixty
+`cancelAndHoldAtTime` calls a second on a parameter that is not moving is pure
+churn, and each one can nudge the value. Parameters are now only re-scheduled
+when the target actually moves — which is also what makes a wobble of 0 hold an
+*exactly* constant pitch.
 
 The header pill shows how many patches applied. If upstream ever changes and one
 fails to match, it says so rather than silently sounding wrong.
@@ -254,6 +318,16 @@ the players will.
 
 The *timing & voice* sliders themselves stay visible for everyone; only the
 preset row is hidden.
+
+## Level
+
+The raw tract peaks around +18 dBFS with a 27 dB crest factor — the bursts are
+genuinely far above the average, as they are in speech. The output runs through
+a compressor and then a tanh soft-clip, because a burst transient is a
+sample-level impulse and no compressor attack is fast enough for it. At the
+default output of 0.15 a phrase peaks near −1 dBFS with the soft-clip never
+engaging. (If you saved presets before this change, their stored output level
+will be far too hot — re-save them.)
 
 ## Recording
 

@@ -145,6 +145,19 @@ function pose(constriction, voiceness, intensity) {
   return p;
 }
 
+/** how much a parameter must move before it is worth scheduling again */
+const EPSILON = {
+  tongueIndex: 0.004,
+  tongueDiameter: 0.002,
+  frontIndex: 0.004,
+  frontDiameter: 0.002,
+  backIndex: 0.004,
+  backDiameter: 0.002,
+  tenseness: 0.001,
+  loudness: 0.001,
+  intensity: 0.001,
+};
+
 const TRACT_KEYS = ["ti", "td", "fi", "fd", "bi", "bd"];
 const POSE_KEYS = ["ti", "td", "fi", "fd", "bi", "bd", "v", "a"];
 
@@ -426,6 +439,7 @@ export class ScanVoice {
     this.bend = 0;
     this.position = 0;
     this.lastPose = Object.assign({}, NEUTRAL);
+    this.scheduled = {}; // last value written per parameter
     this.onGesture = null; // (name, cell) => void, for the UI
   }
 
@@ -447,9 +461,21 @@ export class ScanVoice {
     return index * (this.tractLength / 44);
   }
 
-  _ramp(param, value, now, time) {
+  /** forget what we think each parameter holds, after writing one directly */
+  invalidate() {
+    this.scheduled = {};
+  }
+
+  _ramp(param, value, now, time, key) {
     if (!param) return;
     if (!isFinite(value)) return;
+    // re-ramping a parameter to the value it already has, sixty times a second,
+    // is pure churn: it burns CPU and each cancelAndHold can nudge the value
+    if (key !== undefined) {
+      const last = this.scheduled[key];
+      if (last !== undefined && Math.abs(last - value) < (EPSILON[key] || 0.001)) return;
+      this.scheduled[key] = value;
+    }
     try {
       param.cancelAndHoldAtTime(now);
     } catch (e) {
@@ -491,7 +517,7 @@ export class ScanVoice {
 
   applyPose(p, now, time) {
     const vals = this._poseValues(p);
-    for (const key in vals) this._ramp(this.params[key], vals[key], now, time);
+    for (const key in vals) this._ramp(this.params[key], vals[key], now, time, key);
     this.lastPose = p;
   }
 
@@ -507,10 +533,14 @@ export class ScanVoice {
         param.cancelScheduledValues(now);
       }
     }
+    this.invalidate();
     steps.forEach(({ t, pose: p }) => {
       const vals = this._poseValues(p);
       const when = now + Math.max(0.001, t);
-      for (const key in vals) this._at(this.params[key], vals[key], when);
+      for (const key in vals) {
+        this._at(this.params[key], vals[key], when);
+        this.scheduled[key] = vals[key]; // the gesture's last write wins
+      }
       this.lastPose = p;
     });
     this.lockUntil = now + lockFor;
@@ -709,7 +739,7 @@ export class ScanVoice {
       this.curCell = i;
       return;
     }
-    this._ramp(this.params.intensity, 0, now, this.cfg.release);
+    this._ramp(this.params.intensity, 0, now, this.cfg.release, "intensity");
     this.lockUntil = now + this.cfg.release;
     this.curCell = i;
     this.closed = false;
@@ -779,7 +809,7 @@ export class ScanVoice {
     if (!cell) return;
 
     if (cell.cls === "silence") {
-      this._ramp(this.params.intensity, 0, now, this.cfg.release);
+      this._ramp(this.params.intensity, 0, now, this.cfg.release, "intensity");
       return;
     }
 
@@ -823,7 +853,7 @@ export class ScanVoice {
         return;
       }
       this.gate = 0;
-      this._ramp(this.params.intensity, 0, now, this.cfg.release);
+      this._ramp(this.params.intensity, 0, now, this.cfg.release, "intensity");
       this.lockUntil = now + this.cfg.release;
       return;
     }
@@ -862,12 +892,14 @@ export class ScanVoice {
   }
 
   setTractLength(length, now) {
+    this.invalidate();
     this.tractLength = Math.max(15, Math.min(88, length));
     this._ramp(this.params.tractLength, this.tractLength, now, 0.05);
     this.applyPose(this.lastPose, now, 0.05);
   }
 
   setWhisper(on, now) {
+    this.invalidate();
     this.whisper = !!on;
     this.applyPose(this.lastPose, now, 0.05);
   }

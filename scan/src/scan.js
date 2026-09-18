@@ -50,6 +50,45 @@ const WORD_IPA = {
 
 let phraseIndex = 0;
 
+// four parts, at least two players each. Loaded from parts.json; this is the
+// fallback so the page still works if the file is missing.
+const DEFAULT_PARTS = [
+  { id: "1", name: "Part 1", tractDelta: -6, phrases: [] },
+  { id: "2", name: "Part 2", tractDelta: -2, phrases: [] },
+  { id: "3", name: "Part 3", tractDelta: 2, phrases: [] },
+  { id: "4", name: "Part 4", tractDelta: 8, phrases: [] },
+];
+let parts = DEFAULT_PARTS;
+let partIndex = 0;
+const BASE_NOTE = 45.5;
+const BASE_TRACT = 44;
+const part = () => parts[partIndex] || { tractDelta: 0, phrases: [] };
+const partPhrase = () => {
+  const p = part();
+  return (p.phrases && p.phrases[phraseIndex]) || {};
+};
+
+/** "Eb3", "G#4", "A 2", 57.5 — all the same kind of thing */
+const NAME_TO_SEMITONE = { c: 0, d: 2, e: 4, f: 5, g: 7, a: 9, b: 11 };
+function parsePitch(value) {
+  if (typeof value === "number") return isFinite(value) ? value : null;
+  if (typeof value !== "string") return null;
+  const text = value.trim();
+  if (/^-?[\d.]+$/.test(text)) return Number(text);
+  const m = text.match(/^([A-Ga-g])\s*([#♯b♭]*)\s*(-?\d+)$/);
+  if (!m) return null;
+  let semitone = NAME_TO_SEMITONE[m[1].toLowerCase()];
+  for (const ch of m[2]) semitone += ch === "#" || ch === "♯" ? 1 : -1;
+  return semitone + (Number(m[3]) + 1) * 12;
+}
+
+/** the pitches this part may use in this phrase; empty means free choice */
+function allowedNotes() {
+  const list = partPhrase().notes;
+  if (!Array.isArray(list)) return [];
+  return list.map(parsePitch).filter((n) => n !== null && isFinite(n));
+}
+
 // seconds per phoneme for each scan rate; a fresh value is drawn per cell
 const RATES = {
   slow: [4, 6],
@@ -79,7 +118,7 @@ let lastGestureAt = 0;
 let note = 45.5; // ≈140 Hz, the Pink Trombone default
 let ws = null;
 
-let gain = 0.9;
+let gain = 0.15; // the raw tract peaks around +18 dBFS, with a 27 dB crest factor
 const vibrato = { rate: 6, depth: 0.005, wobble: 1 };
 let wordMode = "next"; // or "random", per phrase
 let wordSpans = [];
@@ -126,22 +165,40 @@ async function enableAudio() {
   await element.setAudioContext(ctx);
 
   master = ctx.createGain();
-  master.gain.value = 0.9;
-  // a safety limiter: burst transients are impulsive and were peaking near 0 dBFS
+  master.gain.value = gain;
+  // Safety net. The burst transient is a sample-level impulse, which is faster
+  // than any compressor attack, so the compressor handles the sustained level
+  // and a tanh curve catches what gets past it.
   const limiter = ctx.createDynamicsCompressor();
-  limiter.threshold.value = -3;
+  limiter.threshold.value = -6;
   limiter.knee.value = 0;
   limiter.ratio.value = 20;
-  limiter.attack.value = 0.002;
+  limiter.attack.value = 0.001;
   limiter.release.value = 0.15;
+  const softClip = ctx.createWaveShaper();
+  const curve = new Float32Array(2048);
+  for (let i = 0; i < curve.length; i++) {
+    const x = (i / (curve.length - 1)) * 2 - 1;
+    curve[i] = Math.tanh(x * 1.6) / Math.tanh(1.6);
+  }
+  softClip.curve = curve;
+  softClip.oversample = "4x";
   element.connect(master);
   master.connect(limiter);
-  limiter.connect(ctx.destination);
-  limiterNode = limiter;
+  limiter.connect(softClip);
+  softClip.connect(ctx.destination);
+  limiterNode = softClip;
   element.pinkTrombone.start();
 
+  // newConstriction() marks a constriction taken only after a port round-trip,
+  // so two synchronous calls hand back the *same* one — and then every frame
+  // schedules two conflicting ramps on one parameter, which is what made the
+  // constrictions twitch. Claim each one immediately.
   const front = element.newConstriction(41, OPEN);
+  front._isEnabled = true;
   const back = element.newConstriction(10.5, OPEN);
+  back._isEnabled = true;
+  if (front === back) console.warn("scan: front and back constriction are the same node");
 
   voice = new ScanVoice(
     {
@@ -170,6 +227,7 @@ async function enableAudio() {
   voice.setNote(note, ctx.currentTime, 0);
   voice.gate = 0;
   voice.params.intensity.value = 0;
+  voice.invalidate();
 
   applyVibrato();
   master.gain.value = gain;
@@ -228,6 +286,7 @@ function setPhrase(index, { announce = true } = {}) {
   renderAlts();
   rebuildFromWords();
   applyPreset(phraseIndex);
+  paintInstruction();
   wordCursor = -1;
   atEnd = false;
   targetPos = 0;
@@ -573,6 +632,9 @@ export function applyRemote(address, args = []) {
     case "/scan/auto":
       explicitGate = null;
       break;
+    case "/scan/part":
+      setPart(Math.round(num(a0, 1)) - 1);
+      break;
     case "/scan/phrase":
       setPhrase(Math.round(num(a0, 1)) - 1);
       break;
@@ -587,6 +649,7 @@ export function applyRemote(address, args = []) {
       if (ready) voice.setNote(note, now);
       syncControl("note", note);
       paintPiano();
+      paintNoteChoices();
       break;
     case "/scan/bend":
       if (ready) voice.setBend(num(a0), now);
@@ -815,7 +878,7 @@ const CONTROLS = [
   { key: "glide", label: "pitch glide", min: 0, max: 0.5, step: 0.01, unit: "s" },
   { key: "note", label: "pitch (MIDI note)", min: 24, max: 84, step: 0.01, unit: "", special: true },
   { key: "tractLength", label: "tract length", min: 15, max: 88, step: 1, unit: "", special: true },
-  { key: "gain", label: "output", min: 0, max: 1.5, step: 0.01, unit: "", special: true },
+  { key: "gain", label: "output", min: 0, max: 1, step: 0.005, unit: "", special: true },
   { key: "vibratoRate", label: "vibrato rate", min: 0.1, max: 12, step: 0.1, unit: "", special: true },
   { key: "vibratoDepth", label: "vibrato depth", min: 0, max: 0.04, step: 0.001, unit: "", special: true },
   { key: "wobble", label: "wobble (pitch drift)", min: 0, max: 1, step: 0.01, unit: "", special: true },
@@ -881,7 +944,7 @@ function formatValue(value, spec) {
   if (spec.unit === "s") return `${(n * 1000).toFixed(0)} ms`;
   if (spec.key === "vibratoRate") return `${n.toFixed(1)} Hz`;
   if (spec.key === "vibratoDepth") return n === 0 ? "off" : `${(n * 1731).toFixed(0)}¢`;
-  if (spec.key === "note") return `${n.toFixed(2)}  ${noteName(n)}`;
+  if (spec.key === "note") return `${n.toFixed(2)}  ${pitchLabel(n)}`;
   return n.toFixed(2);
 }
 
@@ -1176,13 +1239,21 @@ function applyVibrato() {
  * ================================================================ */
 
 const NOTE_NAMES = ["C", "C♯", "D", "E♭", "E", "F", "F♯", "G", "A♭", "A", "B♭", "B"];
-const PIANO_LOW = 36; // C2
+const PIANO_LOW = 24; // C1 — the Bass part sits below C2
 const PIANO_HIGH = 84; // C6
 const BLACK = [1, 3, 6, 8, 10];
 
 function noteName(midi) {
   const n = Math.round(midi);
   return `${NOTE_NAMES[((n % 12) + 12) % 12]}${Math.floor(n / 12) - 1}`;
+}
+
+/** a name plus a cent offset, so a quarter-tone does not masquerade as a semitone */
+function pitchLabel(midi) {
+  const nearest = Math.round(midi);
+  const cents = Math.round((midi - nearest) * 100);
+  if (cents === 0) return noteName(nearest);
+  return `${noteName(nearest)} ${cents > 0 ? "+" : "−"}${Math.abs(cents)}¢`;
 }
 
 function buildPiano() {
@@ -1236,11 +1307,15 @@ function paintPiano() {
   const host = $("piano");
   if (!host) return;
   const nearest = Math.round(note);
+  const allowed = allowedNotes().map((n) => Math.round(n));
   host.querySelectorAll(".pkey").forEach((key) => {
-    key.classList.toggle("on", Number(key.dataset.note) === nearest);
+    const m = Number(key.dataset.note);
+    key.classList.toggle("on", m === nearest);
+    key.classList.toggle("allowed", allowed.includes(m));
   });
   const label = $("pianoNote");
-  if (label) label.textContent = `${noteName(note)} · ${note.toFixed(2)} · ${(440 * Math.pow(2, (note - 69) / 12)).toFixed(1)} Hz`;
+  if (label)
+    label.textContent = `${pitchLabel(note)} · ${note.toFixed(2)} · ${(440 * Math.pow(2, (note - 69) / 12)).toFixed(1)} Hz`;
 }
 
 /* ================================================================ *
@@ -1253,50 +1328,160 @@ let presetWhisper = false;
 let composerMode = false;
 
 function capturePreset() {
-  const out = { cfg: {}, note, gain, wordMode, whisper: presetWhisper, vibrato: Object.assign({}, vibrato) };
+  // store what is written, not what this part happens to sound
+  const p = part();
+  const out = {
+    cfg: {},
+    note,
+    gain,
+    wordMode,
+    whisper: presetWhisper,
+    vibrato: Object.assign({}, vibrato),
+  };
   Object.keys(DEFAULTS).forEach((k) => (out.cfg[k] = cfg[k]));
-  out.tractLength = voice ? voice.tractLength : 44;
+  out.tractLength = (voice ? voice.tractLength : BASE_TRACT) - (p.tractDelta || 0);
   return out;
 }
 
+/**
+ * A preset holds the *written* settings; the part transposes them. What the
+ * slider and the piano show is always what you hear.
+ */
 function applyPreset(index) {
-  const preset = presets[index];
+  const preset = presets[index] || null;
+  const p = part();
   wordMode = (preset && preset.wordMode) || "next";
   const sel = $("wordModeSel");
   if (sel) sel.value = wordMode;
-  if (!preset) return;
 
-  Object.keys(DEFAULTS).forEach((k) => {
-    if (preset.cfg && k in preset.cfg) {
-      cfg[k] = preset.cfg[k];
-      syncControl(k, cfg[k]);
+  if (preset) {
+    Object.keys(DEFAULTS).forEach((k) => {
+      if (preset.cfg && k in preset.cfg) {
+        cfg[k] = preset.cfg[k];
+        syncControl(k, cfg[k]);
+      }
+    });
+    if (typeof preset.gain === "number") {
+      gain = preset.gain;
+      syncControl("gain", gain);
+      if (master) master.gain.value = gain;
     }
-  });
-  if (typeof preset.note === "number") {
+    if (preset.vibrato) {
+      Object.assign(vibrato, preset.vibrato);
+      syncControl("vibratoRate", vibrato.rate);
+      syncControl("vibratoDepth", vibrato.depth);
+      syncControl("wobble", vibrato.wobble);
+      applyVibrato();
+    }
+    presetWhisper = !!preset.whisper;
+    syncControl("whisper", presetWhisper);
+    if (ready) voice.setWhisper(presetWhisper, ctx.currentTime);
+  }
+
+  // pitch comes from the part's list for this phrase, not from a transposition
+  const allowed = allowedNotes();
+  if (allowed.length > 0) {
+    if (!allowed.some((n) => Math.abs(n - note) < 0.01)) note = allowed[0];
+  } else if (preset && typeof preset.note === "number") {
     note = preset.note;
-    syncControl("note", note);
-    paintPiano();
-    if (ready) voice.setNote(note, ctx.currentTime, 0);
   }
-  if (typeof preset.gain === "number") {
-    gain = preset.gain;
-    syncControl("gain", gain);
-    if (master) master.gain.value = gain;
+  syncControl("note", note);
+  paintPiano();
+  paintNoteChoices();
+  if (ready) voice.setNote(note, ctx.currentTime, 0);
+
+  const writtenTract =
+    preset && typeof preset.tractLength === "number" ? preset.tractLength : BASE_TRACT;
+  const tract = Math.max(15, Math.min(88, writtenTract + (p.tractDelta || 0)));
+  syncControl("tractLength", tract);
+  if (ready) voice.setTractLength(tract, ctx.currentTime);
+
+  paintInstruction();
+}
+
+async function loadParts() {
+  try {
+    const response = await fetch("/scan/parts.json", { cache: "no-cache" });
+    if (response.ok) {
+      const data = await response.json();
+      if (data && Array.isArray(data.parts) && data.parts.length) {
+        parts = data.parts.map((p) => {
+          if (!p.phrases && Array.isArray(p.instructions)) {
+            p.phrases = p.instructions.map((instruction) => ({ instruction, notes: [] }));
+          }
+          return p;
+        });
+      }
+    }
+  } catch (e) {
+    /* keep the fallback */
   }
-  if (preset.vibrato) {
-    Object.assign(vibrato, preset.vibrato);
-    syncControl("vibratoRate", vibrato.rate);
-    syncControl("vibratoDepth", vibrato.depth);
-    syncControl("wobble", vibrato.wobble);
-    applyVibrato();
+  try {
+    const saved = localStorage.getItem("tract.part");
+    const found = parts.findIndex((p) => p.id === saved);
+    if (found > -1) partIndex = found;
+  } catch (e) {}
+
+  const sel = $("partSel");
+  if (sel) {
+    sel.innerHTML = "";
+    parts.forEach((p, i) => sel.appendChild(new Option(p.name, String(i))));
+    sel.value = String(partIndex);
+    sel.addEventListener("input", () => setPart(Number(sel.value)));
   }
-  if (typeof preset.tractLength === "number") {
-    syncControl("tractLength", preset.tractLength);
-    if (ready) voice.setTractLength(preset.tractLength, ctx.currentTime);
+  paintInstruction();
+}
+
+function setPart(index) {
+  partIndex = Math.max(0, Math.min(parts.length - 1, index));
+  try {
+    localStorage.setItem("tract.part", parts[partIndex].id);
+  } catch (e) {}
+  const sel = $("partSel");
+  if (sel) sel.value = String(partIndex);
+  applyPreset(phraseIndex); // re-reads the written settings through the new part
+  sendOut("/scan/out/part", [partIndex + 1, parts[partIndex].name]);
+}
+
+function paintInstruction() {
+  const el = $("instruction");
+  if (!el) return;
+  const text = partPhrase().instruction || "";
+  el.textContent = text || "—";
+  el.classList.toggle("empty", !text);
+  const tag = $("partTag");
+  if (tag) tag.textContent = part().name || "—";
+  paintNoteChoices();
+}
+
+function saveInstruction(text) {
+  const p = part();
+  if (!p.phrases) p.phrases = [];
+  if (!p.phrases[phraseIndex]) p.phrases[phraseIndex] = {};
+  p.phrases[phraseIndex].instruction = text;
+}
+
+/** the chips beside the piano: this part's pitches for this phrase */
+function paintNoteChoices() {
+  const host = $("noteChoices");
+  if (!host) return;
+  const allowed = allowedNotes();
+  host.innerHTML = "";
+  if (allowed.length === 0) {
+    const free = document.createElement("span");
+    free.className = "note-free";
+    free.textContent = "any pitch";
+    host.appendChild(free);
+    return;
   }
-  presetWhisper = !!preset.whisper;
-  syncControl("whisper", presetWhisper);
-  if (ready) voice.setWhisper(presetWhisper, ctx.currentTime);
+  allowed.forEach((n) => {
+    const chip = document.createElement("button");
+    chip.className = "note-chip" + (Math.abs(n - note) < 0.01 ? " on" : "");
+    chip.textContent = pitchLabel(n);
+    chip.title = `${n} · ${(440 * Math.pow(2, (n - 69) / 12)).toFixed(1)} Hz`;
+    chip.addEventListener("click", () => applyRemote("/scan/note", [n]));
+    host.appendChild(chip);
+  });
 }
 
 async function loadPresets() {
@@ -1358,6 +1543,26 @@ function setupComposer() {
   });
   $("wordModeSel").addEventListener("input", (event) => {
     wordMode = event.target.value;
+  });
+  const instruction = $("instruction");
+  if (instruction) {
+    instruction.setAttribute("contenteditable", "true");
+    instruction.classList.add("editable");
+    instruction.addEventListener("input", () => saveInstruction(instruction.textContent.trim()));
+    instruction.addEventListener("blur", () => {
+      saveInstruction(instruction.textContent.trim());
+      flashPreset("instruction updated — export parts.json to keep it");
+    });
+  }
+  $("partsExport").addEventListener("click", () => {
+    const blob = new Blob([JSON.stringify({ parts }, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "parts.json";
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    flashPreset("exported — commit it as scan/parts.json");
   });
   $("presetExport").addEventListener("click", () => {
     const blob = new Blob([JSON.stringify(presets, null, 2)], { type: "application/json" });
@@ -1435,6 +1640,13 @@ window.scan = {
   },
   capturePreset,
   applyPreset,
+  setPart,
+  get part() {
+    return parts[partIndex];
+  },
+  get parts() {
+    return parts;
+  },
 };
 
 buildControls();
@@ -1538,7 +1750,9 @@ window.addEventListener("blur", () => stopScan());
 // the dictionary loads itself over XHR; wait for it, then seed the strip
 (function waitForDict(tries = 0) {
   if (dictReady() || tries > 200) {
-    loadPresets().then(() => setPhrase(0, { announce: false }));
+    Promise.all([loadParts(), loadPresets()]).then(() =>
+      setPhrase(0, { announce: false })
+    );
     return;
   }
   setTimeout(() => waitForDict(tries + 1), 100);

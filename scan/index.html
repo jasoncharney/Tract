@@ -125,6 +125,49 @@
         user-select: text;
       }
 
+      /* ---- part identity ---- */
+      .partpick { font-size: 12px; color: var(--dim); display: flex; align-items: center; gap: 6px; }
+      .partpick select {
+        font: inherit;
+        background: var(--panel);
+        color: var(--ink);
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        padding: 4px 8px;
+      }
+      .instruction-row {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+        margin: 0 0 10px;
+      }
+      .parttag {
+        flex: none;
+        font: 11px ui-monospace, Menlo, monospace;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--hot);
+        border: 1px solid #4a2b3c;
+        border-radius: 999px;
+        padding: 4px 10px;
+        white-space: nowrap;
+      }
+      .instruction {
+        flex: 1;
+        font-size: 14px;
+        line-height: 1.45;
+        color: var(--ink);
+        border-left: 2px solid var(--line);
+        padding: 2px 0 2px 12px;
+        min-width: 0;
+      }
+      .instruction.empty { color: var(--dim); }
+      .instruction.editable:focus {
+        outline: none;
+        border-left-color: var(--hot);
+        background: #221f2c;
+      }
+
       /* ---- the scan surface ---- */
       .strip {
         position: relative;
@@ -298,7 +341,38 @@
       .pkey.black:hover { background: #3a3346; }
       .pkey.white.on { background: var(--hot); color: #23111a; }
       .pkey.black.on { background: var(--hot); }
-      .pnote { font: 13px ui-monospace, Menlo, monospace; color: var(--ink); min-width: 190px; }
+      .pitchside { display: flex; flex-direction: column; gap: 8px; min-width: 200px; }
+      .pnote { font: 13px ui-monospace, Menlo, monospace; color: var(--dim); }
+      .note-choices { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+      .note-chip {
+        font: 14px ui-monospace, Menlo, monospace;
+        padding: 6px 12px;
+        border-radius: 8px;
+        border: 1px solid #4a2b3c;
+        background: #2a1f28;
+        color: var(--ink);
+        cursor: pointer;
+      }
+      .note-chip:hover { border-color: var(--hot); }
+      .note-chip.on { background: var(--hot); color: #23111a; border-color: var(--hot); font-weight: 600; }
+      .note-free { font: 12px ui-monospace, Menlo, monospace; color: var(--dim); }
+      /* the pitches this part may choose from in this phrase */
+      .pkey.white.allowed { background: #ffd9ea; }
+      .pkey.black.allowed { background: #7a3a56; }
+      .pkey.white.allowed::after,
+      .pkey.black.allowed::after {
+        content: "";
+        position: absolute;
+        left: 50%;
+        transform: translateX(-50%);
+        bottom: 6px;
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background: var(--hot);
+      }
+      .pkey.white.on, .pkey.black.on { background: var(--hot); }
+      .pkey.white.on::after, .pkey.black.on::after { background: #23111a; }
 
       /* ---- composer preset row ---- */
       .preset-row {
@@ -378,6 +452,9 @@
     <header>
       <h1>Tract</h1>
       <span class="sub">by Jason Charney (2026)</span>
+      <label class="partpick">part
+        <select id="partSel"></select>
+      </label>
       <span class="spacer"></span>
       <span id="patchStatus" class="pill">worklet: —</span>
       <span id="wsStatus" class="pill">bridge: —</span>
@@ -393,6 +470,10 @@
       </div>
       <button class="nav" id="nextPhrase" title="next phrase (↓)">›</button>
       <div class="phrase-dots" id="phraseDots"></div>
+    </div>
+    <div class="instruction-row">
+      <span class="parttag" id="partTag">—</span>
+      <div class="instruction" id="instruction">—</div>
     </div>
     <div class="alts" id="alts"></div>
     <div id="ipaLine"></div>
@@ -437,7 +518,10 @@
 
     <div class="pitchbar">
       <div class="piano" id="piano"></div>
-      <div class="pnote" id="pianoNote">—</div>
+      <div class="pitchside">
+        <div class="note-choices" id="noteChoices"></div>
+        <div class="pnote" id="pianoNote">—</div>
+      </div>
     </div>
 
     <details open>
@@ -454,6 +538,7 @@
           </select>
         </label>
         <button id="presetExport">export presets.json</button>
+        <button id="partsExport">export parts.json</button>
         <label class="importer">import<input type="file" id="presetImport" accept="application/json" /></label>
         <span id="presetStatus"></span>
       </div>
