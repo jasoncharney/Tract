@@ -62,7 +62,7 @@
       "phrase": 1,
       "label": "Release I",
       "parts": {
-        "1": { "instruction": "Release mouse. Select Ab4 or A4. Advance to Phrase 2. Press Z to toggle whisper on. Wait for cue." }
+        "1": { "instruction": "Release mouse. Select Ab4 or A4. Advance to Phrase {2}. Press {Z} to toggle whisper on. Wait for cue." }
       }
     },
     {
@@ -70,10 +70,10 @@
       "phrase": 2,
       "label": "Part I 'crack!'",
       "parts": {
-        "1": { "instruction": "Trigger word with R key once. Wait a moment, then start triggering the word fast and irregularly with the R key." },
-        "2": { "instruction": "Release into silence. Advance to Phrase 2. Press Z to toggle whisper on." },
-        "3": { "instruction": "Release into silence. Advance to Phrase 2. Press Z to toggle whisper on." },
-        "4": { "instruction": "Release into silence. Advance to Phrase 2." }
+        "1": { "instruction": "Trigger word with {R} once. Wait a moment, then trigger the word fast and irregularly with {R}. Repeat." },
+        "2": { "instruction": "Release into silence. Advance to Phrase {2}. Press {Z} to toggle whisper on." },
+        "3": { "instruction": "Release into silence. Advance to Phrase {2}. Press {Z} to toggle whisper on." },
+        "4": { "instruction": "Release into silence. Advance to Phrase {2}." }
       }
     },
     {
@@ -81,7 +81,7 @@
       "phrase": 2,
       "label": "Part II enters.",
       "parts": {
-        "2": { "instruction": "Trigger word fast and irregularly with the R key." }
+        "2": { "instruction": "Trigger word fast and irregularly with {R}." }
       }
     },
     {
@@ -89,9 +89,9 @@
       "phrase": 2,
       "label": "Part III enters.",
       "parts": {
-        "3": { "instruction": "Trigger word irregularly with the E key, occasionally interrupting to restart the word." },
-        "2": { "instruction": "Toggle whisper (with Z) on and off in short bursts, erupting from the texture with pitch. Not too much though." },
-        "1": { "instruction": "Toggle whisper (with Z) on and off in short bursts, erupting from the texture with pitch. Not too much though." }
+        "3": { "instruction": "Trigger word irregularly with {E}, occasionally interrupting to restart the word." },
+        "2": { "instruction": "Toggle whisper on and off in short bursts with {Z}, erupting from the texture with pitch. Not too much though." },
+        "1": { "instruction": "Toggle whisper on and off in short bursts with {Z}, erupting from the texture with pitch. Not too much though." }
       }
     },
     {
@@ -102,7 +102,7 @@
       "parts": {
         "2": { "instruction": "Slowly increase the proportion of voiced moments, eventually reaching fully voiced." },
         "3": { "instruction": "Slowly increase the proportion of voiced moments, eventually reaching fully voiced." },
-        "4": { "instruction": "Trigger word slowly (W) with regular pulse, with the other Part IV players. Leave a small gap between each press. Get ready for cutoff."}
+        "4": { "instruction": "Trigger {W} with regular pulse, synchronizing beginnings with the other Part IV players. Leave a small gap between each press. Get ready for cutoff."}
       }
     },
     {
@@ -110,10 +110,10 @@
       "phrase": 2,
       "label": "cutoff, silence",
       "parts": {
-        "1": { "instruction": "Stop - silence. Advance to phrase 3." },
-        "2": { "instruction": "Stop - silence. Advance to phrase 3." },
-        "3": { "instruction": "Stop - silence. Advance to phrase 3." },
-        "4": { "instruction": "Stop - silence. Advance to phrase 3." }
+        "1": { "instruction": "Stop - silence. Advance to phrase {3}." },
+        "2": { "instruction": "Stop - silence. Advance to phrase {3}." },
+        "3": { "instruction": "Stop - silence. Advance to phrase {3}." },
+        "4": { "instruction": "Stop - silence. Advance to phrase {3}." }
       }
     },
     {
@@ -132,9 +132,9 @@
       "phrase": 3,
       "label": "percussive phonemes, IV moving on ",
       "parts": {
-        "1": { "instruction": "Press T rapidly and irregularly to create a flurry of noise." },
-        "2": { "instruction": "Press T rapidly and irregularly to create a flurry of noise." },
-        "3": { "instruction": "Press T rapidly and irregularly to create a flurry of noise." },
+        "1": { "instruction": "Press {T} rapidly and irregularly to create a flurry of noise." },
+        "2": { "instruction": "Press {T} rapidly and irregularly to create a flurry of noise." },
+        "3": { "instruction": "Press {T} rapidly and irregularly to create a flurry of noise." },
         "4": { "instruction": "Use mouse to repeatedly scan through 'under the burden' together with other Part IV players, slowly, and synchronized." }
       }
     },
@@ -143,8 +143,8 @@
       "phrase": 3,
       "label": "III joins IV",
       "parts": {
-        "1": { "instruction": "Press T rapidly and irregularly to create a flurry of noise." },
-        "2": { "instruction": "Press T rapidly and irregularly to create a flurry of noise." },
+        "1": { "instruction": "Press {T} rapidly and irregularly to create a flurry of noise." },
+        "2": { "instruction": "Press {T} rapidly and irregularly to create a flurry of noise." },
         "3": { "instruction": "Use mouse to slowly scan through 'under the burden,' synchronizing with other Part III and IV players. Repeat." },
         "4": { "instruction": "Use mouse to slowly scan through 'under the burden,' synchronizing with other Part IV players. Repeat." }
       }
@@ -154,7 +154,7 @@
       "phrase": 3,
       "label": "II joins III and IV",
       "parts": {
-        "1": { "instruction": "Press T rapidly and irregularly to create a flurry of noise." },
+        "1": { "instruction": "Press {T} rapidly and irregularly to create a flurry of noise." },
         "2": { "instruction": "Use mouse to slowly scan through 'under the burden,' synchronizing with other Part II, III, and IV players. Repeat."},
         "3": { "instruction": "Use mouse to slowly scan through 'under the burden,' synchronizing with other Part III and IV players. Repeat." },
         "4": { "instruction": "Use mouse to slowly scan through 'under the burden,' synchronizing with other Part IV players. Repeat." }
@@ -176,10 +176,10 @@
       "phrase": 4,
       "label": "Release and whisper together",
       "parts": {
-        "1": { "instruction": "Release! Advance to Phrase 4. Toggle whisper on (z key). Synchronize with other players, scanning through the phrase together slowly, and hold on the final 'n' until cued to release."},
-        "2": { "instruction": "Release! Advance to Phrase 4. Toggle whisper on (z key). Synchronize with other players, scanning through the phrase together slowly, and hold on the final 'n' until cued to release."},
-        "3": { "instruction": "Release! Advance to Phrase 4. Toggle whisper on (z key). Synchronize with other players, scanning through the phrase together slowly, and hold on the final 'n' until cued to release."},
-        "4": { "instruction": "Release! Advance to Phrase 4. Toggle whisper on (z key). Synchronize with other players, scanning through the phrase together slowly, and hold on the final 'n' until cued to release."}
+        "1": { "instruction": "Release! Advance to Phrase {4}. Toggle whisper on with {Z}. Synchronize with other players, scanning through the phrase together slowly, and hold on the final 'n' until cued to release."},
+        "2": { "instruction": "Release! Advance to Phrase {4}. Toggle whisper on with {Z}. Synchronize with other players, scanning through the phrase together slowly, and hold on the final 'n' until cued to release."},
+        "3": { "instruction": "Release! Advance to Phrase {4}. Toggle whisper on with {Z}. Synchronize with other players, scanning through the phrase together slowly, and hold on the final 'n' until cued to release."},
+        "4": { "instruction": "Release! Advance to Phrase {4}. Toggle whisper on with {Z}. Synchronize with other players, scanning through the phrase together slowly, and hold on the final 'n' until cued to release."}
       }
     },
      {
@@ -187,10 +187,10 @@
       "phrase": 4,
       "label": "Release",
       "parts": {
-        "1": { "instruction": "Release! Advance to Phrase 5. Toggle whisper off (z key)."},
-        "2": { "instruction": "Release! Advance to Phrase 5. Toggle whisper off (z key)."},
-        "3": { "instruction": "Release! Advance to Phrase 5. Toggle whisper off (z key)."},
-        "4": { "instruction": "Release! Advance to Phrase 5. Toggle whisper off (z key)."}
+        "1": { "instruction": "Release! Advance to Phrase {5}. Toggle whisper off with {Z}."},
+        "2": { "instruction": "Release! Advance to Phrase {5}. Toggle whisper off with {Z}."},
+        "3": { "instruction": "Release! Advance to Phrase {5}. Toggle whisper off with {Z}."},
+        "4": { "instruction": "Release! Advance to Phrase {5}. Toggle whisper off with {Z}."}
       }
     }
   ]

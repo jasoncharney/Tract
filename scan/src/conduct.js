@@ -223,7 +223,7 @@ function paintStand() {
       "goes-row" + (armed === at ? " armed" : "") + (landed === at && armed === null ? " landed" : "");
     el.innerHTML =
       `<span class="goes-part">${row.name}</span>` +
-      `<span class="goes-text">${escapeHTML(row.instruction)}</span>`;
+      `<span class="goes-text">${instructionHTML(row.instruction)}</span>`;
     goes.appendChild(el);
   });
 
@@ -275,6 +275,26 @@ function escapeHTML(text) {
     /[&<>"']/g,
     (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]
   );
+}
+
+/** {A} in a cue's text is a key the player presses; draw it as one here too, so
+ *  the desk shows what the player will actually be reading */
+function keysHTML(text) {
+  return escapeHTML(text).replace(/\{([^{}]{1,12})\}/g, (whole, key) => {
+    const label = key.trim();
+    if (!label) return whole;
+    return `<span class="keycap${label.length > 2 ? " wide" : ""}">${label}</span>`;
+  });
+}
+
+/** the player reads one sentence per line, so the desk shows it that way too */
+function instructionHTML(text) {
+  const lines = String(text)
+    .split(/(?<=[.!?]["'”’)\]]?)\s+(?=\S)/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (lines.length < 2) return keysHTML(text);
+  return lines.map((line) => `<span class="sentence">${keysHTML(line)}</span>`).join("");
 }
 
 /* ================================================================ *

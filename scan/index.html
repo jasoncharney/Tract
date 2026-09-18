@@ -118,7 +118,7 @@
         background: var(--bg);
         color: var(--ink);
         font: 14px/1.5 var(--sans);
-        padding: 18px 20px 60px;
+        padding: 14px 20px 14px;
       }
       header {
         display: flex;
@@ -157,7 +157,7 @@
         display: flex;
         align-items: center;
         gap: 12px;
-        margin: 18px 0 8px;
+        margin: 8px 0 6px;
         flex-wrap: wrap;
       }
       .phrases button.nav {
@@ -243,9 +243,9 @@
       }
       .instruction-row {
         display: flex;
-        align-items: flex-start;
-        gap: 12px;
-        margin: 0 0 10px;
+        align-items: center;
+        gap: 14px;
+        margin: 2px 0 8px;
       }
       .parttag {
         flex: none;
@@ -258,14 +258,20 @@
         padding: 4px 10px;
         white-space: nowrap;
       }
+      /* The instruction is the score. A player reads it from a music stand
+         distance with their hands on the trackpad, so it gets the width of the
+         page and as much size as the line can take — down to 16px on a small
+         laptop, never smaller, wrapping to a second line rather than shrinking
+         further. */
       .instruction {
         flex: 1;
-        font-size: 14px;
-        line-height: 1.45;
+        font-size: clamp(16px, 2.5vw, 34px);
+        line-height: 1.22;
         color: var(--ink);
-        border-left: 2px solid var(--line);
-        padding: 2px 0 2px 12px;
+        border-left: 3px solid var(--hot-line);
+        padding: 2px 0 4px 16px;
         min-width: 0;
+        overflow-wrap: break-word;
       }
       .instruction.empty { color: var(--dim); }
       .instruction-stack { flex: 1; min-width: 0; }
@@ -274,15 +280,16 @@
       .oncoming {
         display: flex;
         align-items: baseline;
-        gap: 8px;
-        margin-top: 6px;
-        padding: 4px 0 2px 12px;
-        border-left: 2px dashed var(--warn-line);
+        gap: 10px;
+        margin-top: 8px;
+        padding: 4px 0 2px 16px;
+        border-left: 3px dashed var(--warn-line);
         color: var(--dim);
-        font-size: 13px;
+        font-size: clamp(15px, 1.7vw, 22px);
+        line-height: 1.25;
       }
       .oncoming-tag {
-        font: 10px var(--mono);
+        font: 11px var(--mono);
         letter-spacing: 0.1em;
         text-transform: uppercase;
         color: var(--warn);
@@ -354,8 +361,8 @@
         display: flex;
         gap: 6px;
         align-items: stretch;
-        min-height: 132px;
-        padding: 10px;
+        min-height: 118px;
+        padding: 8px;
         margin: 4px 0 4px;
         background: var(--panel);
         border: 1px solid var(--line);
@@ -500,7 +507,7 @@
       .partchoice.remembered { border-color: var(--hot-line); }
       .modal-foot { margin: 20px 0 0; color: var(--dim); font-size: 12px; }
 
-      .hint { color: var(--dim); font-size: 12px; margin: 0 0 14px; }
+      .hint { color: var(--dim); font-size: 12px; margin: 2px 0 8px; }
 
       .readout {
         display: flex;
@@ -508,7 +515,7 @@
         flex-wrap: wrap;
         font: 12px var(--mono);
         color: var(--dim);
-        padding: 8px 2px 14px;
+        padding: 5px 2px 8px;
       }
       .readout b { color: var(--ink); font-weight: 600; }
       #transportState {
@@ -521,14 +528,14 @@
       #transportState.on { color: var(--on-hot); background: var(--hot); border-color: var(--hot); }
 
       /* ---- key legend ---- */
-      .keys { display: flex; flex-direction: column; gap: 6px; margin: 2px 0 12px; }
+      .keys { display: flex; flex-direction: column; gap: 4px; margin: 2px 0 8px; }
       .keyrow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
       .keycap {
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        min-width: 26px;
-        height: 26px;
+        min-width: 24px;
+        height: 22px;
         padding: 0 6px;
         border-radius: 6px;
         border: 1px solid var(--line);
@@ -538,14 +545,38 @@
         color: var(--ink);
       }
       .keycap.wide { min-width: 40px; }
-      .keyhelp { color: var(--dim); font-size: 12px; }
+
+      /* A key named inside an instruction is drawn like the ones in the legend,
+         but sized to the text around it, so it still reads as one sentence at
+         34px or at 16px. Write them in cues.json as {A}, {W E R}, {Home}. */
+      .instruction .keycap,
+      .oncoming .keycap {
+        font-size: 0.66em;
+        min-width: 1.6em;
+        height: 1.5em;
+        padding: 0 0.4em;
+        border-radius: 0.28em;
+        margin: 0 0.12em;
+        vertical-align: 0.08em;
+        background: var(--panel-2);
+        border-color: var(--hot-line);
+      }
+      .instruction .keycap.wide { min-width: 2.6em; }
+      /* one sentence per line, stacked */
+      .instruction .sentence,
+      .oncoming .sentence { display: block; }
+      .instruction .sentence + .sentence { margin-top: 0.12em; }
+
+      /* nobody has said anything yet */
+      .instruction.waiting { color: var(--dim); }
+      .keyhelp { color: var(--dim); font-size: 11.5px; line-height: 1.35; }
 
       /* ---- piano ---- */
-      .pitchbar { display: flex; align-items: center; gap: 14px; margin: 0 0 14px; flex-wrap: wrap; }
+      .pitchbar { display: flex; align-items: center; gap: 14px; margin: 0 0 8px; flex-wrap: wrap; }
       .piano {
         position: relative;
         flex: 1 1 420px;
-        height: 78px;
+        height: 64px;
         min-width: 300px;
         background: var(--panel-3);
         border: 1px solid var(--line);
@@ -654,8 +685,8 @@
         background: var(--panel);
         border: 1px solid var(--line);
         border-radius: 10px;
-        padding: 10px 14px;
-        margin-bottom: 12px;
+        padding: 8px 12px;
+        margin-bottom: 10px;
       }
       summary { cursor: pointer; font-weight: 600; }
       .grid {
@@ -677,21 +708,70 @@
 
       /* the upstream tract view draws a 600x500 canvas with position:absolute,
          inside a grid that reserves no room for it — so it must be clipped */
+      .inline-toggle {
+        font: 11px var(--mono);
+        padding: 2px 8px;
+        margin-left: 8px;
+        border-radius: 5px;
+        vertical-align: 1px;
+      }
+
+      /* On a short screen the instruction gives up some size rather than the
+         page giving up its bottom edge — but never below 16px. */
+      @media (max-height: 840px) {
+        .instruction { font-size: clamp(16px, 2vw, 26px); }
+        .oncoming { font-size: clamp(15px, 1.5vw, 19px); }
+        /* and the furniture gives up a little too, so a 13" laptop still shows
+           the strip, the piano and the tract without a scrollbar */
+        #tractHost { --tract-scale: 0.32; }
+        .piano { height: 54px; }
+        .strip { min-height: 104px; }
+      }
+      @media (max-height: 790px) {
+        #tractHost { --tract-scale: 0.26; }
+        .piano { height: 46px; }
+        .strip { min-height: 92px; }
+        .keys { font-size: 11px; }
+        body { padding: 10px 16px 14px; }
+      }
+
+      /* ---- the two panels, side by side ---- */
+      .panels {
+        display: grid;
+        grid-template-columns: max-content minmax(0, 1fr);
+        gap: 12px;
+        align-items: start;
+        margin-top: 6px;
+      }
+      .panels > details { margin-top: 0; }
+      .panels .stack { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+      .panels .stack > details { margin-bottom: 0; }
+      @media (max-width: 860px) {
+        .panels { grid-template-columns: minmax(0, 1fr); }
+      }
+
+      /* Upstream draws a 600x500 canvas and positions its parts absolutely, so
+         it cannot simply be given a smaller box — it is scaled instead, and the
+         host is sized to what the scale leaves behind. */
       #tractHost {
         position: relative;
         overflow: hidden;
+        width: calc(600px * var(--tract-scale)); /* the panel is as wide as the drawing */
         height: 0;
-        margin-top: 10px;
+        margin-top: 6px;
         border-radius: 8px;
         transition: height 160ms ease;
+        --tract-scale: 0.4;
       }
-      #tractHost.on { height: 500px; }
+      #tractHost.on { height: calc(500px * var(--tract-scale)); }
       #tractHost pink-trombone {
         display: block;
         position: relative;
         width: 600px;
         height: 500px;
-        margin: 0 auto;
+        transform: scale(var(--tract-scale));
+        transform-origin: top left;
+        margin: 0;
         filter: hue-rotate(-10deg);
       }
       /* ---- output level, at the top where it belongs ---- */
@@ -827,38 +907,6 @@
       scan itself — release and the gate closes.
     </p>
 
-    <div class="keys">
-      <div class="keyrow">
-        <span class="keycap">A</span><span class="keycap">S</span><span class="keycap">D</span>
-        <span class="keyhelp">hold to scan — slow (3–5 s per phoneme) · mid (0.25–0.75 s) ·
-          fast (0.1–0.25 s). Let go and the gate closes where you are; press again to
-          carry on from there.</span>
-      </div>
-      <div class="keyrow">
-        <span class="keycap">W</span><span class="keycap">E</span><span class="keycap">R</span>
-        <span class="keyhelp">one word at slow (3–5 s per phoneme) · mid (0.25–0.75 s) ·
-          fast (0.1–0.25 s)</span>
-      </div>
-      <div class="keyrow">
-        <span class="keycap">Q</span>
-        <span class="keyhelp">a random phoneme from the phrase</span>
-        <span class="keycap">T</span>
-        <span class="keyhelp">a random stop or fricative, unvoiced — percussion</span>
-        <span class="keycap">Z</span>
-        <span class="keyhelp">whisper on / off — stays until you press it again</span>
-      </div>
-      <div class="keyrow">
-        <span class="keycap wide">1–8</span>
-        <span class="keyhelp">phrase · <span class="keycap wide">↑ ↓</span> step through them ·
-          <span class="keycap wide">Home</span> back to the start of the phrase</span>
-      </div>
-    </div>
-
-    <div class="readout">
-      <span id="transportState">—</span>
-      <span id="readout"></span>
-    </div>
-
     <div class="pitchbar">
       <div class="piano" id="piano"></div>
       <div class="pitchside">
@@ -867,63 +915,69 @@
       </div>
     </div>
 
-    <details>
-      <summary>timing &amp; voice</summary>
-      <div class="alts" id="alts"></div>
-      <div class="preset-row" id="presetRow" hidden>
-        <span class="preset-label">composer presets</span>
-        <span id="presetState">—</span>
-        <button id="presetSave">save to this phrase</button>
-        <button id="presetRevert">revert</button>
-        <button id="presetClear">clear</button>
-        <label class="wordmode">W E R play
-          <select id="wordModeSel">
-            <option value="next">the next word</option>
-            <option value="random">a random word</option>
-          </select>
-        </label>
-        <button id="presetExport">write presets.json</button>
-        <button id="partsExport">write parts.json</button>
-        <label class="importer">import<input type="file" id="presetImport" accept="application/json" /></label>
-        <span id="presetStatus"></span>
+    <div class="panels">
+      <details open>
+        <summary>tract <button id="toggleTract" class="inline-toggle">show</button></summary>
+        <div id="tractHost"></div>
+      </details>
+      <div class="stack">
+        <details id="keysPanel">
+          <summary>keys &amp; mouse</summary>
+          <div class="keys">
+            <div class="keyrow">
+              <span class="keycap">A</span><span class="keycap">S</span><span class="keycap">D</span>
+              <span class="keyhelp">hold to scan: slow 3–5 s per phoneme · mid 0.25–0.75 · fast 0.1–0.25</span>
+            </div>
+            <div class="keyrow">
+              <span class="keycap">W</span><span class="keycap">E</span><span class="keycap">R</span>
+              <span class="keyhelp">one word, at those same three rates</span>
+            </div>
+            <div class="keyrow">
+              <span class="keycap">Q</span>
+              <span class="keyhelp">a random phoneme from the phrase</span>
+              <span class="keycap">T</span>
+              <span class="keyhelp">a random stop or fricative, unvoiced</span>
+              <span class="keycap">Z</span>
+              <span class="keyhelp">whisper on / off</span>
+            </div>
+            <div class="keyrow">
+              <span class="keycap wide">1–8</span>
+              <span class="keyhelp">phrase ·</span>
+              <span class="keycap wide">↑ ↓</span>
+              <span class="keyhelp">step through them ·</span>
+              <span class="keycap wide">Home</span>
+              <span class="keyhelp">back to the start of the phrase</span>
+            </div>
+            <div class="readout">
+              <span id="transportState">—</span>
+              <span id="readout"></span>
+            </div>
+          </div>
+        </details>
+        <details>
+          <summary>timing &amp; voice</summary>
+          <div class="alts" id="alts"></div>
+          <div class="preset-row" id="presetRow" hidden>
+            <span class="preset-label">composer presets</span>
+            <span id="presetState">—</span>
+            <button id="presetSave">save to this phrase</button>
+            <button id="presetRevert">revert</button>
+            <button id="presetClear">clear</button>
+            <label class="wordmode">W E R play
+              <select id="wordModeSel">
+                <option value="next">the next word</option>
+                <option value="random">a random word</option>
+              </select>
+            </label>
+            <button id="presetExport">write presets.json</button>
+            <button id="partsExport">write parts.json</button>
+            <label class="importer">import<input type="file" id="presetImport" accept="application/json" /></label>
+            <span id="presetStatus"></span>
+          </div>
+          <div class="grid" id="controls"></div>
+        </details>
       </div>
-      <div class="grid" id="controls"></div>
-    </details>
-
-    <details open>
-      <summary>tract</summary>
-      <button id="toggleTract">show tract</button>
-      <div id="tractHost"></div>
-    </details>
-
-    <details id="maxPanel" hidden>
-      <summary>control from Max (OSC over UDP)</summary>
-      <p class="note">
-        Run <code>node scan-bridge/scan-bridge.js</code> from the repo root, then send OSC to
-        <code>127.0.0.1:7400</code> from <code>[udpsend 127.0.0.1 7400]</code>.
-      </p>
-      <pre class="note" style="overflow:auto"><code>/scan/position 3.42     scan position, in cells (index + fraction)
-/scan/norm 0.5          same thing, normalised 0..1
-/scan/index 3           jump to the centre of cell 3
-/scan/gate 1            1 = sound, 0 = release
-/scan/phrase 3          choose phrase 1-8
-/scan/next              step to the next phrase
-/scan/prev              step back
-/scan/note 60.5         pitch as a MIDI note number (fractional ok)
-/scan/bend -2.          semitone offset
-/scan/glide 0.05        portamento seconds
-/scan/text "hello"      set words outside the phrase list
-/scan/phonemes "hɛloʊ"  set IPA directly
-/scan/param burstTime 0.012
-/scan/tract 44          tract length
-/scan/whisper 0
-/scan/gain 1.</code></pre>
-      <p class="note">
-        Feedback comes back on <code>127.0.0.1:7401</code>
-        (<code>/scan/out/cell</code>, <code>/scan/out/gesture</code>,
-        <code>/scan/out/phrase</code>) — listen with <code>[udpreceive 7401]</code>.
-      </p>
-    </details>
+    </div>
 
     <!-- the ?v= is a cache-buster: bump it whenever scan.js changes, so a browser
          cannot quietly keep running yesterday's module -->

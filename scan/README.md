@@ -85,6 +85,50 @@ and the colour already says it. Hovering a tile still names it.
 Diphthongs written as two targets glide across their own cell, so you scan
 through them too.
 
+## What a player sees
+
+One screen, no scrolling. On a 1440×900 laptop everything is above the fold with
+the tract drawing open — measured, and again at 1280×800 and 1024×768, with a
+long two-line instruction in place.
+
+Until a cue arrives — including after stepping through the phrases by hand — every
+phrase reads *"Waiting for cues. Make sure your audio output is up and you are
+connected to the conductor."* A player who opens the page early is told what to
+check, not handed an instruction nobody gave them. (In composer mode the phrase's
+own line from `parts.json` shows instead, so it is still editable there.)
+
+**One sentence per line.** An instruction is a list of things to do in order, and
+stacked sentences are easier to take in at a glance than a paragraph. The split
+happens after `.`, `!` or `?` — plus any closing quote, so `break.'` ends a line —
+and it needs whitespace after the stop, which is what keeps `0.25 s` and `Bb2.`
+whole. Sentences are split before the text is escaped, so the split can never
+land inside a tag.
+
+That makes a long cue taller, so the type gives way rather than the page: the
+instruction starts at whatever size the stylesheet asks for and steps down a
+pixel at a time until the page stops overflowing, never below 16px. On a 1440×900
+screen a five-sentence cue still reads at the full 34px.
+
+The **instruction is the biggest thing on the page**, near the full width, from
+34px down to 16px depending on the window; it wraps to a second line rather than
+shrinking past 16px, and on a short screen the furniture (tract, piano, strip)
+gives up height before the text does. It is a score a player reads at arm's
+length with their hands on the trackpad, not a caption.
+
+Under the strip is one line about the mouse, then the piano — the two things a
+player actually touches, with nothing between them. The key legend has moved into
+a **keys & mouse** panel, folded shut, next to *timing & voice*: with cues naming
+their own keys (below) it is a reference, not something to read while playing.
+The position/cell/gesture readout lives in there too.
+
+Beside those, the **tract drawing sits side by side** with them. The
+drawing is scaled down — upstream lays out a fixed 600×500 canvas with absolutely
+positioned parts, so it cannot simply be given a smaller box; it is scaled with a
+transform and the panel is sized to what that leaves. The tract opens by itself
+when audio starts, and `hide` in its title bar turns it off for a player whose
+laptop needs the CPU. *Timing & voice* stays collapsed, because most players will
+never open it.
+
 ## Playing it from the keyboard
 
 The mouse is one way in; the keys are the other, and they need no trackpad
@@ -221,6 +265,18 @@ for themselves.
   ]
 }
 ```
+
+**Name a key in curly brackets and it comes out as a key box**, the same ones as
+the legend, sized to the text around it:
+
+```json
+{ "instruction": "Hold {A} to scan slowly. {W} {E} {R} play one word. {Home} to restart." }
+```
+
+Anything from one to twelve characters between `{` and `}` works — `{A}`, `{↑ ↓}`,
+`{Home}` — and everything outside the brackets is escaped, so a cue file stays
+text and never becomes markup. The conductor's own panel draws them the same way,
+so the desk shows exactly what the players are reading.
 
 `parts` is keyed by the part ids in `parts.json`. `phrase` groups cues under a
 heading in the conductor's list and is not sent anywhere — a cue changes what a
@@ -404,8 +460,10 @@ silently sounding wrong.
 
 ## Control from Max
 
-(The panel describing this is hidden unless you open the page with
-`?composer=1` — the piece needs no Max.)
+(The piece needs no Max. The panel that used to describe this on the player's
+page is gone — it was one more thing between a player and the score — but the
+bridge still speaks OSC exactly as below, so a patch can drive or listen to any
+of it.)
 
 `scan-bridge/scan-control.maxpat` is a working patch. Max's `[udpsend]` sends OSC
 automatically for any message beginning with `/`.

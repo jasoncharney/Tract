@@ -1764,17 +1764,104 @@ function setPart(index) {
   sayHello();
 }
 
+/**
+ * What a player reads before the conductor has said anything. Every phrase
+ * shows this, however they got there — stepping through the phrases on their own
+ * does not hand them an instruction nobody gave them.
+ */
+const WAITING =
+  "Waiting for cues. Make sure your audio output is up and you are connected to the conductor.";
+
+/**
+ * Key names in an instruction can be written in curly brackets — "Hold {A} to
+ * scan slowly", "{↑ ↓} to step" — and come out as the same little key boxes as
+ * the legend. Everything outside the brackets is escaped first, so a cue file is
+ * text, never markup.
+ */
+function escapeAndKeys(text) {
+  const escaped = String(text).replace(
+    /[&<>"']/g,
+    (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]
+  );
+  return escaped.replace(/\{([^{}]{1,12})\}/g, (whole, key) => {
+    const label = key.trim();
+    if (!label) return whole;
+    return `<span class="keycap${label.length > 2 ? " wide" : ""}">${label}</span>`;
+  });
+}
+
+/**
+ * One sentence per line. An instruction is a list of things to do in order, and
+ * reading it off a screen mid-performance is easier when they are stacked than
+ * when they run together as a paragraph.
+ *
+ * The split needs whitespace after the full stop, so "0.25 s" and "Bb2." stay
+ * whole, and it takes a closing quote or bracket with it — `break.'` ends a
+ * line. Sentences are split on the raw text and escaped afterwards, so the
+ * split can never land in the middle of a tag.
+ */
+function sentences(text) {
+  return String(text)
+    .split(/(?<=[.!?]["'”’)\]]?)\s+(?=\S)/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function instructionHTML(text) {
+  const lines = sentences(text);
+  if (lines.length < 2) return escapeAndKeys(text);
+  return lines.map((line) => `<span class="sentence">${escapeAndKeys(line)}</span>`).join("");
+}
+
 function paintInstruction() {
   const el = $("instruction");
   if (!el) return;
-  // a cue the conductor has landed outranks the phrase's written instruction
-  const text = cued.instruction !== null ? cued.instruction : partPhrase().instruction || "";
-  el.textContent = text || "—";
-  el.classList.toggle("empty", !text);
-  const tag = $("partTag");
-  if (tag) tag.textContent = part().name || "—";
+  // a cue the conductor has landed outranks everything; with no cue a player
+  // sees the waiting line, except in composer mode where the phrase's own
+  // instruction is what you are editing
+  let text = WAITING;
+  if (cued.instruction !== null) text = cued.instruction;
+  else if (composerMode && partPhrase().instruction) text = partPhrase().instruction;
+  // In composer mode the line is contenteditable and what you type is what gets
+  // written to parts.json, so it stays plain text — sentence spans would come
+  // back out of textContent with the spaces between sentences eaten.
+  if (composerMode && cued.instruction === null) el.textContent = text;
+  else el.innerHTML = instructionHTML(text);
+  el.classList.toggle("waiting", cued.instruction === null && text === WAITING);
+  fitInstruction();
   paintNoteChoices();
 }
+
+/**
+ * A sentence per line means a long cue is tall, and the page has promised not
+ * to scroll. So the type gives way: start from whatever the stylesheet asks for
+ * and step down a pixel at a time until the page fits, never below 16px — which
+ * is the floor, not a suggestion. Past that it can scroll; legibility wins.
+ */
+const MIN_INSTRUCTION_PX = 16;
+function fitInstruction() {
+  const el = $("instruction");
+  if (!el) return;
+  el.style.fontSize = ""; // back to whatever the stylesheet asks for
+  const doc = document.documentElement;
+  let size = parseFloat(getComputedStyle(el).fontSize);
+  if (!isFinite(size)) return;
+  // the test is simply whether the page overflows — asking for a little slack
+  // instead made it shrink a step even when everything already fitted
+  while (size > MIN_INSTRUCTION_PX && doc.scrollHeight > window.innerHeight) {
+    size -= 1;
+    el.style.fontSize = `${size}px`;
+  }
+}
+let fitTimer = null;
+window.addEventListener("resize", () => {
+  clearTimeout(fitTimer);
+  fitTimer = setTimeout(fitInstruction, 120);
+});
+// the tract panel opens and closes on a transition, so the page is a different
+// height a moment later — measure again when it has finished moving
+const tractHost = $("tractHost");
+if (tractHost) tractHost.addEventListener("transitionend", fitInstruction);
 
 /* ================================================================ *
  *  the conductor's cues
@@ -1807,7 +1894,7 @@ function showOncoming(instruction) {
     text.textContent = "";
     return;
   }
-  text.textContent = instruction;
+  text.innerHTML = instructionHTML(instruction);
   row.hidden = false;
 }
 
@@ -1979,8 +2066,6 @@ function setupComposer() {
   } catch (e) {
     composerMode = SEARCH.has("composer") && SEARCH.get("composer") !== "0";
   }
-  const maxPanel = $("maxPanel");
-  if (maxPanel) maxPanel.hidden = !composerMode;
   const row = $("presetRow");
   if (!row) return;
   row.hidden = !composerMode;
@@ -2347,7 +2432,12 @@ function showTract(on) {
   toggleTract();
 }
 
-$("toggleTract").addEventListener("click", () => toggleTract());
+$("toggleTract").addEventListener("click", (event) => {
+  // it sits inside the panel's <summary>, so the click would fold the panel too
+  event.preventDefault();
+  event.stopPropagation();
+  toggleTract();
+});
 
 function toggleTract() {
   if (!element) return;
@@ -2368,10 +2458,10 @@ function toggleTract() {
       if (ui._glottisUI && ui._glottisUI._container)
         ui._glottisUI._container.style.display = "none";
     }
-    $("toggleTract").textContent = "hide tract";
+    $("toggleTract").textContent = "hide";
   } else {
     element.stopUI();
-    $("toggleTract").textContent = "show tract";
+    $("toggleTract").textContent = "show";
   }
 }
 

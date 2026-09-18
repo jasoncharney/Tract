@@ -192,6 +192,25 @@
         color: var(--hot);
       }
       .goes-text { min-width: 0; }
+      /* the same key boxes the player sees, from {A} in cues.json */
+      .keycap {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 1.7em;
+        height: 1.5em;
+        padding: 0 0.4em;
+        margin: 0 0.12em;
+        border-radius: 0.3em;
+        border: 1px solid var(--hot-line);
+        border-bottom-width: 2px;
+        background: var(--panel-3);
+        font: 0.84em var(--mono);
+        color: var(--ink);
+        vertical-align: 0.06em;
+      }
+      .keycap.wide { min-width: 2.6em; }
+      .goes-text .sentence { display: block; }
       .silent { color: var(--dim); font-size: 12px; margin-top: 10px; }
 
       /* ---- transport ---- */
