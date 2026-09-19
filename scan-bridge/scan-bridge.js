@@ -247,6 +247,8 @@ const SHORTCUTS = {
   "/scan": "/scan/",
   "/conduct": "/scan/conduct.html",
   "/conduct.html": "/scan/conduct.html",
+  "/stage": "/scan/stage.html",
+  "/stage.html": "/scan/stage.html",
 };
 
 const server = http.createServer((request, response) => {
@@ -433,7 +435,11 @@ udpIn.on("message", (message) => {
  * players, and the players saying who they are. Everything else a page sends is
  * feedback meant for Max, and relaying it would echo one page's state onto the
  * rest. */
-const RELAYED = /^\/(cue|player|conductor)\//;
+const RELAYED = /^\/(cue|player|conductor|stage|tract)\//;
+/* The projection feed is a stream of tract geometry between pages — forty-four
+ * numbers, twenty times a second, per player. It belongs on the WebSocket and
+ * nowhere near Max's UDP port. */
+const PAGES_ONLY = /^\/tract\//;
 
 function onPageMessage(text, from) {
   let message;
@@ -447,6 +453,7 @@ function onPageMessage(text, from) {
   for (const item of list) {
     if (!item || !item.address) continue;
     if (RELAYED.test(item.address)) relay.push(item);
+    if (PAGES_ONLY.test(item.address)) continue;
     const packet = encodeOSC(item.address, item.args || []);
     udpOut.send(packet, UDP_OUT, OUT_HOST);
     if (VERBOSE) log(`out ${item.address} ${(item.args || []).join(" ")}`);
@@ -470,6 +477,7 @@ server.listen(PORT, HOST, () => {
   log(`OSC out  udp ${OUT_HOST}:${UDP_OUT}`);
   log(`players  http://localhost:${PORT}/`);
   log(`conduct  http://localhost:${PORT}/conduct.html`);
+  log(`stage    http://localhost:${PORT}/stage.html`);
   if (HOST === "0.0.0.0") {
     // the addresses the other laptops in the room should type
     const nets = os.networkInterfaces();

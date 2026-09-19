@@ -5,13 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Tract by Jason Charney</title>
     <script>
-      // before anything is drawn: ?theme=pink|dark wins, then what this browser
-      // last chose, then the Pink Trombone skin
+      // before anything is drawn: ?theme=pink|dark wins, then what this
+      // browser last chose, then dark
       (function () {
         var q = new URLSearchParams(location.search).get("theme");
         var saved = null;
         try { saved = localStorage.getItem("tract.theme"); } catch (e) {}
-        var theme = q || saved || "pink";
+        var theme = q || saved || "dark";
         if (theme === "dark") document.documentElement.dataset.theme = "dark";
         if (q) { try { localStorage.setItem("tract.theme", q); } catch (e) {} }
       })();
@@ -20,11 +20,12 @@
     <script src="/src/text-to-ipa.js"></script>
     <style>
       /* ------------------------------------------------------------------
-         Two skins, one set of tokens. The default is Pink Trombone's own
-         palette — the pale pink it fills the tract with (#FFEEF5), the orchid
-         it draws the controls in, black Arial text — and `data-theme="dark"`
-         on <html> is the old one. Nothing below this block names a colour
-         directly, so a third skin is a matter of writing twelve lines.
+         Two skins, one set of tokens. `data-theme="dark"` is the default and
+         what the piece is performed in; the block below it is Pink Trombone's
+         own palette — the pale pink it fills the tract with (#FFEEF5), orchid
+         for anything live, black Arial — reachable from the header button or
+         with ?theme=pink. Nothing below this block names a colour directly, so
+         a third skin is a matter of writing twelve lines.
          ------------------------------------------------------------------ */
       :root {
         color-scheme: light; /* so the UA's own widgets match the skin */

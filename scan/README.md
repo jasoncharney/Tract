@@ -8,6 +8,7 @@ text from Eliot's *Four Quartets*.
 node scan-bridge/scan-bridge.js
 open http://localhost:8080                   # a player
 open http://localhost:8080/conduct.html      # the conductor
+open http://localhost:8080/stage.html        # the projection
 ```
 
 The bridge is a single dependency-free node script. It serves the repo over HTTP
@@ -334,6 +335,7 @@ conductor's address: it prints the URLs to hand out when it starts.
 ```
 [scan-bridge] players  http://localhost:8080/
 [scan-bridge] conduct  http://localhost:8080/conduct.html
+[scan-bridge] stage    http://localhost:8080/stage.html
 [scan-bridge] on the network: http://192.168.1.42:8080   (en0)  + /conduct.html to conduct
 ```
 
@@ -360,6 +362,55 @@ patch instead — `[udpsend]` to `/cue/prep`, `/cue/go`:
 | `/cue/clear <part>` | cancel an unfired prep |
 | `/cue/state <cue> <part> <instruction>` | the standing cue, applied silently — for latecomers |
 | `/player/hello <part> <name> <cue> <machine>` | sent by each player every few seconds; what the roster is built from |
+| `/stage/hello` | the projection page, saying it is listening |
+| `/tract/frame <part> <machine> <json>` | one player's tract geometry; relayed between pages only, never sent to Max |
+
+## The projection
+
+`scan/stage.html` — open it on the machine driving the projector, click once for
+full screen, and it fills a 16:9 wall with every player's vocal tract, side by
+side. No text, no chrome, nothing to read: the audience sees four to twelve
+tracts moving.
+
+It makes no sound and runs no synth. Each player streams **the real thing** — the
+44 tract diameters its own visualiser is drawing from, twenty times a second —
+and the stage draws them with upstream Pink Trombone's own geometry: same
+origin, radius, scale and angle sweep as `TractUI`. What the room sees is the
+shape the player is playing, not an impression of it.
+
+| | |
+| --- | --- |
+| tiles | one per connected player, ordered by part; a player who goes quiet for six seconds drops out and the grid closes up |
+| the grid | every column count is tried and the one that wastes the least wall wins — 2×2 for four, 3×2 for five with the short row centred |
+| colour | voiced tracts in Pink Trombone's pink; a whispering one loses its outline colour and dims |
+| the bead | sits where the tract is widest and brightens with how loud that player is, in a colour chosen against the tract rather than with it |
+| the shimmer | upstream's own wobble, driven by the amplitude at the lips |
+
+Every page instance gives itself an id when it loads, and that is what the stage
+counts. It used to come from `sessionStorage` — which a browser *copies into a
+duplicated tab*, so opening players that way made three of them claim to be one
+machine: one big tile flickering between three tracts, and a conductor's roster
+that counted one. A reload now simply looks like a new machine, and the old one
+ages out of both in a few seconds.
+
+Nothing is sent unless a stage is listening. The stage says `/stage/hello` every
+two seconds; a player streams only while it has heard one in the last six, so
+rehearsing without a projector puts nothing extra on the wire. The frames are
+relayed between pages only — they never reach the Max UDP port, which would
+otherwise get forty-four numbers per player per frame.
+
+One wrinkle worth knowing: upstream keeps its main-thread copy of the tract up
+to date only while its visualiser is animating. So while a stage is watching, a
+player whose tract panel is folded away starts that loop anyway, invisibly, and
+gives it back when the stage goes quiet. A player with the panel closed still
+appears on the wall.
+
+Dark is the default here too — a lit pink wall behind an ensemble is a lot of
+room to light up — and `?theme=pink` gives the Pink Trombone palette if that is
+what the piece wants. The bead reads mint against the pink tract in the dark and
+deep plum in the light skin, so loudness is visible from the back of the hall.
+The cursor hides itself after a few seconds, and `?debug=1` puts a small list of
+who is feeding the wall in the corner while you set the room up.
 
 ## The phrases
 
@@ -549,11 +600,12 @@ to avoid two faders for one thing; presets still store it.
 
 ## The skin
 
-Two, switched with the button in the header and remembered per browser:
-**pink**, which follows Pink Trombone's own palette — the pale `#FFEEF5` it fills
-the tract with, orchid for anything live, black Arial — and **dark**, the
-original. `?theme=pink` or `?theme=dark` forces one, which is what you want on a
-machine you are about to project.
+Two, switched with the button in the header and remembered per browser. **Dark**
+is the default and what the piece is performed in. **Pink** follows Pink
+Trombone's own palette — the pale `#FFEEF5` it fills the tract with, orchid for
+anything live, black Arial. `?theme=pink` or `?theme=dark` forces one, which is
+what you want on a machine you are about to project; a browser that has already
+been switched keeps its choice until you switch it back or pass `?theme=`.
 
 Every colour on both pages is a custom property defined in one block at the top
 of `scan/index.html` (the conductor's page carries the same block), so a third
@@ -673,6 +725,8 @@ keeping a take of a scan you liked.
 ```
 scan/index.html                     the player's page
 scan/conduct.html                   the conductor's page
+scan/stage.html                     the projection, for the audience
+scan/src/stage.js                   the tract wall: one canvas per player
 scan/cues.json                      the cues, and which part each one speaks to
 scan/src/conduct.js                 cue list, prep/downbeat, roster (no audio)
 scan/src/engine.js                  the articulation engine (no DOM, no audio API)

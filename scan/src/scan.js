@@ -882,6 +882,9 @@ export function applyRemote(address, args = []) {
     case "/cue/ping": // a conductor just opened: say who is here
       sayHello();
       break;
+    case "/stage/hello": // the projection page is up; start feeding it
+      stageSeenAt = performance.now();
+      break;
     default:
       break;
   }
@@ -1951,23 +1954,108 @@ function cueState(cue, partId, instruction) {
   if (!$("cueLight") || $("cueLight").dataset.state === "idle") cueLight("idle", `cue ${cue}`);
 }
 
+
+/* ================================================================ *
+ *  the projection feed
+ *
+ *  A stage page (scan/stage.html) draws every player's vocal tract for the
+ *  audience. It has no synth of its own, so each player sends the real thing:
+ *  the 44 tract diameters the upstream visualiser is drawing from, plus what it
+ *  takes to colour them. Nothing goes on the wire unless a stage has said hello
+ *  in the last few seconds, so a rehearsal with no projector costs nothing.
+ * ================================================================ */
+
+const STAGE_FPS = Number(SEARCH.get("stagefps")) || 20;
+let stageSeenAt = 0;
+let feedTimer = null;
+let feedStartedUI = false;
+
+/** the upstream UI keeps a mirror of the tract on this thread — but only while
+ *  its animation loop is running, which is why the feed keeps it running */
+function tractMirror() {
+  const ui = element && element.UI && element.UI._tractUI;
+  const processor = ui && ui._processor;
+  return processor && processor.tract ? processor.tract : null;
+}
+
+function stageIsWatching() {
+  return performance.now() - stageSeenAt < 6000;
+}
+
+function sendTractFrame() {
+  if (!ready || !stageIsWatching()) return;
+  const tract = tractMirror();
+  if (!tract) return;
+  const length = tract.length || 44;
+  const d = new Array(length);
+  for (let i = 0; i < length; i++) d[i] = Math.round((Number(tract.diameter[i]) || 0) * 100) / 100;
+  let amplitude = 0;
+  try {
+    amplitude =
+      (tract.amplitude.max[length - 1] || 0) +
+      (tract.nose.amplitude.max[tract.nose.length - 1] || 0);
+  } catch (e) {
+    /* a different shape upstream; the drawing just will not shimmer */
+  }
+  const p = part();
+  sendOut("/tract/frame", [
+    p.id,
+    MACHINE,
+    JSON.stringify({
+      d,
+      lip: (tract.lip && tract.lip.start) || length - 5,
+      a: Math.round(amplitude * 1000) / 1000,
+      i: Math.round((voice ? voice.gate : 0) * 100) / 100,
+      v: presetWhisper ? 0 : 1,
+      f: Math.round(note * 10) / 10,
+    }),
+  ]);
+}
+
+/**
+ * While a stage is watching, the tract mirror has to keep ticking even for a
+ * player who has folded the panel away — so the feed starts the visualiser
+ * itself, and hands it back when the stage goes quiet.
+ */
+function tendTractFeed() {
+  // not before the element has its audio context and its UI object: starting
+  // the upstream visualiser mid-setup throws inside its own animation frame,
+  // where nothing here can catch it
+  if (!ready || !element || !element.UI) return;
+  const watching = stageIsWatching();
+  const showing = $("tractHost") && $("tractHost").classList.contains("on");
+  if (watching && !showing && element && !feedStartedUI) {
+    try {
+      element.enableUI();
+      element.startUI();
+      feedStartedUI = true;
+    } catch (e) {
+      /* no UI here; the stage simply will not see this player */
+    }
+  } else if (!watching && feedStartedUI) {
+    if (element && !showing) element.stopUI();
+    feedStartedUI = false;
+  }
+}
+
+clearInterval(feedTimer);
+feedTimer = setInterval(() => {
+  tendTractFeed();
+  sendTractFrame();
+}, Math.max(20, Math.round(1000 / STAGE_FPS)));
+
 /**
  * Tell the conductor this part is here, so the roster lights up. The machine id
  * is this tab's own, kept for the session, so two laptops on the same part are
  * counted as two — which is the normal case in this piece.
  */
-const MACHINE = (() => {
-  try {
-    let id = sessionStorage.getItem("tract.machine");
-    if (!id) {
-      id = Math.random().toString(36).slice(2, 10);
-      sessionStorage.setItem("tract.machine", id);
-    }
-    return id;
-  } catch (e) {
-    return Math.random().toString(36).slice(2, 10);
-  }
-})();
+/* Generated fresh for every page instance and kept in memory only. It used to
+ * live in sessionStorage — but a browser copies sessionStorage into a
+ * duplicated tab, so three players opened that way all claimed to be the same
+ * machine: the conductor counted one, and the stage drew one tile flickering
+ * between three different tracts. A reload now looks like a new machine, which
+ * the roster and the stage both forget on their own after a few seconds. */
+const MACHINE = `${Date.now().toString(36).slice(-4)}${Math.random().toString(36).slice(2, 8)}`;
 
 function sayHello() {
   const p = part();

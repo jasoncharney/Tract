@@ -192,6 +192,33 @@
         "3": { "instruction": "Release! Advance to Phrase {5}. Toggle whisper off with {Z}."},
         "4": { "instruction": "Release! Advance to Phrase {5}. Toggle whisper off with {Z}."}
       }
+    },
+    {
+      "id": "20",
+      "phrase": 5,
+      "label": "slip, slide, perish",
+      "parts": {
+        "1": { "instruction": "Choose random pitches between A4 and E5. As you hold {S} to scan through them, choose new pitches to create a glissando."},
+        "2": { "instruction": "Choose random pitches between C4 and G4. As you hold {S} to scan through them, choose new pitches to create a glissando."},
+        "3": { "instruction": "Wait for cue."},
+        "4": { "instruction": "Wait for cue."}
+      }
+    },
+    {
+      "id": "21",
+      "phrase": 5,
+      "label": "Part III enters with random words",
+      "parts": {
+        "3": { "instruction": "Press {E} to play random words. After each word, change your note to D2, G2, or B♭2."}
+      }
+    },
+    {
+      "id": "22",
+      "phrase": 5,
+      "label": "Part IV enters.",
+      "parts": {
+        "3": { "instruction": "Listen to other Part IV players to synchronize. Press {W} to play through each word. Alternate pitch between G1 and A♭1 after every word."}
+      }
     }
   ]
 }

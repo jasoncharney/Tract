@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Tract — stage</title>
+    <script>
+      (function () {
+        var q = new URLSearchParams(location.search).get("theme");
+        var saved = null;
+        try { saved = localStorage.getItem("tract.theme"); } catch (e) {}
+        var theme = q || saved || "dark";
+        if (theme === "dark") document.documentElement.dataset.theme = "dark";
+        if (q) { try { localStorage.setItem("tract.theme", q); } catch (e) {} }
+      })();
+    </script>
+    <style>
+      /* The audience's page. No text, no chrome, nothing to read — the tracts
+         fill the projector and that is all. */
+      :root {
+        color-scheme: light;
+        --sans: Arial, "Helvetica Neue", Helvetica, sans-serif;
+        --mono: "Andale Mono", Consolas, "Courier New", monospace;
+        --bg: #ffeef5;         /* Pink Trombone's own pale pink */
+        --tract: #ffc0cb;      /* "pink" */
+        --edge: #c070c6;       /* the line upstream draws the tract with */
+        --bead: #4a1352;       /* loudness — dark, so it reads on the pink */
+        --dim: #b98aa8;
+      }
+      html[data-theme="dark"] {
+        color-scheme: dark;
+        --bg: #101014;
+        --tract: #ff7ab6;
+        --edge: #ffd0e6;
+        --bead: #7ef7d8;       /* against a pink tract, not another pink */
+        --dim: #6b6478;
+      }
+      * { box-sizing: border-box; }
+      [hidden] { display: none !important; }
+      html, body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: var(--bg);
+        font: 14px/1.4 var(--sans);
+      }
+      body.hushed { cursor: none; }
+
+      /* the grid is laid out in script, to the pixel, so it fills the screen */
+      #wall { position: absolute; inset: 0; }
+      .tile { position: absolute; }
+      .tile canvas { width: 100%; height: 100%; display: block; }
+
+      /* the only text on the page, and it goes away by itself */
+      #hint {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        text-align: center;
+        color: var(--dim);
+        font: 15px var(--mono);
+        letter-spacing: 0.06em;
+        line-height: 1.8;
+        transition: opacity 400ms linear;
+      }
+      #hint.gone { opacity: 0; pointer-events: none; }
+      #hint b { color: var(--edge); font-weight: 700; }
+
+      /* ?debug=1 while setting the room up: who is actually feeding this wall */
+      #who {
+        position: absolute;
+        left: 12px;
+        bottom: 10px;
+        font: 12px var(--mono);
+        color: var(--dim);
+        white-space: pre;
+        pointer-events: none;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div id="wall"></div>
+    <div id="who" hidden></div>
+    <div id="hint">
+      <b>Tract</b> — stage<br />
+      waiting for players…<br />
+      click for full screen
+    </div>
+    <script type="module" src="/scan/src/stage.js?v=2026-09-18d"></script>
+  </body>
+</html>

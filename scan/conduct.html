@@ -9,7 +9,7 @@
         var q = new URLSearchParams(location.search).get("theme");
         var saved = null;
         try { saved = localStorage.getItem("tract.theme"); } catch (e) {}
-        var theme = q || saved || "pink";
+        var theme = q || saved || "dark";
         if (theme === "dark") document.documentElement.dataset.theme = "dark";
         if (q) { try { localStorage.setItem("tract.theme", q); } catch (e) {} }
       })();
