@@ -136,6 +136,25 @@
       .rostertotal { font: 11px var(--mono); color: var(--dim); align-self: center; }
       .who .at { font: 11px var(--mono); color: var(--dim); }
       .who.here .at { color: var(--ink); }
+      /* where this part has got to. Players advance themselves, so this is the
+         only way to see it; "split" means they do not agree with each other,
+         which is worth catching before it is audible. */
+      .who .ph {
+        font: 11px var(--mono);
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 0 7px;
+        color: var(--dim);
+        white-space: nowrap;
+      }
+      .who.here .ph { color: var(--ink); }
+      /* the desk's own amber — the same one PREP uses — so "these two do not
+         agree" reads as the same kind of thing as "stand by" */
+      .who .ph.split {
+        color: var(--on-prep);
+        background: var(--prep);
+        border-color: var(--prep);
+      }
 
       /* ---- the desk ---- */
       .desk {
@@ -210,8 +229,44 @@
         vertical-align: 0.06em;
       }
       .keycap.wide { min-width: 2.6em; }
+      /* what a cue does to the projection */
+      .stageline {
+        font: 12px var(--mono);
+        color: var(--ink);
+        background: var(--panel-3);
+        border-radius: 8px;
+        padding: 5px 10px;
+        margin-bottom: 8px;
+      }
+      .chip.stage { letter-spacing: 0; }
+      /* and the pitches, from <A4> — rounded and in the "good" colour, so a
+         thing you sing never reads as a thing you press */
+      .pitchcap {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 2em;
+        height: 1.5em;
+        padding: 0 0.5em;
+        margin: 0 0.12em;
+        border-radius: 999px;
+        border: 1px solid var(--pitch-line, var(--ok-line));
+        background: var(--pitch-bg, var(--panel-3));
+        font: 600 0.92em var(--mono);
+        color: var(--pitch, var(--ok));
+        vertical-align: 0.06em;
+      }
       .goes-text .sentence { display: block; }
       .silent { color: var(--dim); font-size: 12px; margin-top: 10px; }
+      /* not enough players on a part to sound everything written for it */
+      .coverage {
+        font: 12px var(--mono);
+        color: var(--prep);
+        border: 1px solid var(--prep-line);
+        border-radius: 8px;
+        padding: 6px 10px;
+        margin-bottom: 10px;
+      }
 
       /* ---- transport ---- */
       .transport {
@@ -245,6 +300,43 @@
         color: var(--prep);
         background: var(--panel);
       }
+      /* three clocks: how far into the piece, how long this phrase has run,
+         and how long since the last thing you did */
+      /* in the header, to the right of the connection pills */
+      .clocks {
+        display: flex;
+        /* centre, not baseline: baseline-aligning a button against 10px labels
+           stretches the flex line and the pill ends up twice as tall as its
+           contents. Each clock still baselines its own label against its face. */
+        align-items: center;
+        gap: 16px;
+        flex-wrap: nowrap;
+        align-self: center;
+        padding: 4px 10px;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 999px;
+      }
+      /* label and face on one line, so the header does not grow a second row */
+      .clock { display: flex; align-items: baseline; gap: 6px; }
+      .clocklabel {
+        font: 10px var(--mono);
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--dim);
+        white-space: nowrap;
+      }
+      .clockface {
+        font: 15px var(--mono);
+        font-variant-numeric: tabular-nums;
+        color: var(--ink);
+        line-height: 1;
+      }
+      /* NOT .big — that is the PREP/DOWNBEAT button class, whose 18px of
+         vertical padding made this pill twice as tall as its contents */
+      .clockface.piece { font-size: 18px; color: var(--hot); font-weight: 700; }
+      .clockreset { align-self: center; font-size: 11px; padding: 3px 8px; }
+
       .options {
         display: flex;
         gap: 14px;
@@ -322,6 +414,151 @@
         color: var(--dim);
       }
       .chip.on { color: var(--ink); border-color: var(--hot); }
+      /* ---- what actually went out ---- */
+      /* The stand shows the cue you are *about* to send. Once it has gone it
+         scrolls past, and mid-phrase "what did I just tell the basses?" is a
+         real question — so the last one that actually left the desk stays put. */
+      .lastsent {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-left: 3px solid var(--live-line);
+        border-radius: 12px;
+        padding: 12px 16px 14px;
+        margin-top: 14px;
+      }
+      .lastsent h2 {
+        font: 11px var(--mono);
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--dim);
+        margin: 0 0 9px;
+        display: flex;
+        align-items: baseline;
+        gap: 9px;
+      }
+      .lastsent .num { font-size: 17px; font-weight: 700; color: var(--ink); letter-spacing: 0; }
+      .lastsent .lbl { text-transform: none; letter-spacing: 0; color: var(--hot); font-size: 13px; }
+      .lastsent .ago { margin-left: auto; font-variant-numeric: tabular-nums; }
+      .lastsent .goes-row { background: var(--panel); border-color: var(--line); padding: 5px 9px; }
+      .lastsent .goes-text { font-size: 13px; color: var(--dim); }
+      /* On the stand, one sentence per line, because that is how a player is
+         about to read it. Here it is being re-read, not read, and four parts
+         at three lines each is most of a screen — so it runs on. */
+      .lastsent .goes-text .sentence { display: inline; }
+      .lastsent .goes-text .sentence + .sentence::before {
+        content: " · ";
+        color: var(--line);
+      }
+
+      /* ---- everybody's playhead ---- */
+      /* Four parts sweeping at once is not something you can hear apart. One
+         strip per laptop, pinned to the bottom of the screen: where they are in
+         the phrase, whether the gate is open, and whether it is voiced. */
+      .strips {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 30;
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        align-items: flex-end;
+        padding: 10px 20px 12px;
+        background: var(--panel);
+        border-top: 1px solid var(--line);
+      }
+      .strips:empty { display: none; }
+      body.hasstrips { padding-bottom: 150px; }
+      .pstrip { flex: 1 1 170px; max-width: 300px; min-width: 130px; }
+      /* the words of the phrase, written where they are spoken. Tiny on
+         purpose: this is a texture to glance at, not a thing to read — but
+         "she is on *burden*" is worth more at a glance than "she is four
+         fifths of the way along". */
+      .pstrip-words {
+        position: relative;
+        height: 11px;
+        margin-bottom: 1px;
+        overflow: hidden;
+      }
+      .pstrip-word {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        /* left, not centred: a word wider than its share gets clipped at the
+           end, and the beginning of a word is the readable part of it */
+        padding-left: 2px;
+        border-left: 1px solid var(--line);
+        font: 8px/11px var(--sans);
+        letter-spacing: -0.02em;
+        color: var(--dim);
+        white-space: nowrap;
+        overflow: hidden;
+      }
+      .pstrip-word:first-child { border-left-color: transparent; }
+      .pstrip-head {
+        display: flex;
+        align-items: baseline;
+        gap: 6px;
+        margin-bottom: 3px;
+      }
+      .pstrip-name {
+        font-size: 12px;
+        font-weight: 700;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
+      .pstrip-part { font: 10px var(--mono); color: var(--hot); letter-spacing: 0.08em; flex: none; }
+      .pstrip-ph { font: 10px var(--mono); color: var(--dim); margin-left: auto; flex: none; }
+      .pstrip-bar {
+        position: relative;
+        height: 20px;
+        border: 1px solid var(--line);
+        border-radius: 5px;
+        background: var(--panel-2);
+        overflow: hidden;
+      }
+      /* the phoneme divisions, so the dot's travel reads as "six of nine"
+         rather than "somewhere in the middle" */
+      .pstrip-ticks {
+        position: absolute;
+        inset: 0;
+        opacity: 0.5;
+      }
+      .pstrip-cursor {
+        position: absolute;
+        top: -1px;
+        bottom: -1px;
+        width: 3px;
+        margin-left: -1.5px;
+        background: var(--dim);
+        transition: left 90ms linear;
+      }
+      /* sounding: the dot lights. Voiced is the desk's pink, whisper the pale
+         green it uses for "live but other" — different enough to catch out of
+         the corner of an eye, which is the whole point. */
+      .pstrip[data-gate="1"] .pstrip-cursor { background: var(--hot); box-shadow: 0 0 9px -1px var(--hot); }
+      .pstrip[data-gate="1"][data-whisper="1"] .pstrip-cursor {
+        background: var(--live);
+        box-shadow: 0 0 9px -1px var(--live);
+      }
+      .pstrip[data-gate="0"] { opacity: 0.55; }
+      .pstrip-foot {
+        display: flex;
+        align-items: baseline;
+        gap: 6px;
+        margin-top: 2px;
+        font: 10px var(--mono);
+        color: var(--dim);
+        height: 13px;
+      }
+      .pstrip-ipa { color: var(--ink); }
+      .pstrip[data-gate="0"] .pstrip-ipa { color: var(--dim); }
+      .pstrip-mode { margin-left: auto; color: var(--live); }
+      .pstrip[data-whisper="0"] .pstrip-mode { visibility: hidden; }
+      .stripsnote { font: 10px var(--mono); color: var(--dim); align-self: center; }
+
       .foot { color: var(--dim); font-size: 12px; margin-top: 18px; }
       code {
         font: 12px var(--mono);
@@ -341,6 +578,21 @@
       <span id="cueWarn" class="pill warn" hidden></span>
       <span id="wsStatus" class="pill">bridge: —</span>
       <button id="reloadCues">reload cues.json</button>
+      <div class="clocks">
+        <div class="clock">
+          <span class="clocklabel">piece</span>
+          <span class="clockface piece" id="clockPiece">—</span>
+        </div>
+        <div class="clock">
+          <span class="clocklabel" id="clockPhraseLabel">phrase</span>
+          <span class="clockface" id="clockPhrase">—</span>
+        </div>
+        <div class="clock">
+          <span class="clocklabel">since cue</span>
+          <span class="clockface" id="clockCue">—</span>
+        </div>
+        <button id="resetClocks" class="clockreset" title="Back to zero — before a run, not during one.">reset</button>
+      </div>
     </header>
 
     <div class="roster" id="roster"></div>
@@ -356,6 +608,8 @@
             <span class="cuephrase" id="cuePhrase"></span>
           </div>
           <div class="cuenote" id="cueNote" hidden></div>
+          <div class="stageline" id="stageLine" hidden></div>
+          <div class="coverage" id="coverage" hidden></div>
           <div class="goes" id="goes"></div>
           <div class="silent" id="silent"></div>
         </div>
@@ -372,11 +626,25 @@
           <label><input type="checkbox" id="useCount" /> count-in</label>
           <label>beats <input type="number" id="countBeats" min="1" max="8" value="4" /></label>
           <label>bpm <input type="number" id="countBpm" min="20" max="240" value="60" /></label>
+          <button id="titleCardBtn" title="Put the title card back up on the projection — before a run, or between takes. Cue 1 takes it away again.">title card</button>
+          <label title="How long the players' diminuendo takes when they press the down arrow at the end. Everyone gets this number, including anyone who joins late.">
+            diminuendo <input type="number" id="fadeSecs" min="1" max="300" value="5" /> s
+          </label>
           <span class="spacer"></span>
           <span>
             <kbd>space</kbd> prep, then downbeat · <kbd>←</kbd> <kbd>→</kbd> move ·
-            <kbd>esc</kbd> cancel
+            <kbd>esc</kbd> cancel. Players end the piece with <kbd>↓</kbd>.
           </span>
+        </div>
+
+        <div class="lastsent" id="lastSent" hidden>
+          <h2>
+            <span>last sent</span>
+            <span class="num" id="lastNum">—</span>
+            <span class="lbl" id="lastLabel"></span>
+            <span class="ago" id="lastAgo"></span>
+          </h2>
+          <div class="goes" id="lastGoes"></div>
         </div>
 
         <p class="foot">
@@ -390,6 +658,9 @@
       <div class="list" id="list"></div>
     </div>
 
-    <script type="module" src="/scan/src/conduct.js?v=2026-09-18d"></script>
+    <!-- one per laptop, filled in from /player/at -->
+    <div class="strips" id="strips"></div>
+
+    <script type="module" src="/scan/src/conduct.js?v=2026-10-11a"></script>
   </body>
 </html>

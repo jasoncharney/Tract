@@ -60,10 +60,24 @@ export const DEFAULTS = {
   voicenessVowel: 0.9,
   voicenessVoicedFric: 0.7,
   voicenessVoicelessFric: 0.08,
-  stressSemitones: 0.75,
+  // The prosodic lift on a stressed vowel, in semitones. English speech does
+  // this; a choir singing written pitches does not, so it is 0 here and the
+  // slider is there if you want speech back. At 0.75 a stressed vowel sings
+  // three quarters of a semitone sharp of the key you pressed.
+  stressSemitones: 0,
+  // How loud a voiceless sibilant is next to everything else. 1 is untrimmed,
+  // and it is NOT a fader: intensity drives the noise nonlinearly, so 0.8 is
+  // already 11 dB down. 0.9 measured level with the voiced phonemes of
+  // "words strain", A-weighted. Voiced sibilants are left alone — /z/ was
+  // already sitting below the voiced average.
+  sibilantLevel: 0.93,
 
   // --- pitch ---
   glide: 0.05, // portamento
+  // How long a phoneme takes to die away when the gate closes under a sustain.
+  // `release` is the engine's own short one, used everywhere else; this is the
+  // musical one, so letting go of the spacebar is a diminuendo, not a cut.
+  gateRelease: 0.12,
 };
 
 /* ------------------------------------------------------------------ *
@@ -75,6 +89,11 @@ const AFFRICATES = ["tʃ", "dʒ", "ʧ", "ʤ"];
 const NASALS = ["m", "n", "ŋ"];
 const APPROXIMANTS = ["l", "r", "ɹ", "w", "j", "ɚ"];
 const FRICATIVES = ["f", "v", "s", "z", "ʃ", "ʒ", "θ", "ð", "h"];
+// The sibilants. Their noise sits exactly where the ear is most sensitive, so
+// at the same synthesis intensity as a vowel they are heard as louder than one:
+// measured on "words strain", /s/ came out about 5 dB above the average of the
+// phrase's voiced phonemes, A-weighted. `sibilantLevel` scales them back.
+const SIBILANTS = ["s", "z", "ʃ", "ʒ"];
 const STRESS_MARKS = ["ˈ", "ˌ"];
 
 // affricates in the source table only carry their fricative shape, so borrow a
@@ -283,7 +302,7 @@ function attachStops(cells, cfg) {
   return out;
 }
 
-function makeSilence(wordIndex) {
+export function makeSilence(wordIndex) {
   return {
     ipa: "·",
     cls: "silence",
@@ -365,14 +384,15 @@ function makeCell(ipa, table, cfg, wordIndex) {
       cell.releasePose = pose(
         cons[0],
         voiced ? cfg.voicenessVoicedFric : cfg.voicenessVoicelessFric,
-        1
+        !voiced && SIBILANTS.includes(ipa) ? cfg.sibilantLevel : 1
       );
       cell.sustainPose = cell.releasePose;
       break;
     }
     case "fricative": {
       const v = voiced ? cfg.voicenessVoicedFric : cfg.voicenessVoicelessFric;
-      cell.poses = cons.map((c) => pose(c, v, 1));
+      const level = !voiced && SIBILANTS.includes(ipa) ? cfg.sibilantLevel : 1;
+      cell.poses = cons.map((c) => pose(c, v, level));
       break;
     }
     case "aspirate": {
@@ -481,6 +501,7 @@ export class ScanVoice {
     this.cfg = Object.assign({}, DEFAULTS, cfg);
     this.cells = [];
     this.curCell = -1;
+    this.appliedLift = 0; // the stress lift currently written into the pitch
     this.closed = false;
     this.released = true;
     this.closedAt = 0;
@@ -530,12 +551,65 @@ export class ScanVoice {
       if (last !== undefined && Math.abs(last - value) < (EPSILON[key] || 0.001)) return;
       this.scheduled[key] = value;
     }
+    this._anchor(param, now);
+    param.linearRampToValueAtTime(value, now + Math.max(0.001, time));
+  }
+
+  /**
+   * Pin a parameter to the value it has right now, so the next ramp starts
+   * from here.
+   *
+   * Without this, a ramp interpolates from the last automation event still on
+   * the timeline — which, once an earlier ramp has finished, is somewhere in
+   * the past. Release a note held for 0.9 s with a 1.5 s fade and the line
+   * from that old event to zero passes through 0.63 at the moment you let go,
+   * so the voice dropped 8 dB instantly and then crawled. cancelAndHoldAtTime
+   * is supposed to insert the hold and does nothing when there is no future
+   * event to cancel, which is exactly the case that bites. The explicit
+   * setValueAtTime is what actually holds it.
+   */
+  _anchor(param, now) {
+    const here = param.value;
     try {
       param.cancelAndHoldAtTime(now);
     } catch (e) {
       param.cancelScheduledValues(now);
     }
-    param.linearRampToValueAtTime(value, now + Math.max(0.001, time));
+    if (isFinite(here)) param.setValueAtTime(here, now);
+  }
+
+  /**
+   * The fade you hear when a held phoneme is let go.
+   *
+   * A straight line on intensity is not a straight line on loudness: the voice
+   * follows intensity SQUARED — measured, 0.5 is 12 dB down and 0.1 is 40 dB
+   * down — so a linear ramp holds near full for most of its length and then
+   * falls off a cliff at the end. This lays a short chain of straight segments
+   * along an exponential instead, which comes out as a constant number of
+   * decibels per second, the shape a hand on a fader makes, and still arrives
+   * at true silence rather than merely approaching it.
+   */
+  _fadeOut(param, now, time, floorDb = 60) {
+    if (!param) return;
+    const from = param.value;
+    this.scheduled.intensity = 0;
+    this._anchor(param, now);
+    if (!isFinite(from) || from <= 0) {
+      param.linearRampToValueAtTime(0, now + Math.max(0.001, time));
+      return;
+    }
+    const span = Math.max(0.001, time);
+    const floor = Math.pow(10, -floorDb / 40); // the intensity floorDb below the start
+    // more segments than you would think: each one is a straight chord across
+    // a curve that bends away from it, so too few and the fade runs slightly
+    // fast at the top of every step
+    const STEPS = 24;
+    for (let i = 1; i <= STEPS; i++) {
+      const f = i / STEPS;
+      param.linearRampToValueAtTime(from * Math.pow(floor, f), now + span * 0.97 * f);
+    }
+    // and the last sliver, from sixty decibels down to nothing
+    param.linearRampToValueAtTime(0, now + span);
   }
 
   _at(param, value, time) {
@@ -917,6 +991,7 @@ export class ScanVoice {
     this.position = pos;
     if (this.cells.length === 0) return;
     if (now < this.lockUntil) return; // a ballistic gesture owns the tract
+    this.refreshPitch(now);
 
     const i = this.cellAt(pos);
     if (i !== this.curCell) {
@@ -981,9 +1056,19 @@ export class ScanVoice {
 
   /* ---------------- outside control ---------------- */
 
-  setGate(on, now) {
+  /**
+   * @param on      open or close
+   * @param now     the audio clock
+   * @param options `{ sustained: true }` when a held sustain is being let go,
+   *                which is the one case that gets the long musical release
+   *                rather than the engine's own short one
+   */
+  setGate(on, now, options = {}) {
     const wasOn = this.gate > 0;
     if (!on) {
+      const fall = options.sustained
+        ? Math.max(0.01, this.cfg.gateRelease || this.cfg.release)
+        : this.cfg.release;
       const cell = this.cells[this.curCell];
       if (cell && cell.codas && !cell.codaFired) {
         // "crack" still gets its k if you simply stop on the vowel
@@ -999,8 +1084,8 @@ export class ScanVoice {
         return;
       }
       this.gate = 0;
-      this._ramp(this.params.intensity, 0, now, this.cfg.release, "intensity");
-      this.lockUntil = now + this.cfg.release;
+      this._fadeOut(this.params.intensity, now, fall);
+      this.lockUntil = now + fall;
       return;
     }
     this.gate = 1;
@@ -1019,6 +1104,7 @@ export class ScanVoice {
 
   setNote(note, now, glide) {
     this.note = note;
+    this.appliedLift = this.stressLift();
     this._ramp(
       this.params.frequency,
       this.frequency(),
@@ -1029,13 +1115,36 @@ export class ScanVoice {
 
   setBend(semitones, now) {
     this.bend = semitones;
+    this.appliedLift = this.stressLift();
     this._ramp(this.params.frequency, this.frequency(), now, 0.02);
   }
 
-  frequency() {
+  /** what the phoneme under the playhead adds to the written pitch */
+  stressLift() {
     const cell = this.cells[this.curCell];
-    const stress = cell ? cell.stress * this.cfg.stressSemitones : 0;
-    return 440 * Math.pow(2, (this.note + this.bend + stress - 69) / 12);
+    return cell ? cell.stress * this.cfg.stressSemitones : 0;
+  }
+
+  frequency() {
+    return 440 * Math.pow(2, (this.note + this.bend + this.stressLift() - 69) / 12);
+  }
+
+  /**
+   * Keep the lift with the playhead.
+   *
+   * frequency() has always included the current phoneme's stress, but the
+   * frequency parameter is only written when something ramps it — so whichever
+   * cell happened to be under the playhead when the pitch was last set had its
+   * lift baked in and kept for every phoneme after it. Press the same piano key
+   * on a stressed vowel and on an unstressed one and you got two different
+   * pitches, three quarters of a semitone apart, from the same key. Now the
+   * lift follows the playhead. With stressSemitones at 0 this never fires.
+   */
+  refreshPitch(now) {
+    const lift = this.stressLift();
+    if (lift === this.appliedLift) return;
+    this.appliedLift = lift;
+    this._ramp(this.params.frequency, this.frequency(), now, 0.03);
   }
 
   setTractLength(length, now) {

@@ -9,14 +9,17 @@ that makes them intelligible at any speed. Built for a four-part laptop-ensemble
 choir painting text from Eliot's *Four Quartets*.
 
 ```
-node scan-bridge/scan-bridge.js
-open http://localhost:8080/scan/     # Chrome, then "enable audio"
+node scan/scan-bridge.js
+open http://localhost:8080                 # a player — Chrome, then "enable audio"
+open http://localhost:8080/conduct.html    # the conductor
+open http://localhost:8080/stage.html      # the projection, for the audience
 ```
 
 **[scan/README.md](scan/README.md) is the real documentation** — the scanning
-model, the keyboard scheme, the composer presets, why the upstream plosive burst
-was broken and what this does about it, and the OSC interface if you ever want
-Max in the loop again.
+model, the keyboard scheme, how pitch is handed out, conducting and the stage
+projection, the composer presets, why the upstream plosive burst was broken and
+what this does about it, and the OSC interface if you ever want QLab or Max in
+the loop.
 
 ## Playing
 
@@ -24,10 +27,11 @@ Left hand, no trackpad needed:
 
 | key | |
 | --- | --- |
-| **A S D** | hold to scan — slow (4–6 s per phoneme), mid (1–3 s), speaking (0.5–1 s) |
-| **W E R** | one word at slow / mid / speaking tempo |
+| **A S D** | hold to scan — slow (3–5 s per phoneme), mid (0.25–0.75 s), fast (0.1–0.25 s) |
+| **W E R** | one word at slow / mid / fast tempo |
 | **Q** | a random phoneme from the phrase |
 | **T** | a random stop or fricative, unvoiced — percussion |
+| **Z** | whisper on or off — latching |
 | **1**–**8**, **↑ ↓** | choose the phrase |
 
 Letting a held key go closes the gate where you are; pressing again carries on
@@ -39,22 +43,28 @@ Four parts, chosen in the header and remembered per browser. No transposition:
 each part lists, per phrase, the pitches it may use, and those light up on the
 piano for the player to choose between — names or MIDI numbers, fractional ones
 included. A part also carries a `tractDelta`, so the lower parts sound larger as
-well as lower. It all lives in `scan/parts.json`, meant to be edited by hand;
-the instructions and pitch sets there now are placeholders.
+well as lower. Each phrase also says *how* its pitch is decided — `fixed`,
+`assign` (shared out among the players on that part, so every written pitch is
+heard), `choose`, or `drift` within a range — and it all lives in
+`scan/parts.json`, meant to be edited by hand. The instruction lines live in
+`scan/cues.json` and go out from the conductor's page.
 
 ## Layout
 
 ```
-scan/                       the interface
-  index.html                the page
+scan/                       the interface, and the one process behind it
+  index.html                the player's page
+  conduct.html              the conductor's desk
+  stage.html                the projection, for the audience
+  scan-bridge.js            static server + WebSocket + OSC/UDP, no dependencies
   src/engine.js             articulation engine — no DOM, no Web Audio beyond AudioParams
   src/patched-pink-trombone.js   in-memory repair of the worklet's burst and pitch drift
   src/scan.js               audio setup, strip UI, keyboard transport
+  src/conduct.js            cue list, prep/downbeat, roster
+  src/stage.js              the tract wall: one canvas per player
   presets.json              per-phrase settings that ship with the piece
-  parts.json                the four parts: offsets and per-phrase instructions
-scan-bridge/
-  scan-bridge.js            static server + WebSocket + OSC/UDP, no dependencies
-  scan-control.maxpat       Max control patch — optional, the piece needs no Max
+  parts.json                the four parts: offsets, pitch sets, how pitch is decided
+  cues.json                 the cues, and which part each one speaks to
 src/                        upstream: phoneme table, IPA dictionary
 pink-trombone/src/          upstream: the synth itself
 ```
@@ -67,7 +77,7 @@ unmodified, carried over because the page depends on them at the absolute paths
 they expect. Only the four files that implementation actually needs were brought
 across.
 
-`scan/` and `scan-bridge/` are new.
+`scan/` is new.
 
 The worklet is never modified on disk — `patched-pink-trombone.js` fetches it,
 patches it in memory and imports it as a blob module, so upstream stays pristine

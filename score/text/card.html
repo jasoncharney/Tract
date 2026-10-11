@@ -1,0 +1,116 @@
+<!--
+  The player card. One card for everybody — pitches arrive on the screen, so
+  there is nothing on paper that differs part to part.
+
+  Half a letter sheet, two sides: print double-sided and cut across the middle
+  and one sheet makes two cards.
+
+  {{masthead}} is replaced by make-score.js with the title line. Everything
+  else here is yours to edit; keep it short, because the whole value of the
+  card is that a player can find one thing on it at a glance.
+-->
+
+<!-- FACE ONE — what you need while the piece is running. This is the side
+     that should be lying face up beside the laptop. -->
+<section class="cardface">
+  {{masthead}}
+
+  <div class="twoup">
+<div>
+      <h2>The cue light</h2>
+      <div class="lamps">
+        <div class="lamp-item">
+          <div class="lamp idle"></div>
+          <b>nothing</b>
+          <span>No cue for you. Carry on.</span>
+        </div>
+        <div class="lamp-item">
+          <div class="lamp prep"></div>
+          <b>amber, pulsing</b>
+          <span>Soon. Your next instruction has been showing under
+          <em>next</em> since the last downbeat — look up, not down.</span>
+        </div>
+        <div class="lamp-item">
+          <div class="lamp count">4</div>
+          <b>counting</b>
+          <span>Sometimes: a count-in. Go on the beat after 1.</span>
+        </div>
+        <div class="lamp-item">
+          <div class="lamp go"></div>
+          <b>a bright flash</b>
+          <span>Go. The new instruction is now the one to follow.</span>
+        </div>
+      </div>
+      <p class="rule-note">The line under <em>next</em> is always there. Read it
+      whenever you like; nothing changes until the flash.</p>
+    </div>
+
+<div>
+      <div class="box">
+        <p style="margin-top: 6pt;">A cue will always say which one it wants.</p>
+        <h3>Two words - they mean different things</h3>
+        <p><strong>SCAN</strong> — hold a key and the playhead moves by itself at different rates:
+        <span class="keycap">A</span> slow, <span class="keycap">S</span> middle,
+        <span class="keycap">D</span> fast. It keeps its place: let go, press again, and it
+        carries on from where it stopped. Run off the end and the next press starts over.</p>
+        <p><strong>SWEEP</strong> — hold the mouse down on the strip and move it yourself. Both left click and <span class="keycap">spacebar</span> hold the phoneme you last hovered over. </p>
+      </div>
+    </div>
+  </div>
+
+<div class="keystrip">
+    <h2>The keys</h2>
+    <div class="keyrows">
+      <span><span class="keycap">A</span><span class="keycap">S</span><span class="keycap">D</span> hold to scan — slow, middle, fast</span>
+      <span><span class="keycap">W</span><span class="keycap">E</span><span class="keycap">R</span> play one word — slow, middle, fast. Press again to start it over</span>
+      <span><span class="keycap">Q</span> a voiced phoneme · <span class="keycap">T</span> a noisy one</span>
+      <span><span class="keycap">Z</span> whisper on / off · <span class="keycap">J</span> change pitch</span>
+      <span><span class="keycap">space</span> hold the sound on · <span class="keycap">esc</span> stop at once</span>
+      <span><span class="keycap">0</span> standby · <span class="keycap">1</span>–<span class="keycap">8</span> phrase · <span class="keycap">↓</span> diminuendo</span>
+    </div>
+  </div>
+</section>
+
+<!-- FACE TWO — read once at the start, and consulted when something is wrong. -->
+<section class="cardface">
+  {{masthead}}
+
+  <div class="twoup">
+<div>
+      <h2>Getting on</h2>
+      <ol class="tight">
+        <li>Join the wi-fi network the conductor names.</li>
+        <li>Open a browser and type the address they give you — just the numbers,
+        like <code>192.168.1.42:8080</code>. Nothing before it, nothing after.</li>
+        <li>Type your name, then choose your part. This laptop remembers both, so
+        you only do it the first time — the conductor sees your name over your
+        playhead.</li>
+        <li><strong>Click once anywhere on the page.</strong> No browser will make a
+        sound until you do.</li>
+        <li>Turn your volume up. Press <span class="keycap">1</span>, hold
+        <span class="keycap">A</span> for a moment — you should hear yourself — then
+        press <span class="keycap">0</span> for standby, which is silent.</li>
+        <li>Now wait. Your part is named at the top of the page, and the cue light is
+        on the left of your instruction.</li>
+      </ol>
+    </div>
+
+<div>
+      <h2>If you are lost</h2>
+      <ul class="tight">
+        <li>Nothing coming out? <strong>Click once on the page</strong> — the browser will not
+        make a sound until you do — then check your volume.</li>
+        <li>Sounding breathy when it should not? <strong>Whisper is still on</strong> from an
+        earlier phrase. <span class="keycap">Z</span> turns it off.</li>
+        <li>Held key doing nothing? You have <strong>run off the end</strong> of the phrase.
+        Press it again.</li>
+        <li>Started a word at the wrong moment? <span class="keycap">esc</span> stops
+        anything that is running, at once.</li>
+        <li>Lost your place in the piece? The <strong>phrase number</strong> is at the top of
+        your page, and the conductor's instruction is beside your cue light.</li>
+        <li>Never guess at a cue. If no instruction has arrived for you,
+        <strong>carry on with what you are doing</strong> — that is the piece, not an oversight.</li>
+      </ul>
+    </div>
+  </div>
+</section>

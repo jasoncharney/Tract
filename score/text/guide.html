@@ -1,0 +1,195 @@
+<!--
+  TRACT — setting up and rehearsing.
+
+  Hand-written prose. Edit this file freely; make-score.js copies it in
+  verbatim, wraps it in the masthead and the stylesheet, and never touches
+  what is inside. Keys in {curly brackets} and pitches in <angle brackets>
+  come out as the same chips the players see on screen.
+
+  Keep the musical instructions OUT of this file. Those live in cues.json
+  and are printed from there, so there is only ever one copy of them.
+-->
+<h2>Program Note</h2>
+Neil Thapen's "Pink Trombone" is a popular web teaching tool that allows users to manipulate a simplified vocal tract: by moving the tongue, glottis, nasal passages, and lips with your mouse, you can make recognizable — if uncanny — phonemes, the building blocks of language out. I discovered Zack Qattan's excellent set of tools that allows text-to-speech with the tool, and adapted it to create a piece for "pink trombone choir." The text is adapted from T.S. Eliot's "Burnt Norton", the first of his <i>Four Quartets</i> (1936).This piece was written for the Peabody Laptop Ensemble.
+<h2>What the piece needs</h2>
+
+<ul>
+  <li><strong>Eight players, at least.</strong> Two on each of the four parts. More is
+  better and nothing needs rewriting: the parts share their written pitches out among
+  whoever turns up, so extra players fill out a chord rather than doubling a line.
+  Sixteen is comfortable. One player per part works, but sounds thinner than intended.</li>
+
+  <li><strong>A laptop for each player.</strong> Any operating system, any current
+  browser. No downloads or extra software necessary.</li>
+
+  <li><strong>One more laptop for the conductor.</strong> It runs the small server the
+  others connect to and shows the cue desk. It makes no sound of its own. The conductor does not need to be positioned on stage – all cues are served to each player's browser.</li>
+
+  <li><strong>Amplification the players can hear.</strong> This is not a headphone piece.
+  Most of what the score asks for is players listening to each other and matching — speed,
+  density, pitch. If they cannot hear the room, the piece does not happen. A house PA, or
+  powered speakers spread across the ensemble.</li>
+
+  <li><strong>A network everyone is on.</strong> Wired or wireless, house or a travel
+  router of your own. It does not need to reach the internet, but if a stable public network exists already it can be used.<b>This is not recommended - create a local LAN if possible!</b></li>
+
+  <li><strong>A projector, optionally.</strong> It can be driven from the conductor's laptop.</li>
+</ul>
+
+<h2>Getting everyone connected</h2>
+
+<ol>
+  <li>On the conductor's laptop, open a Terminal and navigate to the Tract folder. Run the command:
+  <code>node scan/scan-bridge.js</code>. It gives itself a certificate for whatever addresses this machine has today, so the address it prints starts with <code>https://</code> - which is what lets the players' laptops run the fast audio path.</li>
+
+  <li>It prints the addresses to hand out. Players get the bare one —
+  <code>192.168.1.42:8080</code> or whatever it says — and type that and nothing else.</li>
+
+  <li>The conductor opens the same address with <code>/conduct.html</code> on the end.
+  The projector laptop uses <code>/stage.html</code>.</li>
+
+  <li>macOS asks whether to allow incoming connections the first time. Allow it.</li>
+
+  <li>Each player types their name and chooses their part from the panel that appears. The
+  laptop remembers both, so it is asked once and not again — the name is what labels that
+  player on the desk. A laptop that is always
+  the same part can skip that step with <code>?part=2</code> on the end of the address.</li>
+
+  <li><strong>Every player clicks once anywhere on their page.</strong> No browser will
+  make a sound until the page has been clicked. Until it is, everything looks correct and
+  nothing is audible. Choosing a part when opening the page should serve this function. </li>
+
+  <li>Volume up, and check the sound is leaving by the output you think it is.</li>
+
+  <li>On the desk, the roster along the top says how many machines are on each part. A
+  part reading <em>0 · nobody</em> is a laptop that never arrived. Sort it out before you
+  start rather than during.</li>
+</ol>
+
+<p><strong>The strips along the bottom of the desk are the ensemble, one per laptop</strong>,
+labelled with the name each player typed when they joined. Each shows the words of the
+phrase that player is on and where their playhead has got to inside them, lit while they
+are sounding — pink for voiced, green for whispering. Four parts at once is more texture
+than you can take apart by ear from the front of a room; this is how you see who is where,
+who is still on the last word, and who has whisper on when they should not.</p>
+
+<div class="box">
+  <h3>Before the first downbeat</h3>
+  <p>The written pitches are shared out among whoever is connected, and that settles at
+  the first quiet moment. <strong>Get everyone on before you begin</strong>, and try not
+  to add a laptop in the middle of a phrase — it re-deals the pitches underneath players
+  who are already sounding.</p>
+  <p>Someone who reloads, or arrives late, is handled without you doing anything: the desk
+  repeats the standing cue quietly every few seconds, so they pick up what the ensemble is
+  doing with no false downbeat.</p>
+</div>
+
+<h2>Who does what</h2>
+
+<table>
+  <tr><th>Role</th><th>How many</th><th></th></tr>
+  <tr>
+    <td><strong>Conductor</strong></td><td>one</td>
+    <td>Runs the piece and the server.</td>
+  </tr>
+  <tr>
+    <td><strong>Players</strong></td><td>two or more per part</td>
+    <td>Four parts. No one needs to read music.</td>
+  </tr>
+  <tr>
+    <td><strong>Projection</strong></td><td>optional, one</td>
+    <td>A laptop on <code>/stage.html</code>, plugged into the projector. It can run on the Conductor computer.</td>
+  </tr>
+</table>
+
+<p class="rule-note">The parts differ by register and by what they are asked to do, not by
+difficulty.</p>
+
+<h2>Conducting</h2>
+
+<div class="box">
+  <p style="font-size: 13pt; margin-bottom: 6pt;"><strong>PREP, then DOWNBEAT.</strong>
+  Both are the space bar.</p>
+  <p>Players can already see what is coming: the next cue's text appears underneath what
+  they are doing the moment the last downbeat lands, so there is nothing to read in a
+  hurry. PREP turns the named players' lights amber — <em>soon</em> — and DOWNBEAT flashes
+  the light white and swaps the new instruction in.
+  <span class="keycap">esc</span> takes back a prep nobody has acted on. The pointer moves
+  on by itself after each downbeat, so conducting a run is space, space, space.</p>
+  <p>Moving the pointer with <span class="keycap">←</span> <span class="keycap">→</span>
+  changes what the players see as coming next, so skipping a cue in rehearsal is visible
+  to them at once. The cue you last actually sent stays on the desk under
+  <em>last sent</em>, whatever the pointer has moved on to.</p>
+</div>
+
+<p><strong>A cue speaks only to the parts written under it.</strong> A part not named in a
+cue is sent nothing at all — no instruction, no light, no flash. That is deliberate, and
+it is what lets some passages be conducted while the players around them are listening to
+each other and deciding for themselves. <em>Carry on with what you are doing</em> and
+<em>there is no cue for you here</em> have to be different things.</p>
+
+<p><strong>The timing is yours.</strong> Nothing in this piece is metered and nothing
+counts. Cue when the texture is ready, and let a passage last as long as it is still
+going somewhere. Two performances need not be the same length.</p>
+
+<h2>The screen is the score</h2>
+
+<p>Every player reads their current instruction off their own screen, cued live. These
+printed pages are what the screen cannot tell you: the setup, the shape, the way in. The
+phrase-by-phrase score at the back is printed from the same file the players are reading,
+so the two cannot drift apart — but if you ever find them disagreeing, <strong>the screen
+is right</strong>.</p>
+
+<h2>A way into rehearsal</h2>
+
+<p>Not in order. The piece opens with its most exposed music and gets easier to hold
+together as it goes, which is the wrong direction to learn it in.</p>
+
+<ol>
+  <li><strong>Phrase 3 first.</strong> Everybody does the same thing at the same time. It
+  teaches sweeping with the mouse, and it teaches the ensemble to watch each other's speed,
+  with nothing else going on.</li>
+
+  <li><strong>Then phrase 1.</strong> Staggered entries, held keys instead of the mouse. It
+  teaches scanning, and it teaches players to hear their own entry inside a texture instead
+  of waiting to be told.</li>
+
+  <li><strong>Then phrase 4.</strong> Short, everyone together, whisper on and then off —
+  a good place to make the whisper toggle an ensemble gesture rather than a private one.</li>
+
+  <li><strong>Then the dense ones, 2 and 7</strong>, where nobody synchronises and the
+  instruction is a density rather than a shape. Rehearse these by listening to the whole
+  and adjusting, not by getting your own part right.</li>
+
+  <li><strong>Phrase 5 last.</strong> It asks for free pitch inside a band with everyone
+  moving independently, and it is the only passage where a player can be genuinely lost
+  without noticing.</li>
+</ol>
+
+<h2>Two-minute soundcheck</h2>
+
+<p><strong>First, walk the room and read the pill</strong> in the top corner of every
+player's page. It should say <code>bridge: … · worklet</code>. If it says
+<code>· main thread</code> in amber, that laptop is running the synth the slow way —
+it will still play, but it is working much harder than it needs to. Almost always
+it means that player typed <code>http://</code> instead of <code>https://</code>.</p>
+
+<p>Then the sound itself. Everyone on phrase 1. One part at a time — I, then II, then III, then IV — each holding
+<span class="keycap">A</span> alone for a few seconds while the rest stay silent. You are
+listening for four clearly separated registers at roughly even loudness. It catches a
+muted output, a laptop on the wrong part and a machine that never woke up, in one pass.</p>
+
+<h2>Where players get lost</h2>
+
+<ul>
+  <li><strong>Whisper left on</strong> from the previous phrase.
+  <span class="keycap">Z</span> latches and nothing resets it.</li>
+
+  <li><strong>Scanned off the end</strong> of the phrase and waiting for something to
+  happen. Press the key again.</li>
+
+  <li><strong>Wandered out of the band</strong> in a drifting phrase. The lit keys on the
+  piano are the whole of what is allowed.</li>
+
+  <li><strong>Still holding the spacebar</strong> after the cue to let go.</li>
+</ul>

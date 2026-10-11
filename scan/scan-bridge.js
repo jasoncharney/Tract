@@ -6,27 +6,28 @@
                                             /src/utils.js and the worklet URL)
     * a minimal WebSocket server on the    (the page connects back to it)
       same port
-    * UDP in  on 7400: OSC from Max        -> forwarded to the page
-    * UDP out on 7401: OSC to Max          <- cell + gesture feedback
+    * UDP in  on 7400: OSC in              -> forwarded to the page
+    * UDP out on 7401: OSC out             <- cell + gesture feedback
+                                              (QLab, Max, anything that speaks
+                                               OSC — the piece needs none of it)
 
   usage:
-      node scan-bridge/scan-bridge.js [--port 8080] [--udp-in 7400]
-                                      [--udp-out 7401] [--out-host 127.0.0.1]
-                                      [--root <repo root>] [--host 0.0.0.0]
+      node scan/scan-bridge.js [--port 8080] [--udp-in 7400]
+                               [--udp-out 7401] [--out-host 127.0.0.1]
+                               [--root <repo root>] [--host 0.0.0.0]
 
-  then open   http://localhost:8080            (a player)
-              http://localhost:8080/conduct.html  (the conductor)
-
-  In Max:   [udpsend 127.0.0.1 7400]   <- messages beginning with "/" are sent
-                                          as OSC automatically
-            [udpreceive 7401]          <- feedback
+  then open   http://localhost:8080                  (a player)
+              http://localhost:8080/conduct.html      (the conductor)
+              http://localhost:8080/stage.html        (the projection)
 */
 
 const http = require("http");
+const https = require("https");
 const dgram = require("dgram");
 const crypto = require("crypto");
 const fs = require("fs");
 const os = require("os");
+const { execFileSync } = require("child_process");
 const path = require("path");
 
 /* ---------------------------------------------------------------- *
@@ -43,10 +44,151 @@ const PORT = Number(arg("port", 8080));
 const UDP_IN = Number(arg("udp-in", 7400));
 const UDP_OUT = Number(arg("udp-out", 7401));
 const OUT_HOST = arg("out-host", "127.0.0.1");
+// the repo root, not scan/ — the page asks for absolute paths like /src/utils.js
+// and /pink-trombone/src/…, which live beside scan/ rather than inside it
 const ROOT = path.resolve(arg("root", path.join(__dirname, "..")));
 // every interface by default, so the other laptops in the room can reach it;
 // --host 127.0.0.1 keeps it to this machine
 const HOST = arg("host", "0.0.0.0");
+// TLS, which is not about secrecy here: browsers only hand out AudioWorklet in
+// a secure context, and over plain http on a LAN address there isn't one — so
+// the synth falls back to a main-thread ScriptProcessorNode. A self-signed
+// certificate is enough to get the good path. See make-cert.sh.
+/** every address the other laptops in the room could reach this machine by */
+function localIPs() {
+  const out = [];
+  const nets = os.networkInterfaces();
+  for (const name of Object.keys(nets)) {
+    for (const net of nets[name] || []) {
+      if (net.family === "IPv4" && !net.internal) out.push(net.address);
+    }
+  }
+  return out;
+}
+
+/** the IP addresses a certificate already vouches for */
+function certIPs(certPath) {
+  try {
+    const text = execFileSync("openssl", ["x509", "-in", certPath, "-noout", "-text"], {
+      encoding: "utf8",
+      timeout: 10000,
+    });
+    return (text.match(/IP Address:([0-9.]+)/g) || []).map((m) => m.split(":")[1]);
+  } catch (e) {
+    return null; // no openssl, or not a certificate we can read
+  }
+}
+
+function certExpired(certPath) {
+  try {
+    // -checkend 0 exits non-zero when it has already expired
+    execFileSync("openssl", ["x509", "-in", certPath, "-noout", "-checkend", "0"], {
+      timeout: 10000,
+      stdio: "ignore",
+    });
+    return false;
+  } catch (e) {
+    return true;
+  }
+}
+
+/**
+ * Write a certificate covering this machine as it is right now.
+ *
+ * The room decides the addresses, and it decides them on the day. A browser
+ * checks that the certificate names the exact address it dialled, so a
+ * certificate made at home is wrong at the venue — which is a thing to discover
+ * before a rehearsal rather than during one. So the bridge makes its own, and
+ * makes a new one whenever the addresses have moved.
+ */
+function writeCert(certPath, keyPath, ips) {
+  const san = ["DNS:localhost", "IP:127.0.0.1"].concat(ips.map((ip) => `IP:${ip}`)).join(",");
+  const cfgPath = path.join(os.tmpdir(), `tract-cert-${process.pid}.cnf`);
+  fs.writeFileSync(
+    cfgPath,
+    [
+      "[req]",
+      "distinguished_name = dn",
+      "x509_extensions = ext",
+      "prompt = no",
+      "[dn]",
+      "CN = Tract",
+      "[ext]",
+      `subjectAltName = ${san}`,
+      "basicConstraints = CA:FALSE",
+      "keyUsage = digitalSignature, keyEncipherment",
+      "extendedKeyUsage = serverAuth",
+      "",
+    ].join("\n")
+  );
+  try {
+    execFileSync(
+      "openssl",
+      ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "60",
+       "-keyout", keyPath, "-out", certPath, "-config", cfgPath],
+      { timeout: 60000, stdio: "ignore" }
+    );
+    fs.chmodSync(keyPath, 0o600);
+    return san;
+  } finally {
+    try {
+      fs.unlinkSync(cfgPath);
+    } catch (e) {
+      /* it was a temp file */
+    }
+  }
+}
+
+function findTLS() {
+  if (argv.includes("--no-tls")) return null;
+  const named = arg("cert", null) && arg("key", null);
+  const certPath = arg("cert", path.join(__dirname, "tract-cert.pem"));
+  const keyPath = arg("key", path.join(__dirname, "tract-key.pem"));
+  const ips = localIPs();
+
+  // A certificate named on the command line is used exactly as given — if you
+  // said which one, you meant it.
+  if (!named) {
+    const have = fs.existsSync(certPath) && fs.existsSync(keyPath);
+    let why = null;
+    if (!have) why = "none here yet";
+    else if (certExpired(certPath)) why = "the one here has expired";
+    else {
+      const covered = certIPs(certPath);
+      if (covered === null) why = null; // cannot inspect it; trust it
+      else {
+        const missing = ips.filter((ip) => !covered.includes(ip));
+        if (missing.length) why = `this machine is now ${missing.join(", ")}`;
+      }
+    }
+    if (why) {
+      try {
+        const san = writeCert(certPath, keyPath, ips);
+        console.log(`[scan-bridge] made a certificate — ${why}`);
+        console.log(`[scan-bridge] covering ${san}`);
+      } catch (e) {
+        console.log(`[scan-bridge] could not make a certificate (${e.message.split("\n")[0]})`);
+        console.log("[scan-bridge] carrying on over plain http");
+        return null;
+      }
+    }
+  }
+
+  try {
+    if (!fs.existsSync(certPath) || !fs.existsSync(keyPath)) return null;
+    return {
+      cert: fs.readFileSync(certPath),
+      key: fs.readFileSync(keyPath),
+      where: path.basename(certPath),
+    };
+  } catch (e) {
+    console.log(`[scan-bridge] found a certificate but could not read it — ${e.message}`);
+    return null;
+  }
+}
+
+const TLS = findTLS();
+const SCHEME = TLS ? "https" : "http";
 
 /* ---------------------------------------------------------------- *
  *  OSC (just enough of it)
@@ -193,7 +335,6 @@ const MIME = {
   ".jpg": "image/jpeg",
   ".svg": "image/svg+xml",
   ".ico": "image/x-icon",
-  ".maxpat": "application/json; charset=utf-8",
 };
 
 /* The composer's save buttons POST here, so "save" writes the real file in the
@@ -251,7 +392,7 @@ const SHORTCUTS = {
   "/stage.html": "/scan/stage.html",
 };
 
-const server = http.createServer((request, response) => {
+const server = (TLS ? https.createServer.bind(null, TLS) : http.createServer)((request, response) => {
   const url = decodeURIComponent((request.url || "/").split("?")[0]);
   if (SHORTCUTS[url]) {
     const query = (request.url || "").slice(url.length);
@@ -324,7 +465,14 @@ server.on("upgrade", (request, socket) => {
   );
   socket.setNoDelay(true);
   clients.add(socket);
-  log(`page connected (${clients.size} open)`);
+  // What kind of page this is only becomes knowable once it says something.
+  // A player's first hello goes out before the page has finished choosing its
+  // part, so wait a beat and announce what it settled on: one line per page,
+  // with the right part on it, instead of "page connected" followed by two
+  // corrections.
+  const timer = setTimeout(() => announce(socket), SETTLE);
+  if (timer.unref) timer.unref();
+  pending.set(socket, timer);
 
   let buffer = Buffer.alloc(0);
   socket.on("data", (chunk) => {
@@ -345,8 +493,14 @@ server.on("upgrade", (request, socket) => {
     }
   });
   const drop = () => {
-    clients.delete(socket);
-    log(`page disconnected (${clients.size} open)`);
+    if (!clients.delete(socket)) return; // close and error both fire; report once
+    clearTimeout(pending.get(socket));
+    pending.delete(socket);
+    const seen = who.get(socket);
+    who.delete(socket);
+    // a page that came and went inside the settle window was never announced,
+    // so saying it left would be the only thing ever said about it
+    if (seen && seen.announced) log(`${seen.label} disconnected — ${tally()}`);
   };
   socket.on("close", drop);
   socket.on("error", drop);
@@ -441,6 +595,82 @@ const RELAYED = /^\/(cue|player|conductor|stage|tract)\//;
  * nowhere near Max's UDP port. */
 const PAGES_ONLY = /^\/tract\//;
 
+/* ---------------------------------------------------------------- *
+ *  who is on the other end
+ *
+ *  Nothing in the handshake says whether a socket is a player, the conductor
+ *  or the stage — but what each one sends does, unambiguously, and all three
+ *  start sending at once:
+ *
+ *    player      /player/hello, /scan/out/…, /tract/…
+ *    conductor   /cue/…
+ *    stage       /stage/hello
+ *
+ *  A player's hello carries its part, so the log can name it: "player III".
+ * ---------------------------------------------------------------- */
+
+const who = new Map(); // socket -> { kind, label, announced }
+const pending = new Map(); // socket -> the settle timer
+const SETTLE = 1500; // ms to let a page finish saying which part it is
+
+function nameOf(address, args) {
+  if (address === "/player/hello") {
+    const part = args && args[1];
+    return { kind: "player", label: part ? `player ${part}` : "player" };
+  }
+  if (address.startsWith("/stage/")) return { kind: "stage", label: "stage" };
+  if (address.startsWith("/cue/")) return { kind: "conductor", label: "conductor" };
+  if (address.startsWith("/scan/out/") || address.startsWith("/tract/")) {
+    return { kind: "player", label: "player" };
+  }
+  return null;
+}
+
+/** "2 players, 1 conductor, 1 stage" — what is in the room right now */
+function tally() {
+  const counts = { player: 0, conductor: 0, stage: 0, unknown: 0 };
+  who.forEach((entry) => (counts[entry.kind] += 1));
+  counts.unknown += clients.size - who.size; // connected, still settling
+  const parts = [];
+  const say = (n, one, many) => n && parts.push(`${n} ${n === 1 ? one : many}`);
+  say(counts.player, "player", "players");
+  say(counts.conductor, "conductor", "conductors");
+  say(counts.stage, "stage", "stages");
+  say(counts.unknown, "unidentified page", "unidentified pages");
+  return parts.length ? parts.join(", ") : "nobody left";
+}
+
+/** the settle window is up: say what this page turned out to be */
+function announce(socket) {
+  pending.delete(socket);
+  if (!clients.has(socket)) return;
+  let seen = who.get(socket);
+  if (!seen) {
+    seen = { kind: "unknown", label: "something that will not say what it is" };
+    who.set(socket, seen);
+  }
+  seen.announced = true;
+  log(`${seen.label} connected — ${tally()}`);
+}
+
+function identify(socket, address, args) {
+  const found = nameOf(address, args);
+  if (!found) return;
+  const known = who.get(socket);
+  if (!known) {
+    who.set(socket, { kind: found.kind, label: found.label, announced: false });
+    return;
+  }
+  if (found.label === known.label) return;
+  // /tract/ and /scan/out/ only say "a player"; never trade a known part for that
+  if (found.label === "player" && known.kind === "player") return;
+  const was = known.label;
+  known.kind = found.kind;
+  known.label = found.label;
+  // before the announcement this is just the page settling; after it, it is news
+  if (known.announced) log(`${was} is now ${found.label} — ${tally()}`);
+}
+
 function onPageMessage(text, from) {
   let message;
   try {
@@ -452,6 +682,7 @@ function onPageMessage(text, from) {
   const relay = [];
   for (const item of list) {
     if (!item || !item.address) continue;
+    identify(from, item.address, item.args);
     if (RELAYED.test(item.address)) relay.push(item);
     if (PAGES_ONLY.test(item.address)) continue;
     const packet = encodeOSC(item.address, item.args || []);
@@ -475,16 +706,25 @@ udpIn.bind(UDP_IN, () => log(`OSC in   udp ${UDP_IN}`));
 server.listen(PORT, HOST, () => {
   log(`serving  ${ROOT}`);
   log(`OSC out  udp ${OUT_HOST}:${UDP_OUT}`);
-  log(`players  http://localhost:${PORT}/`);
-  log(`conduct  http://localhost:${PORT}/conduct.html`);
-  log(`stage    http://localhost:${PORT}/stage.html`);
+  log(`players  ${SCHEME}://localhost:${PORT}/`);
+  log(`conduct  ${SCHEME}://localhost:${PORT}/conduct.html`);
+  log(`stage    ${SCHEME}://localhost:${PORT}/stage.html`);
+  if (TLS) {
+    log(`using ${TLS.where} — players click through the warning once`);
+  } else {
+    log("no certificate, so players on other laptops get the slower");
+    log("main-thread synth. Run ./make-cert.sh in scan/ to make one.");
+  }
   if (HOST === "0.0.0.0") {
     // the addresses the other laptops in the room should type
     const nets = os.networkInterfaces();
     for (const name of Object.keys(nets)) {
       for (const net of nets[name] || []) {
         if (net.family === "IPv4" && !net.internal) {
-          log(`on the network: http://${net.address}:${PORT}   (${name})  + /conduct.html to conduct`);
+          log(
+            `on the network: ${SCHEME}://${net.address}:${PORT}   (${name})  + /conduct.html to conduct` +
+              (TLS ? "   (players click through the certificate warning once)" : "")
+          );
         }
       }
     }

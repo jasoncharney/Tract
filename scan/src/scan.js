@@ -4,12 +4,12 @@
   patched-pink-trombone.js.
 */
 
-import { ScanVoice, buildTrack, DEFAULTS, OPEN } from "./engine.js";
+import { ScanVoice, buildTrack, DEFAULTS, OPEN, makeSilence } from "./engine.js";
 import { loadPatchedPinkTrombone } from "./patched-pink-trombone.js";
 
 /** bump alongside the ?v= in index.html; printed on load so there is never a
  *  question about which build a browser is actually running */
-const BUILD = "2026-09-18d";
+const BUILD = "2026-10-11a";
 
 const $ = (id) => document.getElementById(id);
 const strip = $("strip");
@@ -18,6 +18,7 @@ const ipaLine = $("ipaLine");
 const altsHost = $("alts");
 const readout = $("readout");
 const controlsHost = $("controls");
+const stripControlsHost = $("stripControls");
 
 const cfg = Object.assign({}, DEFAULTS);
 
@@ -101,10 +102,26 @@ function allowedNotes() {
  *  apart. A cell's own width scales it: a narrow pass-through stop takes
  *  half as long as a vowel, a word gap about two thirds.
  * ----------------------------------------------------------------- */
+/* Seconds per phoneme while a scan key is held down. Slow is deliberately
+ * glacial: A is a sweep the player ends by letting go, and three to five
+ * seconds on one vowel is a held tone you steer, not a word. */
 const RATES = {
-  slow: [3, 5], // A and W
-  mid: [0.25, 0.75], // S and E
-  fast: [0.1, 0.25], // D and R — near speaking tempo
+  slow: [3, 5], // A
+  mid: [0.25, 0.75], // S
+  fast: [0.1, 0.25], // D — near speaking tempo
+};
+
+/* W, E and R are not held — one press plays one word and there is no way to
+ * let go of it early. They therefore cannot use the hold rates: at three to
+ * five seconds a phoneme, one tap on W is eight to ten seconds of unstoppable
+ * drone, and cue 11 asks Part IV for "a steady pulse... a small gap between
+ * presses", which that cannot be. Mid and fast are unchanged — the score is
+ * written around them, and they measure right — so only slow comes down, to a
+ * word you can pulse rather than a word you are stuck inside. */
+const SHOT_RATES = {
+  slow: [0.8, 1.6], // W — "CRACK" in 1.6 to 3.2 s
+  mid: [0.25, 0.75], // E
+  fast: [0.1, 0.25], // R
 };
 const rand = (a, b) => a + Math.random() * (b - a);
 
@@ -129,6 +146,12 @@ const VOICE = {
 
 let ctx = null;
 let element = null;
+let sanitizer = null; // built once; every synth rebuild reconnects through it
+// "worklet" or "main thread" — which audio path this laptop got. Worth seeing
+// without opening a console, because the difference is invisible until it is
+// not: on the main thread the synth competes with drawing, and the page only
+// gets the worklet in a secure context (https, or localhost).
+let audioPath = "?";
 let voice = null;
 let master = null;
 let meterNode = null;
@@ -152,6 +175,9 @@ let note = VOICE.note;
 let ws = null;
 
 let gain = VOICE.gain;
+let fadeNode = null; // the diminuendo stage, downstream of the fader
+let fadeSeconds = 5; // the conductor sets this; 5 s until it says otherwise
+let fading = false;
 const vibrato = Object.assign({}, VOICE.vibrato);
 let wordMode = "next"; // or "random", per phrase
 let wordSpans = [];
@@ -178,6 +204,115 @@ const transport = {
  *  audio
  * ================================================================ */
 
+/**
+ * A guard between the synth and everything downstream.
+ *
+ * Upstream Pink Trombone's worklet emits NaN for its first seven render quanta —
+ * about 19 ms — every single time it starts. Measured here, and measured again
+ * with `?nopatch=1`, so it is upstream's own doing and not one of this repo's
+ * patches. NaN is not quiet: it is a click on the way out, it draws as a tract
+ * that has flown apart, and if any of it ever settles into the delay line the
+ * laptop is silent for the rest of the piece. A gain of zero does not help —
+ * NaN times zero is still NaN — so it has to be replaced rather than turned
+ * down. Non-finite samples become silence; anything past ±4 is clamped, which
+ * no legitimate signal here ever reaches.
+ *
+ * Returns null if the worklet cannot be installed, and the caller then wires
+ * the synth straight through: a guard that fails should not cost you the piece.
+ */
+const SANITIZER_SRC = `
+class TractSanitize extends AudioWorkletProcessor {
+  process(inputs, outputs) {
+    const input = inputs[0];
+    const output = outputs[0];
+    for (let c = 0; c < output.length; c++) {
+      const src = input && input[c];
+      const dst = output[c];
+      if (!src) { dst.fill(0); continue; }
+      for (let i = 0; i < dst.length; i++) {
+        const v = src[i];
+        // NaN fails both comparisons and falls through to 0
+        dst[i] = v >= -4 && v <= 4 ? v : v > 4 ? 4 : v < -4 ? -4 : 0;
+      }
+    }
+    return true;
+  }
+}
+registerProcessor("tract-sanitize", TractSanitize);
+`;
+
+/**
+ * The same clamp, on the main thread.
+ *
+ * AudioWorklet only exists in a secure context — https, or localhost. Served to
+ * an ensemble over plain http on a LAN address it is simply absent, which is
+ * also why upstream falls back to its own ScriptProcessorNode there. That is
+ * exactly the case where the guard matters most: without it the worklet's
+ * opening NaN goes straight to the speakers and into the tract view, and NaN in
+ * the delay line never leaves. Deprecated and working beats modern and missing.
+ */
+function makeScriptSanitizer(context) {
+  if (!context.createScriptProcessor) return null;
+  // 512 frames, not the minimum: this runs on the main thread, and a laptop
+  // drawing eight tracts has better things to do than service a 256-frame
+  // callback.
+  const node = context.createScriptProcessor(512, 2, 2);
+  node.onaudioprocess = (event) => {
+    const inBuf = event.inputBuffer;
+    const outBuf = event.outputBuffer;
+    for (let c = 0; c < outBuf.numberOfChannels; c++) {
+      const dst = outBuf.getChannelData(c);
+      const src = c < inBuf.numberOfChannels ? inBuf.getChannelData(c) : null;
+      if (!src) {
+        dst.fill(0);
+        continue;
+      }
+      for (let i = 0; i < dst.length; i++) {
+        const v = src[i];
+        dst[i] = v >= -4 && v <= 4 ? v : v > 4 ? 4 : v < -4 ? -4 : 0;
+      }
+    }
+  };
+  return node;
+}
+
+async function makeSanitizer(context) {
+  let url = null;
+  try {
+    // a way to exercise the fallback on a machine that does have AudioWorklet:
+    // window.__forceScriptSanitizer = true before enabling audio
+    if (window.__forceScriptSanitizer) throw new Error("forced to the fallback for testing");
+    if (!context.audioWorklet) throw new Error("no AudioWorklet in this context");
+    url = URL.createObjectURL(new Blob([SANITIZER_SRC], { type: "text/javascript" }));
+    await context.audioWorklet.addModule(url);
+    console.log("Tract: NaN guard installed (AudioWorklet).");
+    audioPath = "worklet";
+    paintBridgePill();
+    return new AudioWorkletNode(context, "tract-sanitize");
+  } catch (e) {
+    const fallback = makeScriptSanitizer(context);
+    if (fallback) {
+      audioPath = "main thread";
+      paintBridgePill();
+      console.warn(
+        "Tract: no AudioWorklet here, so the NaN guard is running as a " +
+          "ScriptProcessorNode instead. That happens when the page is served over " +
+          "plain http to anything but localhost \u2014 AudioWorklet needs a secure " +
+          "context. Serve over https or localhost for the better path. (" +
+          e.message +
+          ")"
+      );
+      return fallback;
+    }
+    console.warn("scan: could not install the NaN guard, running without it \u2014", e.message);
+    audioPath = "unguarded";
+    paintBridgePill();
+    return null;
+  } finally {
+    if (url) URL.revokeObjectURL(url);
+  }
+}
+
 async function enableAudio() {
   if (ctx) {
     await ctx.resume();
@@ -198,12 +333,16 @@ async function enableAudio() {
     console.log(`Tract: all ${applied.length} worklet patches applied (${applied.join(", ")}).`);
   }
 
-  element = document.createElement("pink-trombone");
-  $("tractHost").appendChild(element);
-  await element.setAudioContext(ctx);
+  // (see makeSanitizer, below). The synth node itself is built in buildSynth,
+  // because standby builds a fresh one.
+  sanitizer = await makeSanitizer(ctx);
 
   master = ctx.createGain();
-  master.gain.value = gain;
+  // Silent until the engine has been told to be silent. The upstream worklet
+  // starts voicing its default vowel the moment it exists, and that is a good
+  // fifty milliseconds before the lines below close the gate and zero the
+  // intensity — which is the blurt players heard as the page came up.
+  master.gain.value = 0;
   // Safety net. The burst transient is a sample-level impulse, which is faster
   // than any compressor attack, so the compressor handles the sustained level
   // and a tanh curve catches what gets past it.
@@ -227,14 +366,44 @@ async function enableAudio() {
   meterNode.fftSize = 1024;
   meterNode.smoothingTimeConstant = 0;
   meterBuffer = new Float32Array(meterNode.fftSize);
-  element.connect(master);
-  master.connect(limiter);
+  if (sanitizer) sanitizer.connect(master);
+  // The diminuendo gets a stage of its own rather than driving the fader: a
+  // player can still ride their own output while the fade is running, and the
+  // fader is where they left it when it is over.
+  fadeNode = ctx.createGain();
+  fadeNode.gain.value = 1;
+  master.connect(fadeNode);
+  fadeNode.connect(limiter);
   limiter.connect(softClip);
   softClip.connect(meterNode);
   softClip.connect(ctx.destination);
   limiterNode = softClip;
   startMeter();
-  element.pinkTrombone.start();
+  await buildSynth();
+}
+
+/**
+ * The synth node, and everything hanging off it.
+ *
+ * Separate from enableAudio because standby rebuilds it. NaN gets into the
+ * tract's delay line during the worklet's first few render quanta and stays
+ * there — the burst of noise, the tract view flying apart, and then a voice
+ * that will not sound again. Nothing reachable from outside the processor
+ * clears those arrays, so the cure is a new processor: drop this node, make
+ * another, pose it before it runs.
+ */
+async function buildSynth() {
+  element = document.createElement("pink-trombone");
+  $("tractHost").appendChild(element);
+  await element.setAudioContext(ctx);
+  element.connect(sanitizer || master);
+
+  // The synth is NOT started here. Upstream starts voicing the moment it runs,
+  // on whatever geometry the tract happens to hold — and the two constrictions
+  // below are claimed before the processor has acknowledged them, so for a few
+  // blocks their index and diameter are undefined and the tract's own diameter
+  // array goes NaN. NaN in the delay line is the blurt, and it is what makes the
+  // tract view fly apart. Nothing runs until the pose below is in place.
 
   // newConstriction() marks a constriction taken only after a port round-trip,
   // so two synchronous calls hand back the *same* one — and then every frame
@@ -275,9 +444,20 @@ async function enableAudio() {
   voice.gate = 0;
   voice.params.intensity.value = 0;
   voice.invalidate();
+  // and pose the tract now rather than on the first frame: between the worklet
+  // starting and something telling it what shape to be, it is on its own
+  // startup geometry, which is neither quiet nor a vocal tract
+  if (cells[0] && cells[0].poses && cells[0].poses[0]) {
+    voice.applyPose(cells[0].poses[0], ctx.currentTime, 0);
+  }
 
   applyVibrato();
-  master.gain.value = gain;
+
+  // posed, quiet and in tune — now it may run, and only then does the output
+  // fade in rather than switching on
+  element.pinkTrombone.start();
+  master.gain.setValueAtTime(0, ctx.currentTime);
+  master.gain.linearRampToValueAtTime(gain, ctx.currentTime + 0.08);
 
   showTract(true);
 
@@ -287,6 +467,74 @@ async function enableAudio() {
   window.scan.voice = voice;
   window.scan.ctx = ctx;
   window.scan.element = element;
+}
+
+
+/**
+ * Standby, and a way back from a wedged engine.
+ *
+ * The worklet can come up with NaN in its tract arrays — a burst of noise, the
+ * tract view flying apart, and then nothing at all, because NaN in a delay line
+ * stays there forever. No parameter reaches inside the processor to clear it,
+ * so the only cure is a new processor. Standby is the natural place to do it:
+ * the piece is not sounding, everybody is waiting, and a player who has lost
+ * their voice already knows to press {0}.
+ *
+ * It costs about a tenth of a second, and it is silent at both ends: the fader
+ * is taken to zero before the old node goes and faded back up by buildSynth
+ * once the new one is posed.
+ */
+let rebuilding = false;
+
+async function resetEngine() {
+  if (!ctx || rebuilding) return false;
+  rebuilding = true;
+  ready = false; // the frame loop must not drive a voice whose node is gone
+  try {
+    master.gain.cancelScheduledValues(ctx.currentTime);
+    master.gain.setValueAtTime(0, ctx.currentTime);
+    try {
+      if (element.pinkTrombone && element.pinkTrombone.stop) element.pinkTrombone.stop();
+    } catch (e) {
+      /* it may already be stopped */
+    }
+    try {
+      element.disconnect();
+    } catch (e) {
+      /* never connected */
+    }
+    // Park the old node rather than removing it on the spot: it answers its own
+    // parameter requests over a port, and something may still be waiting. It
+    // goes a couple of seconds later, by which time nothing is.
+    //
+    // A retired node still logs one upstream TypeError as it goes — its own
+    // getProcessor reply dispatches at event.target, which the browser has
+    // nulled by the time the promise resolves. Measured: about one per reset,
+    // not one per frame, and nothing downstream of it is affected. Left
+    // visible rather than swallowed, because a global error trap here would
+    // hide the next real thing.
+    const retired = element;
+    retired.hidden = true;
+    retired.style.display = "none";
+    document.body.appendChild(retired);
+    setTimeout(() => {
+      try {
+        retired.remove();
+      } catch (e) {
+        /* already gone */
+      }
+    }, 2000);
+    await buildSynth(); // sets ready, and fades the output back in
+    lastGesture = "engine reset";
+    lastGestureAt = performance.now();
+    return true;
+  } catch (e) {
+    console.warn("scan: could not rebuild the synth —", e && e.message);
+    ready = true; // better a suspect engine than a dead page
+    return false;
+  } finally {
+    rebuilding = false;
+  }
 }
 
 /* ================================================================ *
@@ -309,10 +557,38 @@ function lookup(word) {
   return (TextToIPA._IPADict[word] || []).slice();
 }
 
-function setPhrase(index, { announce = true } = {}) {
+/**
+ * Phrase 0: the page is open and the piece has not started.
+ *
+ * It is a real phrase as far as everything else is concerned — you can be sent
+ * to it, step off it, and come back — but it has no words, so the strip is empty
+ * and there is nothing to sound. A player who opens the page early lands here
+ * instead of sitting on "words strain" with a live strip under their hands.
+ * Phrases 1–8 keep their numbers, so cues.json, presets.json and parts.json are
+ * untouched by this.
+ */
+const STANDBY = -1;
+
+/** stepping stops at standby rather than wrapping past it into phrase 8 */
+function stepPhrase(by) {
+  const next = phraseIndex + by;
+  if (next < STANDBY) setPhrase(PHRASES.length - 1);
+  else if (next >= PHRASES.length) setPhrase(STANDBY);
+  else setPhrase(next);
+}
+
+function setPhrase(index, { announce = true, reset = true } = {}) {
   const count = PHRASES.length;
-  phraseIndex = ((index % count) + count) % count;
-  const phrase = PHRASES[phraseIndex];
+  const was = phraseIndex;
+  // whatever was running belonged to the phrase we are leaving, including its
+  // stop point — carrying it into the next one is never what anybody meant
+  stopTransport();
+  phraseIndex = index === STANDBY ? STANDBY : ((index % count) + count) % count;
+  // Arriving at standby rebuilds the synth. It is the one moment in the piece
+  // when silence is expected, so it is the one place a wedged engine can be
+  // fixed without anybody hearing it happen.
+  if (reset && phraseIndex === STANDBY && was !== STANDBY && ready) resetEngine();
+  const phrase = phraseIndex === STANDBY ? "" : PHRASES[phraseIndex];
 
   words = phrase
     .split(/\s+/)
@@ -329,9 +605,11 @@ function setPhrase(index, { announce = true } = {}) {
       };
     });
 
-  $("phraseNum").textContent = `${phraseIndex + 1}/${count}`;
-  $("phraseText").textContent = phrase;
+  $("phraseNum").textContent = phraseIndex === STANDBY ? `standby` : `${phraseIndex + 1}/${count}`;
+  $("phraseText").textContent = phraseIndex === STANDBY ? "—" : phrase;
   paintDots();
+  takeSeat(); // a new phrase is the only safe moment to re-seat the part
+  sendPhraseState(); // the stage's subtitles follow the words, not a timer
   wordCursor = -1; // a new phrase starts from its first word
   applyPreset(phraseIndex); // brings this phrase's cfg, pitch and word choices
   if (pronunciation !== "fixed") randomizeChoices();
@@ -446,22 +724,113 @@ function renderAlts() {
 function paintDots() {
   const host = $("phraseDots");
   host.innerHTML = "";
+  // phrase 0 first: a smaller dot, because it is a waiting room and not a phrase
+  const standby = document.createElement("button");
+  standby.className = "dot standby" + (phraseIndex === STANDBY ? " on" : "");
+  standby.title = "0 — standby, before the piece starts";
+  standby.setAttribute("aria-label", "standby");
+  standby.addEventListener("click", () => setPhrase(STANDBY));
+  host.appendChild(standby);
   PHRASES.forEach((phrase, i) => {
     const dot = document.createElement("button");
     dot.className = "dot" + (i === phraseIndex ? " on" : "");
-    dot.title = phrase;
+    dot.title = `${i + 1} — ${phrase}`;
     dot.setAttribute("aria-label", phrase);
     dot.addEventListener("click", () => setPhrase(i));
     host.appendChild(dot);
   });
 }
 
+/**
+ * The cell standby rests on: a schwa with the voice turned all the way off.
+ *
+ * A pose of nulls — which is what a plain silence cell is — means "leave the
+ * tract as you found it", and at startup that is whatever geometry the worklet
+ * came up in: not a mouth, and the shape that flew apart in the tract view. A
+ * schwa is a real neutral vocal tract, so the drawing is a drawing and the
+ * numbers going into the delay line are numbers. `a: 0` keeps it silent.
+ */
+function restCell() {
+  const schwa = buildTrack("ə", phonemeTable(), cfg)[0];
+  if (!schwa) return makeSilence(0);
+  schwa.ipa = "·";
+  schwa.stress = 0;
+  schwa.poses = schwa.poses.map((p) => Object.assign({}, p, { a: 0, v: 0 }));
+  return schwa;
+}
+
 function setTrack(ipa) {
   cells = buildTrack(ipa, phonemeTable(), cfg);
+  // A track with nothing in it is not "silence" — it is the engine switched off.
+  // `update()` returns at once with no cells, so the tract is never posed and
+  // never told to be quiet: the worklet sits on its own startup geometry, which
+  // draws as a burst of nonsense in the tract view and sounds like one too.
+  // Standby therefore gets one rest cell, which is a real pose holding real
+  // silence, applied every frame like any other.
+  if (cells.length === 0) cells = [restCell()];
+  computeCellStarts();
   computeWordSpans();
   renderStrip();
+  wordsDirty = true; // the desk's miniatures are drawn from this
   if (voice) voice.setTrack(cells);
   targetPos = Math.min(targetPos, Math.max(0.001, cells.length - 0.001));
+}
+
+/* Cells are not all the same width — a pass-through stop is half an ordinary
+ * phoneme and a held one is a little over. The strip lays them out by those
+ * weights, so "half way along the strip" and "half way through the cells" are
+ * two different places. This is the running total, which turns one into the
+ * other; the conductor's miniature strips are drawn in the same space, so they
+ * are true miniatures rather than approximate ones. */
+let cellStarts = [];
+let cellTotal = 1;
+
+function computeCellStarts() {
+  cellStarts = [];
+  let run = 0;
+  cells.forEach((cell) => {
+    cellStarts.push(run);
+    run += cell.width || 1;
+  });
+  cellTotal = run || 1;
+}
+
+/** where a playhead sits along the strip, 0 to 1 */
+function posFraction(pos) {
+  if (!cells.length) return 0;
+  const i = Math.max(0, Math.min(cells.length - 1, Math.floor(pos)));
+  const within = Math.max(0, Math.min(1, pos - i));
+  return Math.max(0, Math.min(1, (cellStarts[i] + within * (cells[i].width || 1)) / cellTotal));
+}
+
+/**
+ * The words, and where each one sits along the strip.
+ *
+ * The same grouping the strip itself draws — a run of cells sharing a word
+ * index — measured in the same weighted space. The conductor gets this once
+ * per phrase, not ten times a second: it only changes when the phrase does, or
+ * when a pronunciation is re-rolled.
+ */
+function wordLayout() {
+  const round = (n) => Math.round(n * 1000) / 1000;
+  // every cell edge, so the desk's ticks fall where this player's actually do
+  // rather than at even intervals that only look right
+  const edges = cells.map((cell, i) => round((cellStarts[i] + (cell.width || 1)) / cellTotal));
+  const out = [];
+  let current = -2;
+  cells.forEach((cell, i) => {
+    const which = cell.cls === "silence" ? -1 : cell.wordIndex;
+    if (which === -1) {
+      current = -2;
+      return;
+    }
+    if (which !== current) {
+      out.push({ w: wordLabels[which] || "", a: round(cellStarts[i] / cellTotal), b: 0 });
+      current = which;
+    }
+    out[out.length - 1].b = edges[i];
+  });
+  return { w: out, c: edges };
 }
 
 /** the runs of non-silent cells, so a key can play exactly one word */
@@ -654,10 +1023,75 @@ strip.addEventListener("pointerleave", () => {
 });
 strip.addEventListener("contextmenu", (e) => e.preventDefault());
 
-function openGate(on) {
+function openGate(on, options) {
   if (!ready) return;
   if (on === voice.gate > 0) return;
-  voice.setGate(on, ctx.currentTime);
+  voice.setGate(on, ctx.currentTime, options);
+}
+
+/* ================================================================ *
+ *  the spacebar, as a damper pedal
+ *
+ *  Hold it and whatever is sounding keeps sounding — the phoneme under the
+ *  playbar, or the one Q or T just threw up. A one-shot the pedal catches stops
+ *  counting down and waits for the pedal instead, so Q-then-space is a sustain
+ *  rather than a stutter. Letting Q or T go under a held pedal does nothing.
+ *  Letting the pedal go ends the note with the release envelope, and does NOT
+ *  re-fire the key that is still held down: the next sound needs a new press,
+ *  the way a piano key does.
+ * ================================================================ */
+
+let pedal = false;
+let heldShot = null; // "q" or "t" while that key is down
+
+/**
+ * A held phoneme ends when nothing is holding it any more — neither the key
+ * that started it nor the pedal. That is what lets Q-then-pedal work without a
+ * gap in the middle: the note was never going to stop on its own.
+ */
+function endHeldShot() {
+  if (transport.mode !== "phoneme" && transport.mode !== "perc") return;
+  const now = ctx.currentTime;
+  const wasPerc = transport.mode === "perc";
+  transport.mode = null;
+  if (wasPerc) whisperRestoreAt = now + Math.max(0.3, cfg.gateRelease || 0.3);
+  if (voice.gate > 0) voice.setGate(false, now, { sustained: true });
+  paintTransport();
+}
+
+/** the key came up: let go unless the pedal is still down */
+function releaseShot(key) {
+  if (heldShot !== key) return;
+  heldShot = null;
+  if (!ready || pedal) return;
+  explicitGate = null;
+  endHeldShot();
+}
+
+async function pressPedal() {
+  if (pedal) return;
+  pedal = true;
+  if (!ctx) await enableAudio();
+  if (!ready) return;
+  explicitGate = 1;
+  openGate(true);
+  paintTransport();
+}
+
+function liftPedal() {
+  if (!pedal) return;
+  pedal = false;
+  explicitGate = null;
+  if (!ready) return;
+  // a Q or T still under a finger goes on sounding; the pedal was only the
+  // second thing holding it
+  if (heldShot) return;
+  if (transport.mode === "phoneme" || transport.mode === "perc") {
+    endHeldShot();
+    return;
+  }
+  if (voice.gate > 0) voice.setGate(false, ctx.currentTime, { sustained: true });
+  paintTransport();
 }
 
 /* ================================================================ *
@@ -669,20 +1103,23 @@ let paintedClosed = false;
 
 function frame() {
   requestAnimationFrame(frame);
+  if (seatsDirty && seatsCanSettle()) takeSeat();
   if (!ready) return;
 
   const now = ctx.currentTime;
   tickTransport(now);
   if (whisperRestoreAt && now >= whisperRestoreAt) {
     whisperRestoreAt = 0;
-    voice.setWhisper(presetWhisper, now);
-    syncControl("whisper", presetWhisper);
+    voice.setWhisper(whisperOn, now);
+    syncControl("whisper", whisperOn);
   }
   voice.update(targetPos, now);
 
   const stripRect = strip.getBoundingClientRect();
   cursor.style.opacity = voice.gate > 0 ? "1" : "0.28";
   cursor.style.left = `${xFromPos(targetPos) - stripRect.left}px`;
+
+  if (fading) paintFade();
 
   const i = voice.cellAt(targetPos);
   const closed = voice.closed && !voice.released;
@@ -694,6 +1131,8 @@ function frame() {
     if (i !== paintedCell) {
       const cell = cells[i];
       sendOut("/scan/out/cell", [i, cell ? cell.ipa : ""]);
+      // Nothing here touches the pitch. A drifting phrase is a band the
+      // player moves inside by hand; the page never draws for them.
     }
     paintedCell = i;
     paintedClosed = closed;
@@ -767,13 +1206,14 @@ export function applyRemote(address, args = []) {
       setPhrase(Math.round(num(a0, 1)) - 1);
       break;
     case "/scan/next":
-      setPhrase(phraseIndex + 1);
+      stepPhrase(1);
       break;
     case "/scan/prev":
-      setPhrase(phraseIndex - 1);
+      stepPhrase(-1);
       break;
     case "/scan/note":
       note = num(a0, note);
+      rememberChoice();
       if (ready) voice.setNote(note, now);
       syncControl("note", note);
       paintPiano();
@@ -815,7 +1255,7 @@ export function applyRemote(address, args = []) {
       if (typeof a0 === "string" && a0 in cfg) {
         cfg[a0] = typeof cfg[a0] === "boolean" ? num(args[1]) > 0.5 : num(args[1], cfg[a0]);
         syncControl(a0, cfg[a0]);
-        if (a0 === "holdWordFinalStops") setTrack(currentIpa);
+        if (REBUILD_KEYS.has(a0)) setTrack(currentIpa);
       }
       break;
     case "/scan/speed": {
@@ -879,11 +1319,22 @@ export function applyRemote(address, args = []) {
     case "/cue/state":
       cueState(a0, args[1], String(args[2] ?? ""));
       break;
-    case "/cue/ping": // a conductor just opened: say who is here
+    case "/cue/fade": // how long the diminuendo at the end should take
+      fadeSeconds = Math.max(0.2, Math.min(300, num(a0, fadeSeconds)));
+      paintFadeLength();
+      break;
+    case "/cue/next": // what is coming, sent the moment the last downbeat landed
+      cueNext(a0, args[1], String(args[2] ?? ""));
+      break;
+    case "/cue/ping": // a conductor is at the desk: say who is here, and feed it
+      deskSeenAt = performance.now();
       sayHello();
       break;
     case "/stage/hello": // the projection page is up; start feeding it
       stageSeenAt = performance.now();
+      break;
+    case "/player/hello": // another player on the network; seats are built from these
+      heardPeer(a0, args[3]);
       break;
     default:
       break;
@@ -917,8 +1368,8 @@ function connectWS() {
     return;
   }
   ws.addEventListener("open", () => {
-    pill.textContent = `bridge: ${location.hostname}:${port}`;
-    pill.className = "pill on";
+    connected = true;
+    paintBridgePill();
     sayHello(); // and every few seconds after, so the conductor's roster is live
   });
   ws.addEventListener("message", (event) => {
@@ -1031,13 +1482,19 @@ const CONTROLS = [
   { key: "affricateClosure", label: "affricate hold", min: 0.01, max: 0.2, step: 0.005, unit: "s" },
   { key: "smooth", label: "scan smoothing", min: 0.005, max: 0.15, step: 0.005, unit: "s" },
   { key: "blend", label: "transition zone", min: 0.05, max: 0.9, step: 0.05, unit: "" },
-  { key: "glide", label: "pitch glide", min: 0, max: 0.5, step: 0.01, unit: "s" },
+  { key: "sibilantLevel", label: "sibilant level", min: 0.85, max: 1, step: 0.005, unit: "" },
+  { key: "gateRelease", label: "release", min: 0.01, max: 3, step: 0.01, unit: "s" },
+  { key: "stressSemitones", label: "stressed-vowel lift", min: 0, max: 2, step: 0.05, unit: "" },
+  // up to two seconds, so a drifting phrase can really slide between pitches
+  { key: "glide", label: "pitch glide", min: 0, max: 2, step: 0.01, unit: "s" },
   { key: "note", label: "pitch (MIDI note)", min: 24, max: 84, step: 0.01, unit: "", special: true },
   { key: "tractLength", label: "tract length", min: 15, max: 88, step: 1, unit: "", special: true },
   // output level lives in the bar at the top of the page now, beside the meter
   { key: "vibratoRate", label: "vibrato rate", min: 0.1, max: 12, step: 0.1, unit: "", special: true },
   { key: "vibratoDepth", label: "vibrato depth", min: 0, max: 0.04, step: 0.001, unit: "", special: true },
-  { key: "wobble", label: "wobble (pitch drift)", min: 0, max: 1, step: 0.01, unit: "", special: true },
+  // host "strip": lives under the phoneme strip, within reach mid-rehearsal.
+  // Still a CONTROLS entry, so it still saves and loads with the preset.
+  { key: "wobble", label: "pitch drift (wobble)", min: 0, max: 1, step: 0.01, unit: "", special: true, host: "strip" },
   { key: "whisper", label: "whisper", toggle: true, special: true },
   { key: "holdWordFinalStops", label: "word-final stops wait to be left", toggle: true },
   { key: "autoReleaseStops", label: "held stops release themselves", toggle: true },
@@ -1058,6 +1515,15 @@ const HELP = {
   "smooth": "How closely the mouth follows your hand. Larger is smoother and more blurred; smaller is immediate, and can sound jumpy.",
   "blend": "How much of each block is spent gliding into the next. Small values give abrupt changes between sounds; large values are always sliding.",
   "glide": "How long the pitch takes to slide when the note changes. 0 jumps straight there.",
+  "stressSemitones":
+    "How far the pitch lifts on a stressed vowel, in semitones \u2014 the thing English speech does and singing a written pitch does not. 0 means the piano is exact: every phoneme sounds the key you pressed. Turn it up for speech.",
+  "sibilantLevel":
+    "How loud s, sh and their unvoiced relatives are next to everything else. NOT a fader — the " +
+    "synthesis drives frication nonlinearly, so 0.85 is already far down and 1 is untrimmed. " +
+    "0.93 measured level with the voiced phonemes of \"words strain\".",
+  "gateRelease":
+    "How long a sustained phoneme takes to die away when you let go of the spacebar — a " +
+    "diminuendo instead of a cut. Does not affect the stops, which keep their own timing.",
   "note": "The note being sung. Click the piano below to pick one, or drag here for pitches in between the keys.",
   "tractLength": "The size of the throat and mouth. Longer sounds like a bigger body — deeper and darker — without changing the note.",
   "gain": "How loud this voice is.",
@@ -1119,8 +1585,10 @@ function buildControls() {
 
     wrap.appendChild(label);
     wrap.appendChild(row);
-    controlsHost.appendChild(wrap);
+    const home = spec.host === "strip" && stripControlsHost ? stripControlsHost : controlsHost;
+    home.appendChild(wrap);
   });
+  paintWhisperTag(whisperOn); // nothing has synced it yet on a fresh page
 }
 
 function specialValue(key) {
@@ -1145,7 +1613,7 @@ function formatValue(value, spec) {
 function onControl(spec, value) {
   if (!spec.special) {
     cfg[spec.key] = value;
-    if (spec.key === "holdWordFinalStops") setTrack(currentIpa);
+    if (REBUILD_KEYS.has(spec.key)) setTrack(currentIpa);
     return;
   }
   switch (spec.key) {
@@ -1159,7 +1627,7 @@ function onControl(spec, value) {
       applyRemote("/scan/gain", [value]);
       break;
     case "whisper":
-      presetWhisper = !!value;
+      whisperOn = !!value;
       applyRemote("/scan/whisper", [value ? 1 : 0]);
       break;
     case "vibratoRate":
@@ -1177,6 +1645,52 @@ function onControl(spec, value) {
   }
 }
 
+/**
+ * The whisper light under the strip.
+ *
+ * Z is latching and nothing else touches it any more, so a player can carry a
+ * whisper across a phrase change without noticing. This says which it is,
+ * where they are already looking.
+ */
+/**
+ * The pill in the header: who we are talking to, and which audio path this
+ * laptop ended up on.
+ *
+ * "worklet" is the good one — the synth runs off the main thread. "main thread"
+ * means the page was not served from a secure context, so there is no
+ * AudioWorklet here and everything is sharing a thread with the drawing. It is
+ * on the pill rather than in a console because checking sixteen laptops at a
+ * soundcheck should be a walk past them, not sixteen consoles.
+ */
+let connected = false;
+
+function paintBridgePill() {
+  const pill = $("wsStatus");
+  if (!pill) return;
+  const port = location.port || (location.protocol === "https:" ? 443 : 80);
+  const where = connected ? `bridge: ${location.hostname}:${port}` : "bridge: —";
+  pill.textContent = audioPath === "?" ? where : `${where} · ${audioPath}`;
+  pill.className = "pill" + (connected ? " on" : "") + (audioPath === "worklet" || audioPath === "?" ? "" : " warn");
+  pill.title =
+    audioPath === "worklet"
+      ? "AudioWorklet: the synth runs off the main thread. This is the good path."
+      : audioPath === "main thread"
+        ? "No AudioWorklet here, so the synth is sharing the main thread with the drawing. " +
+          "That happens when the page is served over plain http to anything but localhost — " +
+          "serve it over https instead."
+        : audioPath === "unguarded"
+          ? "No NaN guard at all on this laptop. Reload; if it persists, something is wrong."
+          : "which bridge this page is talking to";
+}
+
+function paintWhisperTag(on) {
+  const el = $("whisperTag");
+  if (!el) return;
+  el.dataset.on = on ? "1" : "0";
+  const word = el.querySelector(".state");
+  if (word) word.textContent = on ? "on" : "off";
+}
+
 function syncControl(key, value) {
   // the fader at the top of the page is the same number as the one in
   // *timing & voice*, wherever the change came from — a preset, the conductor,
@@ -1187,6 +1701,7 @@ function syncControl(key, value) {
     if (slider && document.activeElement !== slider) slider.value = String(value);
     if (out) out.textContent = Number(value).toFixed(2);
   }
+  if (key === "whisper") paintWhisperTag(!!value);
   const el = controlEls[key];
   if (!el) return;
   if (el.type === "checkbox") {
@@ -1305,19 +1820,19 @@ function cancelTransport() {
  */
 function restoreWhisper() {
   whisperRestoreAt = 0;
-  if (ready && voice.whisper !== presetWhisper) {
-    voice.setWhisper(presetWhisper, ctx.currentTime);
-    syncControl("whisper", presetWhisper);
+  if (ready && voice.whisper !== whisperOn) {
+    voice.setWhisper(whisperOn, ctx.currentTime);
+    syncControl("whisper", whisperOn);
   }
 }
 
 /** Z: breath instead of voice, and back. Latching, so it survives T and Q. */
 function toggleWhisper() {
   whisperRestoreAt = 0; // whatever the percussion key was going to hand back
-  presetWhisper = !presetWhisper;
-  syncControl("whisper", presetWhisper);
-  applyRemote("/scan/whisper", [presetWhisper ? 1 : 0]);
-  lastGesture = presetWhisper ? "whisper on" : "whisper off";
+  whisperOn = !whisperOn;
+  syncControl("whisper", whisperOn);
+  applyRemote("/scan/whisper", [whisperOn ? 1 : 0]);
+  lastGesture = whisperOn ? "whisper on" : "whisper off";
   lastGestureAt = performance.now();
   sendOut("/scan/out/gesture", [lastGesture]);
 }
@@ -1344,7 +1859,37 @@ function stopScan(key) {
   if (key && transport.key && key !== transport.key) return;
   transport.mode = null;
   transport.key = null;
+  // under a held pedal, letting a scan key go leaves the phoneme sounding where
+  // it stopped — which is the whole point of a pedal
+  if (pedal) {
+    explicitGate = 1;
+    openGate(true);
+  } else {
+    openGate(false);
+  }
+  paintTransport();
+}
+
+/**
+ * Drop whatever the transport is doing and go quiet.
+ *
+ * A one-shot word had no way out: pressing the key again restarts it (which
+ * cue 10 asks for), and nothing else touched it — so a player who started a
+ * word at the wrong moment had to wait it out. This is the way out, and it is
+ * also what a phrase change does, because a word left running crawls on
+ * through the next phrase against a stop point that belonged to the last one.
+ *
+ * It ignores the pedal on purpose. "Stop" has to mean stop.
+ */
+function stopTransport() {
+  if (!transport.mode) return;
+  const wasPerc = transport.mode === "perc";
+  transport.mode = null;
+  transport.key = null;
+  heldShot = null;
+  explicitGate = null;
   openGate(false);
+  if (wasPerc && ctx) whisperRestoreAt = ctx.currentTime + 0.3;
   paintTransport();
 }
 
@@ -1386,12 +1931,12 @@ function startRandomPhoneme() {
   restoreWhisper();
   const candidates = cells
     .map((c, i) => ({ c, i }))
-    .filter(({ c }) => c.cls !== "silence");
+    .filter(({ c }) => c.cls !== "silence" && c.voiced);
   if (candidates.length === 0) return;
   const { i } = candidates[Math.floor(Math.random() * candidates.length)];
   targetPos = i + 0.5;
   transport.mode = "phoneme";
-  transport.until = ctx.currentTime + rand(0.35, 0.9);
+  transport.until = Infinity; // held: it ends when the key comes up
   explicitGate = null;
   openGate(true);
   paintTransport();
@@ -1402,7 +1947,11 @@ function startPercussion() {
   if (!ready || pressed) return;
   const candidates = cells
     .map((c, i) => ({ c, i }))
-    .filter(({ c }) => c.cls === "stop" || c.cls === "affricate" || c.cls === "fricative");
+    .filter(
+      ({ c }) =>
+        c.cls !== "silence" &&
+        (c.cls === "stop" || c.cls === "affricate" || c.cls === "fricative" || !c.voiced)
+    );
   if (candidates.length === 0) return;
   const { c, i } = candidates[Math.floor(Math.random() * candidates.length)];
   const now = ctx.currentTime;
@@ -1411,7 +1960,7 @@ function startPercussion() {
   voice.setWhisper(true, now);
   whisperRestoreAt = 0;
   transport.mode = "perc";
-  transport.until = now + (c.cls === "fricative" ? rand(0.09, 0.2) : 0.07);
+  transport.until = Infinity; // held, like Q
   explicitGate = null;
   openGate(true);
   paintTransport();
@@ -1447,7 +1996,8 @@ function tickTransport(now) {
   const i = Math.max(0, Math.min(cells.length - 1, Math.floor(targetPos)));
   if (i !== transport.cellIndex) {
     transport.cellIndex = i;
-    const [lo, hi] = RATES[transport.rate] || RATES.mid;
+    const table = transport.mode === "word" ? SHOT_RATES : RATES;
+    const [lo, hi] = table[transport.rate] || table.mid;
     const width = cells[i] ? cells[i].width : 1;
     transport.cellDur = Math.max(0.05, rand(lo, hi) * width);
   }
@@ -1490,12 +2040,97 @@ function applyVibrato() {
 }
 
 /* ================================================================ *
+ *  the diminuendo
+ *
+ *  The end of the piece is everyone fading to nothing together. It is one key —
+ *  ↓, which is hard to hit by accident and impossible to hit while your hands
+ *  are on A–D — and the conductor sets how long it takes, in seconds, so the
+ *  whole ensemble decays at the same rate rather than at four guesses.
+ *
+ *  It rides its own gain stage, so the player's own fader still works during
+ *  the fade and is untouched afterwards. The curve is a shaped one, not a
+ *  straight line: a linear amplitude ramp is heard as sitting at full volume
+ *  and then dropping off a cliff at the end.
+ * ================================================================ */
+
+function fadeCurve(points = 128) {
+  const curve = new Float32Array(points);
+  for (let i = 0; i < points; i++) {
+    const t = i / (points - 1);
+    curve[i] = Math.pow(1 - t, 2.2); // steady to the ear, silent at the end
+  }
+  curve[points - 1] = 0;
+  return curve;
+}
+
+/** a value curve cannot be interrupted by an ordinary event, so clear it first —
+ *  cancelAndHoldAtTime where it exists, and never let either throw */
+function releaseFadeAutomation(now) {
+  const g = fadeNode.gain;
+  try {
+    if (g.cancelAndHoldAtTime) g.cancelAndHoldAtTime(now);
+    else g.cancelScheduledValues(now);
+  } catch (e) {
+    try {
+      g.cancelScheduledValues(now);
+    } catch (e2) {
+      /* nothing scheduled */
+    }
+  }
+}
+
+function startFade() {
+  if (!ready || !fadeNode) return;
+  const now = ctx.currentTime;
+  const seconds = Math.max(0.2, Math.min(300, fadeSeconds));
+  releaseFadeAutomation(now);
+  fadeNode.gain.setValueAtTime(fadeNode.gain.value, now);
+  fadeNode.gain.setValueCurveAtTime(fadeCurve(), now, seconds);
+  fading = true;
+  fadeEndsAt = now + seconds;
+  paintFade();
+  sendOut("/scan/out/fade", [seconds]);
+}
+
+/** ↑ — for the rehearsal where someone hits ↓ in the middle of phrase three */
+function cancelFade() {
+  if (!ready || !fadeNode || !fading) return;
+  const now = ctx.currentTime;
+  releaseFadeAutomation(now);
+  fadeNode.gain.setValueAtTime(fadeNode.gain.value, now);
+  fadeNode.gain.linearRampToValueAtTime(1, now + 0.4);
+  fading = false;
+  fadeEndsAt = 0;
+  paintFade();
+}
+
+/** the length the conductor has set, shown where the player can see it */
+function paintFadeLength() {
+  const el = $("fadeLen");
+  if (el) el.textContent = `${Number(fadeSeconds.toFixed(1))} s`;
+}
+
+let fadeEndsAt = 0;
+function paintFade() {
+  const el = $("fadeTag");
+  if (!el) return;
+  if (!fading) {
+    el.hidden = true;
+    el.textContent = "";
+    return;
+  }
+  el.hidden = false;
+  const left = Math.max(0, fadeEndsAt - (ctx ? ctx.currentTime : 0));
+  el.textContent = left > 0.05 ? `diminuendo · ${left.toFixed(1)} s` : "silent";
+}
+
+/* ================================================================ *
  *  the little piano
  * ================================================================ */
 
 const NOTE_NAMES = ["C", "C♯", "D", "E♭", "E", "F", "F♯", "G", "A♭", "A", "B♭", "B"];
 const PIANO_LOW = 24; // C1 — the Bass part sits below C2
-const PIANO_HIGH = 84; // C6
+const PIANO_HIGH = 72; // C5 — nothing in the piece is written above it
 const BLACK = [1, 3, 6, 8, 10];
 
 function noteName(midi) {
@@ -1528,11 +2163,12 @@ function buildPiano() {
     key.style.left = `${index * whiteWidth}%`;
     key.style.width = `${whiteWidth}%`;
     key.title = noteName(m);
-    if (m % 12 === 0) {
-      const tag = document.createElement("span");
-      tag.textContent = noteName(m);
-      key.appendChild(tag);
-    }
+    // every white key carries its name; only the Cs show theirs unless the
+    // player asks for all of them (see the "note names" toggle)
+    const tag = document.createElement("span");
+    tag.className = m % 12 === 0 ? "octave" : "name";
+    tag.textContent = noteName(m);
+    key.appendChild(tag);
     key.addEventListener("pointerdown", (event) => {
       event.preventDefault();
       applyRemote("/scan/note", [m]);
@@ -1549,6 +2185,10 @@ function buildPiano() {
     key.style.left = `${below * whiteWidth - whiteWidth * 0.3}%`;
     key.style.width = `${whiteWidth * 0.6}%`;
     key.title = noteName(m);
+    const blackTag = document.createElement("span");
+    blackTag.className = "name";
+    blackTag.textContent = noteName(m);
+    key.appendChild(blackTag);
     key.addEventListener("pointerdown", (event) => {
       event.preventDefault();
       applyRemote("/scan/note", [m]);
@@ -1563,10 +2203,16 @@ function paintPiano() {
   if (!host) return;
   const nearest = Math.round(note);
   const allowed = allowedNotes().map((n) => Math.round(n));
+  // a drifting phrase lights its whole band, so the keys you may click are the
+  // keys that look clickable
+  const band = pitchMode() === "drift" ? pitchRange() : null;
   host.querySelectorAll(".pkey").forEach((key) => {
     const m = Number(key.dataset.note);
     key.classList.toggle("on", m === nearest);
-    key.classList.toggle("allowed", allowed.includes(m));
+    key.classList.toggle(
+      "allowed",
+      band ? m >= band.low - 0.01 && m <= band.high + 0.01 : allowed.includes(m)
+    );
   });
   const label = $("pianoNote");
   if (label)
@@ -1579,7 +2225,7 @@ function paintPiano() {
 
 const PRESET_STORE = "tract.presets.v1";
 let presets = {}; // phraseIndex -> preset
-let presetWhisper = false;
+let whisperOn = false;
 let composerMode = false;
 
 function capturePreset() {
@@ -1594,7 +2240,9 @@ function capturePreset() {
     wordChoices: words.map((w) => w.choice),
     gain,
     wordMode,
-    whisper: presetWhisper,
+    // whisper is deliberately NOT here. It is the players' to turn on and off
+    // with Z, cue by cue; a preset that carried it would reach across a phrase
+    // change and undo them.
     vibrato: Object.assign({}, vibrato),
   };
   Object.keys(DEFAULTS).forEach((k) => (out.cfg[k] = cfg[k]));
@@ -1644,18 +2292,13 @@ function applyPreset(index) {
   syncControl("wobble", vibrato.wobble);
   applyVibrato();
 
-  // whisper is the exception: Z is a live performance control, so a phrase with
-  // no preset of its own leaves it where the player put it
-  if (preset) {
-    presetWhisper = !!preset.whisper;
-    syncControl("whisper", presetWhisper);
-    if (ready) voice.setWhisper(presetWhisper, ctx.currentTime);
-  }
+  // whisper is not a preset property at all: changing phrase leaves it exactly
+  // where the player put it, which is what the cue sheet assumes
 
-  // pitch is the part's business, never the preset's: the note list for this
-  // phrase decides what is available and the player picks from it
-  const allowed = allowedNotes();
-  if (allowed.length > 0 && !allowed.some((n) => Math.abs(n - note) < 0.01)) note = allowed[0];
+  // Pitch is the part's business, never the preset's. How much of it is the
+  // player's business is written into the phrase: fixed, assign, choose, drift.
+  const chosen = pitchForPhrase();
+  if (chosen !== null && isFinite(chosen)) note = chosen;
   syncControl("note", note);
   paintPiano();
   paintNoteChoices();
@@ -1724,11 +2367,101 @@ async function loadParts() {
   paintInstruction();
 }
 
+/* ================================================================ *
+ *  the player's name
+ *
+ *  Only the conductor ever sees it: it goes out on the hello and sits above
+ *  this laptop's strip on the desk. It is kept in localStorage, which is a
+ *  per-browser, per-origin box that survives the tab being closed — so a
+ *  player types it the first time they open the page on that laptop and never
+ *  again. Two caveats worth knowing:
+ *
+ *    - "per-origin" means scheme + host + port. The room's address is the
+ *      origin, so if the bridge comes up on a different IP tomorrow the name
+ *      is typed once more. Nothing is lost; it is just a different box.
+ *    - a private window has its own box, thrown away on close.
+ *
+ *  Not a cookie: a cookie would be attached to every request the browser makes
+ *  to the bridge, which is traffic this piece has no use for. localStorage
+ *  stays in the browser until the page asks for it.
+ * ================================================================ */
+
+const NAME_STORE = "tract.name";
+let playerName = "";
+
+function tidyName(text) {
+  return String(text || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 20);
+}
+
+function loadName() {
+  try {
+    playerName = tidyName(localStorage.getItem(NAME_STORE));
+  } catch (e) {
+    playerName = ""; // storage disabled: the piece runs, the desk shows the part
+  }
+  paintNameChip();
+}
+
+function setName(text) {
+  const clean = tidyName(text);
+  if (clean === playerName) return;
+  playerName = clean;
+  try {
+    if (clean) localStorage.setItem(NAME_STORE, clean);
+    else localStorage.removeItem(NAME_STORE);
+  } catch (e) {}
+  paintNameChip();
+  sayHello(); // the desk relabels the strip without waiting for the heartbeat
+}
+
+function paintNameChip() {
+  const chip = $("nameChip");
+  if (!chip) return;
+  chip.textContent = playerName || "name?";
+  chip.classList.toggle("unset", !playerName);
+}
+
+/** the chip becomes a text field only while it is being edited */
+function wireNameChip() {
+  const chip = $("nameChip");
+  const edit = $("nameEdit");
+  if (!chip || !edit) return;
+  const close = (keep) => {
+    if (keep) setName(edit.value);
+    edit.hidden = true;
+    chip.hidden = false;
+  };
+  chip.addEventListener("click", () => {
+    edit.value = playerName;
+    chip.hidden = true;
+    edit.hidden = false;
+    edit.focus();
+    edit.select();
+  });
+  edit.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      edit.blur(); // the blur does the saving, so both paths agree
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      edit.value = playerName;
+      edit.blur();
+    }
+    event.stopPropagation(); // A, S, D and the rest are text here, not transport
+  });
+  edit.addEventListener("blur", () => close(true));
+}
+
 /** on opening the page a player must say which part they are on */
 function openPartModal() {
   const modal = $("partModal");
   const list = $("partChoices");
+  const nameField = $("nameInput");
   if (!modal || !list) return;
+  if (nameField) nameField.value = playerName;
   list.innerHTML = "";
   parts.forEach((p, i) => {
     const button = document.createElement("button");
@@ -1737,6 +2470,7 @@ function openPartModal() {
     // showing phrase 1's pitches here only invites choosing by ear
     button.textContent = p.name;
     button.addEventListener("click", async () => {
+      if (nameField) setName(nameField.value); // before the part, so one hello carries both
       setPart(i);
       modal.hidden = true;
       document.body.classList.remove("modal-open");
@@ -1746,6 +2480,9 @@ function openPartModal() {
   });
   modal.hidden = false;
   document.body.classList.add("modal-open");
+  // the name is the only thing here you type, so put the caret in it — but not
+  // on a phone, where focusing a field throws a keyboard over the part buttons
+  if (nameField && !playerName && !matchMedia("(pointer: coarse)").matches) nameField.focus();
 }
 
 function setPart(index) {
@@ -1760,10 +2497,15 @@ function setPart(index) {
   cued.instruction = null;
   cued.cue = null;
   cued.oncoming = null;
+  cued.armed = false;
   showOncoming(null);
   cueLight("idle", "—");
   applyPreset(phraseIndex); // re-reads the written settings through the new part
   sendOut("/scan/out/part", [partIndex + 1, parts[partIndex].name]);
+  // say so at once rather than waiting for the next heartbeat: the conductor's
+  // roster and the bridge's log both name a player by the part it is on, and
+  // the first hello goes out before ?part= or the modal has been answered
+  sayHello();
   sayHello();
 }
 
@@ -1786,10 +2528,19 @@ function escapeAndKeys(text) {
     /[&<>"']/g,
     (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]
   );
-  return escaped.replace(/\{([^{}]{1,12})\}/g, (whole, key) => {
+  const withKeys = escaped.replace(/\{([^{}]{1,12})\}/g, (whole, key) => {
     const label = key.trim();
     if (!label) return whole;
     return `<span class="keycap${label.length > 2 ? " wide" : ""}">${label}</span>`;
+  });
+  // Pitches are written <A4>, <Bb2>, <51.5>. The angle brackets have already
+  // become &lt; and &gt; by now, which is what makes this safe: a stray "<" in
+  // an instruction can never open a tag, so this only ever matches what the cue
+  // file actually wrote.
+  return withKeys.replace(/&lt;([^&]{1,12}?)&gt;/g, (whole, pitch) => {
+    const label = pitch.trim();
+    if (!label) return whole;
+    return `<span class="pitchcap">${label}</span>`;
   });
 }
 
@@ -1875,7 +2626,13 @@ if (tractHost) tractHost.addEventListener("transitionend", fitInstruction);
  *  which is the whole point: silence from the conductor is not a cue.
  * ================================================================ */
 
-const cued = { instruction: null, cue: null, oncoming: null };
+/* `oncoming` is what is written up next; `armed` is whether the conductor has
+ * put a hand up for it. They used to be the same thing — the text appeared
+ * with the amber light — but a player reading two lines of new instruction in
+ * the four seconds before a downbeat is a player who is not listening. The
+ * text now arrives as soon as the previous downbeat lands, and the light means
+ * only "soon". */
+const cued = { instruction: null, cue: null, oncoming: null, armed: false };
 let goFlashTimer = null;
 
 function cueLight(state, label) {
@@ -1892,13 +2649,15 @@ function showOncoming(instruction) {
   const row = $("oncoming");
   const text = $("oncomingText");
   if (!row || !text) return;
-  if (instruction === null) {
+  if (instruction === null || instruction === "") {
     row.hidden = true;
+    row.dataset.armed = "0";
     text.textContent = "";
     return;
   }
   text.innerHTML = instructionHTML(instruction);
   row.hidden = false;
+  row.dataset.armed = cued.armed ? "1" : "0";
 }
 
 /** is this cue message for me? */
@@ -1907,9 +2666,25 @@ function forMe(partId) {
   return String(partId) === String(mine);
 }
 
+/**
+ * What is written up next, with no light: sent as soon as the previous
+ * downbeat lands, and repeated on the desk's heartbeat so a late arrival
+ * catches it too. An empty instruction means the next cue says nothing to
+ * this part, and the line goes away.
+ */
+function cueNext(cue, partId, instruction) {
+  if (!forMe(partId)) return;
+  if (cued.armed) return; // a hand is already up: do not move the text under it
+  const text = instruction === "" ? null : instruction;
+  if (cued.oncoming === text) return;
+  cued.oncoming = text;
+  showOncoming(text);
+}
+
 function cuePrep(cue, partId, instruction) {
   if (!forMe(partId)) return;
   clearTimeout(goFlashTimer);
+  cued.armed = true;
   cued.oncoming = instruction;
   cueLight("prep", `cue ${cue}`);
   showOncoming(instruction);
@@ -1917,7 +2692,7 @@ function cuePrep(cue, partId, instruction) {
 
 function cueCount(beat, partId) {
   if (partId !== undefined && partId !== null && !forMe(partId)) return;
-  if (cued.oncoming === null) return; // not my cue: no counting either
+  if (!cued.armed) return; // not my cue: no counting either
   cueLight("count", String(beat));
 }
 
@@ -1925,6 +2700,8 @@ function cueGo(cue, partId, instruction) {
   if (!forMe(partId)) return;
   cued.instruction = instruction;
   cued.cue = cue;
+  cued.armed = false;
+  // and the line below clears — the desk sends the next one along behind this
   cued.oncoming = null;
   showOncoming(null);
   paintInstruction();
@@ -1935,8 +2712,9 @@ function cueGo(cue, partId, instruction) {
 
 function cueClear(partId) {
   if (partId !== undefined && partId !== null && !forMe(partId)) return;
-  cued.oncoming = null;
-  showOncoming(null);
+  // the hand comes down, but what is coming stays legible
+  cued.armed = false;
+  showOncoming(cued.oncoming);
   cueLight("idle", cued.cue === null ? "—" : `cue ${cued.cue}`);
 }
 
@@ -1954,6 +2732,167 @@ function cueState(cue, partId, instruction) {
   if (!$("cueLight") || $("cueLight").dataset.state === "idle") cueLight("idle", `cue ${cue}`);
 }
 
+
+
+/* ================================================================ *
+ *  seats, and how a part's pitches get shared out
+ *
+ *  Three or four players on a part, two or three pitches written for it: who
+ *  sings which? The players work it out among themselves. Everyone already
+ *  hears everyone else's `/player/hello`, so each page sorts the machine ids it
+ *  has heard for its own part and takes its own index — every page computes the
+ *  same list, so every page agrees, with no conductor in the loop and nothing
+ *  to set up. `?seat=2` overrides it for a rehearsal.
+ *
+ *  Seats are only re-taken at a phrase change. Somebody joining or dropping out
+ *  mid-phrase would otherwise move a pitch under a player who is holding it.
+ * ================================================================ */
+
+const SEAT_OVERRIDE = Number(SEARCH.get("seat")) || 0;
+const peers = new Map(); // machine -> { part, at }
+let seat = 1; // 1-based, within this part
+let seatsOf = 1; // how many of us are on this part
+let seatsDirty = false; // the roster moved; re-seat as soon as it is safe to
+
+function heardPeer(partId, machine) {
+  if (!machine) return;
+  const known = peers.get(String(machine));
+  peers.set(String(machine), { part: String(partId), at: performance.now() });
+  // Somebody new on our part changes the arithmetic. Seats cannot move under a
+  // player who is singing, but two players who open the page together and never
+  // change phrase would otherwise both sit in seat 1 and both take the first
+  // written pitch — the one case the whole scheme exists to prevent. So the
+  // roster is marked dirty and settles at the next quiet moment.
+  if (!known || known.part !== String(partId)) seatsDirty = true;
+}
+
+/** a moment when re-seating cannot pull a pitch out from under anyone */
+function seatsCanSettle() {
+  return !pressed && !transport.mode && (!ready || voice.gate === 0);
+}
+
+/** the machines on this part, most recent nine seconds, in a stable order */
+function seatRoster() {
+  const mine = String(part().id);
+  const now = performance.now();
+  const ids = [MACHINE];
+  peers.forEach((info, machine) => {
+    if (info.part === mine && machine !== MACHINE && now - info.at < 9000) ids.push(machine);
+  });
+  return ids.sort();
+}
+
+function takeSeat() {
+  seatsDirty = false;
+  const roster = seatRoster();
+  seatsOf = roster.length;
+  seat = SEAT_OVERRIDE > 0 ? SEAT_OVERRIDE : roster.indexOf(MACHINE) + 1 || 1;
+  paintSeat();
+}
+
+function paintSeat() {
+  const el = $("seatTag");
+  if (!el) return;
+  const mode = pitchMode();
+  el.textContent = seatsOf > 1 ? `seat ${seat}/${seatsOf}` : "";
+  el.title =
+    mode === "assign"
+      ? "this part's pitches are shared out by seat; the seats sort themselves"
+      : "how many players are on this part";
+}
+
+/* ---- what the written pitches mean for this phrase ---- */
+
+/** fixed | choose | assign | drift — "choose" is what a phrase says by saying nothing */
+function pitchMode() {
+  const written = partPhrase().pitch;
+  const mode = typeof written === "string" ? written.toLowerCase() : "";
+  if (mode === "fixed" || mode === "assign" || mode === "drift") return mode;
+  return "choose";
+}
+
+/**
+ * A drifting phrase's band: the lowest and highest of its written notes, and
+ * everything between them. The notes are the edges and the landmarks, not a
+ * list of the only pitches allowed — that is the whole difference between
+ * "drift" and "choose".
+ *
+ * An explicit "range": [low, high] still wins if a phrase writes one, but
+ * nothing in the score does.
+ */
+function pitchRange() {
+  const written = partPhrase().range;
+  if (Array.isArray(written) && written.length >= 2) {
+    const low = parsePitch(written[0]);
+    const high = parsePitch(written[1]);
+    if (low !== null && high !== null) return { low: Math.min(low, high), high: Math.max(low, high) };
+  }
+  const notes = allowedNotes();
+  if (notes.length < 2) return null;
+  return { low: Math.min.apply(null, notes), high: Math.max.apply(null, notes) };
+}
+
+/* A freely chosen pitch belongs to the phrase it was chosen in, not to the
+   player's last move: step away to phrase 3 and back and you are where you
+   left off, not reset to the top of the list. */
+const chosenNotes = new Map(); // "partId:phrase" -> the pitch picked there
+const pitchKey = () => `${part().id}:${phraseIndex}`;
+
+function rememberChoice() {
+  const mode = pitchMode();
+  if (mode === "choose" || mode === "drift") chosenNotes.set(pitchKey(), note);
+}
+
+/**
+ * The pitch this player should be on for this phrase.
+ *
+ *   fixed   the one written pitch, no argument
+ *   assign  the seat's share of the written pitches, cycling — three players on
+ *           two pitches gives 1, 2, 1, so both are always heard
+ *   choose  whatever the player picked here before, as long as it is on the list
+ *   drift   a fresh draw inside the written range, re-drawn as they play
+ */
+function pitchForPhrase() {
+  const mode = pitchMode();
+  const allowed = allowedNotes();
+  if (!allowed.length) return null;
+  if (mode === "fixed") return allowed[0];
+  if (mode === "assign") return allowed[(Math.max(1, seat) - 1) % allowed.length];
+  // "choose" still hands out a starting pitch by seat, the same way assign does,
+  // so a part that opens on a chord opens on the whole chord rather than four
+  // players all on the first written note. The difference is that nothing keeps
+  // them there: the chips, the keyboard and J all still work.
+  const bySeat = allowed[(Math.max(1, seat) - 1) % allowed.length];
+  const remembered = chosenNotes.get(pitchKey());
+  const wanted = remembered === undefined ? bySeat : remembered;
+  if (mode === "drift") {
+    // anywhere in the band counts as a pitch this player already owns
+    const band = pitchRange();
+    if (!band) return bySeat;
+    return wanted >= band.low - 0.01 && wanted <= band.high + 0.01 ? wanted : bySeat;
+  }
+  return allowed.some((n) => Math.abs(n - wanted) < 0.01) ? wanted : bySeat;
+}
+
+/**
+ * J — move to a different one of this phrase's pitches.
+ *
+ * With two written pitches this alternates, because "a different one" has only
+ * one answer. With three or more it is a fresh draw from the others, so two
+ * players leaning on J do not march in step.
+ */
+function rerollChoice() {
+  // A band is not a set, so there is no "a different one of them" to jump to.
+  // In a drifting phrase the pitch is the player's hand on the piano, and J
+  // deliberately does nothing.
+  if (pitchMode() === "drift") return;
+  const allowed = allowedNotes();
+  const others = allowed.filter((n) => Math.abs(n - note) > 0.01);
+  if (!others.length) return;
+  const next = others[Math.floor(Math.random() * others.length)];
+  applyRemote("/scan/note", [next]);
+  flashPreset(`pitch → ${pitchLabel(next)}`);
+}
 
 /* ================================================================ *
  *  the projection feed
@@ -1982,6 +2921,17 @@ function stageIsWatching() {
   return performance.now() - stageSeenAt < 6000;
 }
 
+/**
+ * The words, for the stage's subtitles. Sent when the phrase changes and on a
+ * slow heartbeat — the text is the same thirty-odd characters every frame, and
+ * the tract frames are busy enough without carrying it twenty times a second.
+ */
+function sendPhraseState() {
+  if (!stageIsWatching()) return;
+  const p = part();
+  sendOut("/tract/phrase", [p.id, MACHINE, phraseIndex + 1, PHRASES[phraseIndex] || ""]);
+}
+
 function sendTractFrame() {
   if (!ready || !stageIsWatching()) return;
   const tract = tractMirror();
@@ -2006,7 +2956,7 @@ function sendTractFrame() {
       lip: (tract.lip && tract.lip.start) || length - 5,
       a: Math.round(amplitude * 1000) / 1000,
       i: Math.round((voice ? voice.gate : 0) * 100) / 100,
-      v: presetWhisper ? 0 : 1,
+      v: whisperOn ? 0 : 1,
       f: Math.round(note * 10) / 10,
     }),
   ]);
@@ -2043,6 +2993,7 @@ feedTimer = setInterval(() => {
   tendTractFeed();
   sendTractFrame();
 }, Math.max(20, Math.round(1000 / STAGE_FPS)));
+setInterval(sendPhraseState, 2000);
 
 /**
  * Tell the conductor this part is here, so the roster lights up. The machine id
@@ -2064,8 +3015,79 @@ function sayHello() {
     p.name,
     cued.cue === null ? -1 : Number(cued.cue) || 0,
     MACHINE,
+    // Players advance their own phrase, so the desk has no way of knowing
+    // where anyone is unless they say. 0 is standby, 1-8 the phrases. This
+    // rides on the hello rather than on /tract/phrase because that one is only
+    // sent when a projection is listening, and the conductor needs it whether
+    // or not anyone is running the stage.
+    phraseIndex + 1,
+    // what this laptop is called, if its player typed it in. Empty is fine —
+    // the desk falls back to the part and a seat number.
+    playerName,
   ]);
 }
+
+/* ================================================================ *
+ *  where this player is in the phrase, for the conductor
+ *
+ *  A phrase is thirty seconds of somebody moving a playhead, and four of
+ *  those at once is not something you can hear apart. So the desk gets a
+ *  little strip per laptop, and this is what feeds it: position, whether the
+ *  gate is open, and whether it is voiced or whispered.
+ *
+ *  It only goes out while a desk is listening. The conductor's page pings on
+ *  its heartbeat; between pings there is nobody to draw it, and the piece
+ *  does not need eight laptops talking ten times a second to nobody.
+ * ================================================================ */
+
+const DESK_FPS = 10;
+let deskSeenAt = 0;
+let wordsDirty = true;
+let wordsSentAt = 0;
+
+function deskIsWatching() {
+  return performance.now() - deskSeenAt < 7000;
+}
+
+/**
+ * The words of this phrase and where they sit, for the desk's miniature.
+ *
+ * Sent when the track changes and then only every few seconds — it is the one
+ * thing on this wire that does not move, and re-sending a phrase's layout ten
+ * times a second would be ten times a second of the same forty bytes. The
+ * repeat is for a desk that opened after the phrase did.
+ */
+function sendWords() {
+  if (!deskIsWatching() || !ws || ws.readyState !== 1) return;
+  const now = performance.now();
+  if (!wordsDirty && now - wordsSentAt < 4000) return;
+  wordsDirty = false;
+  wordsSentAt = now;
+  const p = part();
+  sendOut("/player/words", [p.id, MACHINE, phraseIndex + 1, JSON.stringify(wordLayout())]);
+}
+
+function sendPlayhead() {
+  if (!deskIsWatching() || !ws || ws.readyState !== 1) return;
+  sendWords();
+  const p = part();
+  const i = Math.max(0, Math.min(cells.length - 1, Math.floor(targetPos)));
+  sendOut("/player/at", [
+    p.id,
+    MACHINE,
+    playerName,
+    phraseIndex + 1, // 0 is standby
+    Math.round(posFraction(targetPos) * 1000) / 1000,
+    cells.length,
+    (cells[i] && cells[i].ipa) || "",
+    // what is actually coming out, not what the Z latch says: Q and T flip the
+    // voice for the length of a percussive hit without touching the latch, and
+    // a hit is exactly the kind of thing the desk is watching for
+    (ready && voice ? voice.whisper : whisperOn) ? 1 : 0,
+    ready && voice && voice.gate > 0 ? 1 : 0,
+  ]);
+}
+setInterval(sendPlayhead, Math.round(1000 / DESK_FPS));
 setInterval(() => {
   if (ws && ws.readyState === 1) sayHello();
 }, 4000);
@@ -2077,12 +3099,37 @@ function saveInstruction(text) {
   p.phrases[phraseIndex].instruction = text;
 }
 
+/** says how this phrase decided your pitch, in as few words as it can */
+function paintPitchTag() {
+  const el = $("pitchTag");
+  if (!el) return;
+  const mode = pitchMode();
+  const band = mode === "drift" ? pitchRange() : null;
+  const words = {
+    fixed: "pitch: written",
+    assign: `pitch: yours by seat`,
+    choose: "pitch: your choice",
+    drift: band
+      ? `pitch: anywhere ${pitchLabel(band.low)}\u2013${pitchLabel(band.high)}`
+      : "pitch: your choice",
+  };
+  el.textContent = words[mode] || "";
+  paintSeat();
+}
+
 /** the chips beside the piano: this part's pitches for this phrase */
 function paintNoteChoices() {
   const host = $("noteChoices");
   if (!host) return;
   const allowed = allowedNotes();
+  const mode = pitchMode();
+  const range = pitchRange();
+  paintPitchTag();
   host.innerHTML = "";
+
+  // A drifting phrase keeps its chips: they are the written landmarks, and
+  // clicking one is as good as clicking the piano. What makes it a band rather
+  // than a set is the lit keys between them, not the absence of chips.
   if (allowed.length === 0) {
     const free = document.createElement("span");
     free.className = "note-free";
@@ -2090,9 +3137,14 @@ function paintNoteChoices() {
     host.appendChild(free);
     return;
   }
+  void range;
+  const mine = mode === "assign" ? pitchForPhrase() : null;
   allowed.forEach((n) => {
     const chip = document.createElement("button");
-    chip.className = "note-chip" + (Math.abs(n - note) < 0.01 ? " on" : "");
+    chip.className =
+      "note-chip" +
+      (Math.abs(n - note) < 0.01 ? " on" : "") +
+      (mine !== null && Math.abs(n - mine) < 0.01 ? " mine" : "");
     chip.textContent = pitchLabel(n);
     chip.title = `${n} · ${(440 * Math.pow(2, (n - 69) / 12)).toFixed(1)} Hz`;
     chip.addEventListener("click", () => applyRemote("/scan/note", [n]));
@@ -2154,6 +3206,13 @@ function setupComposer() {
   } catch (e) {
     composerMode = SEARCH.has("composer") && SEARCH.get("composer") !== "0";
   }
+  // the phrase steppers and the dots are composer tools: a player moves with
+  // the number keys or the brackets, and nothing on screen invites a mis-click
+  ["prevPhrase", "nextPhrase", "phraseDots"].forEach((id) => {
+    const el = $(id);
+    if (el) el.hidden = !composerMode;
+  });
+
   const row = $("presetRow");
   if (!row) return;
   row.hidden = !composerMode;
@@ -2196,17 +3255,14 @@ function setupComposer() {
     instruction.addEventListener("input", () => saveInstruction(instruction.textContent.trim()));
     instruction.addEventListener("blur", async () => {
       saveInstruction(instruction.textContent.trim());
-      const wrote = await writeJSON(
-        "/scan/parts.json",
-        Object.assign({}, partsDoc, { parts }),
-        { fallback: "none", quiet: true }
-      );
+      const wrote = await writeJSON("/scan/parts.json", partsFile(), {
+        fallback: "none",
+        quiet: true,
+      });
       if (wrote) flashPreset(`instruction for ${part().name} → scan/parts.json`);
     });
   }
-  $("partsExport").addEventListener("click", () =>
-    writeJSON("/scan/parts.json", Object.assign({}, partsDoc, { parts }))
-  );
+  $("partsExport").addEventListener("click", () => writeJSON("/scan/parts.json", partsFile()));
   $("presetExport").addEventListener("click", () => writeJSON("/scan/presets.json", presets));
   $("presetImport").addEventListener("change", async (event) => {
     const file = event.target.files && event.target.files[0];
@@ -2239,6 +3295,27 @@ function prettyJSON(data) {
   );
 }
 
+/**
+ * parts.json as it should be written: every phrase entry stamped with the line
+ * it belongs to — `"_comment": "5 — slip, slide, perish"` — and that stamp put
+ * first, so opening the file in an editor tells you which phrase you are looking
+ * at without counting braces. The app never reads it back; PHRASES is still the
+ * authority, which is why it is rewritten on every save rather than trusted.
+ */
+function partsFile() {
+  const stamped = parts.map((p) =>
+    Object.assign({}, p, {
+      phrases: (p.phrases || []).map((entry, i) => {
+        const rest = Object.assign({}, entry);
+        delete rest._comment;
+        const label = PHRASES[i] ? `${i + 1} — ${PHRASES[i]}` : String(i + 1);
+        return Object.assign({ _comment: label }, rest);
+      }),
+    })
+  );
+  return Object.assign({}, partsDoc, { parts: stamped });
+}
+
 async function writeJSON(url, data, { fallback = "download", quiet = false } = {}) {
   const text = prettyJSON(data);
   const name = url.split("/").pop();
@@ -2264,7 +3341,7 @@ async function writeJSON(url, data, { fallback = "download", quiet = false } = {
       return true;
     }
     why = response.ok
-      ? "the bridge is an older build — restart node scan-bridge/scan-bridge.js"
+      ? "the bridge is an older build — restart node scan/scan-bridge.js"
       : `the bridge refused it (${response.status})`;
   } catch (e) {
     why = "nothing is serving this page over HTTP";
@@ -2357,6 +3434,15 @@ window.scan = {
   get phrase() {
     return phraseIndex + 1;
   },
+  get name() {
+    return playerName;
+  },
+  set name(text) {
+    setName(text);
+  },
+  get cued() {
+    return { ...cued };
+  },
   get position() {
     return targetPos;
   },
@@ -2371,6 +3457,8 @@ window.scan = {
   get transport() {
     return transport;
   },
+  wordLayout,
+  posFraction,
   get wordSpans() {
     return wordSpans;
   },
@@ -2385,11 +3473,21 @@ window.scan = {
   setPart,
   openPartModal,
   toggleWhisper,
-  get presets() {
-    return presets;
-  },
+  resetEngine,
   get whisper() {
-    return presetWhisper;
+    return whisperOn;
+  },
+  get note() {
+    return note;
+  },
+  /** who this page thinks it is within its part, and how the phrase hands out pitch */
+  startFade,
+  cancelFade,
+  get fade() {
+    return { seconds: fadeSeconds, running: fading, gain: fadeNode ? fadeNode.gain.value : 1 };
+  },
+  get seating() {
+    return { machine: MACHINE, seat, of: seatsOf, mode: pitchMode(), range: pitchRange() };
   },
   get part() {
     return parts[partIndex];
@@ -2507,11 +3605,41 @@ $("masterGain").addEventListener("input", (event) =>
   setMasterGain(Number(event.target.value), { fromSlider: true })
 );
 $("masterGain").addEventListener("pointerup", (event) => setTimeout(() => event.target.blur(), 0));
+// note names on every key: off by default, remembered per browser
+const LABELS_STORE = "tract.pianoLabels";
+function paintPianoLabels(on) {
+  const host = $("piano");
+  const button = $("pianoLabels");
+  if (host) host.classList.toggle("labelled", on);
+  if (button) {
+    button.setAttribute("aria-pressed", on ? "true" : "false");
+    button.classList.toggle("on", on);
+  }
+}
+if ($("pianoLabels")) {
+  let labelled = false;
+  try {
+    labelled = localStorage.getItem(LABELS_STORE) === "1";
+  } catch (e) {
+    /* private window */
+  }
+  paintPianoLabels(labelled);
+  $("pianoLabels").addEventListener("click", () => {
+    labelled = !labelled;
+    paintPianoLabels(labelled);
+    try {
+      localStorage.setItem(LABELS_STORE, labelled ? "1" : "0");
+    } catch (e) {
+      /* private window */
+    }
+  });
+}
+
 $("themeSwitch").addEventListener("click", toggleTheme);
 paintThemeSwitch();
 setMasterGain(gain);
-$("prevPhrase").addEventListener("click", () => setPhrase(phraseIndex - 1));
-$("nextPhrase").addEventListener("click", () => setPhrase(phraseIndex + 1));
+$("prevPhrase").addEventListener("click", () => stepPhrase(-1));
+$("nextPhrase").addEventListener("click", () => stepPhrase(1));
 
 function showTract(on) {
   if (!element) return;
@@ -2553,6 +3681,23 @@ function toggleTract() {
   }
 }
 
+/**
+ * Settings baked into a cell when the strip is built, rather than read live by
+ * the engine. Changing one of these has to rebuild the strip or it does nothing
+ * until the next phrase change — which is what used to happen to every one of
+ * them except `holdWordFinalStops`.
+ */
+const REBUILD_KEYS = new Set([
+  "holdWordFinalStops",
+  "voicenessVowel",
+  "voicenessVoicedFric",
+  "voicenessVoicelessFric",
+  "sibilantLevel",
+  "closureIntensityVoiced",
+  "pressureVoiceless",
+  "burstIntensity",
+]);
+
 const HOLD_KEYS = { a: "slow", s: "mid", d: "fast" };
 const SHOT_KEYS = { w: "slow", e: "mid", r: "fast" };
 
@@ -2578,8 +3723,13 @@ document.addEventListener("keydown", async (event) => {
     if (!ctx) await enableAudio();
     if (key in HOLD_KEYS) startScan(HOLD_KEYS[key], key);
     else if (key in SHOT_KEYS) startWord(SHOT_KEYS[key]);
-    else if (key === "q") startRandomPhoneme();
-    else if (key === "t") startPercussion();
+    else if (key === "q") {
+      startRandomPhoneme();
+      heldShot = "q";
+    } else if (key === "t") {
+      startPercussion();
+      heldShot = "t";
+    }
     else if (key === "z") toggleWhisper();
     return;
   }
@@ -2596,23 +3746,42 @@ document.addEventListener("keydown", async (event) => {
       applyRemote("/scan/position", [targetPos - stepSize]);
       break;
     case "ArrowDown":
-    case "]":
-      setPhrase(phraseIndex + 1);
+      // the end of the piece. Phrases moved to [ and ] so this cannot be hit
+      // on the way to the next one.
+      startFade();
       break;
     case "ArrowUp":
+      cancelFade();
+      break;
+    case "]":
+      stepPhrase(1);
+      break;
     case "[":
-      setPhrase(phraseIndex - 1);
+      stepPhrase(-1);
       break;
     case " ":
+      // held, not toggled — see the damper pedal above
       event.preventDefault();
-      applyRemote("/scan/gate", [voice && voice.gate > 0 ? 0 : 1]);
+      if (event.repeat) break;
+      pressPedal();
+      break;
+    case "Escape":
+      // the panic key. Cue 12 is "Stop. Silence." and until now there was no
+      // way to do that in the middle of a word.
+      event.preventDefault();
+      stopTransport();
       break;
     case "Home":
       targetPos = 0;
       atEnd = false;
       break;
+    case "j":
+    case "J":
+      rerollChoice();
+      break;
     default:
-      if (/^[1-8]$/.test(event.key)) setPhrase(Number(event.key) - 1);
+      // 0 is standby, 1–8 are the phrases
+      if (/^[0-8]$/.test(event.key)) setPhrase(Number(event.key) - 1);
   }
 });
 
@@ -2623,14 +3792,29 @@ document.addEventListener("keyup", (event) => {
     event.preventDefault();
     stopScan(key);
   }
+  if (key === "q" || key === "t") {
+    event.preventDefault();
+    releaseShot(key);
+  }
+  if (event.key === " ") {
+    event.preventDefault();
+    liftPedal();
+  }
 });
-window.addEventListener("blur", () => stopScan());
+window.addEventListener("blur", () => {
+  stopScan();
+  heldShot = null;
+  liftPedal(); // nothing held survives losing focus
+  endHeldShot();
+});
 
 // the dictionary loads itself over XHR; wait for it, then seed the strip
 (function waitForDict(tries = 0) {
   if (dictReady() || tries > 200) {
+    loadName();
+    wireNameChip();
     Promise.all([loadParts(), loadPresets()]).then(() => {
-      setPhrase(0, { announce: false });
+      setPhrase(STANDBY, { announce: false }); // the page opens before the piece does
       const forced = SEARCH.get("part");
       if (forced !== null) {
         const index = parts.findIndex((p) => p.id === forced || p.name === forced);

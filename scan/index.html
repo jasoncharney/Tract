@@ -47,6 +47,10 @@
 
         --ok: #2f8f6b;
         --ok-line: #9fd8c2;
+        /* a pitch named in an instruction: dark enough to read on pink */
+        --pitch: #17513a;
+        --pitch-line: #4f9c7c;
+        --pitch-bg: #d8f0e4;
         --bad: #c4443c;
         --bad-line: #efb3ae;
         --warn: #e08b2f;          /* the conductor's prep */
@@ -62,6 +66,8 @@
         --appr: #f09ad8;
         --sil: #e3c6d5;
 
+        --key-ink: #241a20;         /* on the white keys, in both skins */
+        --key-ink-black: #f3e8ef;   /* and on the black ones */
         --key-white: #fffafc;
         --key-white-hover: #ffffff;
         --key-white-allowed: #ffd9ea;
@@ -86,6 +92,9 @@
 
         --ok: #7ee2b8;
         --ok-line: #2f4d43;
+        --pitch: #9dffd6;
+        --pitch-line: #3c6b5b;
+        --pitch-bg: #14302a;
         --bad: #ff9a8a;
         --bad-line: #5c3430;
         --warn: #e0b64a;
@@ -101,6 +110,8 @@
         --appr: #3fa9f5;
         --sil: #4a4658;
 
+        --key-ink: #241a20;
+        --key-ink-black: #f3e8ef;
         --key-white: #e8e4f0;
         --key-white-hover: #ffffff;
         --key-white-allowed: #ffd9ea;
@@ -143,6 +154,8 @@
       }
       button:hover { border-color: var(--hot); }
       button.primary { background: var(--hot); color: var(--on-hot); border-color: var(--hot); font-weight: 600; }
+      /* the audio path is not right on this laptop: main thread, or no guard */
+      .pill.warn { color: var(--on-warn, #23180a); background: var(--warn, #e0b64a); border-color: var(--warn, #e0b64a); }
       .pill {
         font: 12px var(--mono);
         color: var(--dim);
@@ -201,6 +214,13 @@
         cursor: pointer;
       }
       .dot.on { background: var(--hot); border-color: var(--hot); }
+      /* phrase 0: open, but the piece has not started — smaller, and set apart */
+      .dot.standby {
+        width: 7px;
+        height: 7px;
+        margin-right: 5px;
+        align-self: center;
+      }
       /* composer only: a phrase carrying a saved preset */
       .dot.has-preset { box-shadow: 0 0 0 2px var(--ok-line); }
       .alts {
@@ -284,18 +304,23 @@
         gap: 10px;
         margin-top: 8px;
         padding: 4px 0 2px 16px;
-        border-left: 3px dashed var(--warn-line);
+        border-left: 3px dashed var(--line);
         color: var(--dim);
         font-size: clamp(15px, 1.7vw, 22px);
         line-height: 1.25;
       }
+      /* What is coming is on the page from the moment the last downbeat landed,
+         so its own colour is quiet. The conductor's hand going up is what turns
+         it amber, and that is the only difference between "later" and "soon". */
+      .oncoming[data-armed="1"] { border-left-color: var(--warn-line); }
       .oncoming-tag {
         font: 11px var(--mono);
         letter-spacing: 0.1em;
         text-transform: uppercase;
-        color: var(--warn);
+        color: var(--dim);
         flex: none;
       }
+      .oncoming[data-armed="1"] .oncoming-tag { color: var(--warn); }
       .cuelight {
         flex: none;
         display: flex;
@@ -508,6 +533,42 @@
       .partchoice.remembered { border-color: var(--hot-line); }
       .modal-foot { margin: 20px 0 0; color: var(--dim); font-size: 12px; }
 
+      /* the name. Typed once on this laptop and kept there; it is only ever
+         shown to the conductor, over this player's strip on the desk. */
+      .nameinput {
+        width: 100%;
+        font: 20px var(--sans);
+        color: var(--ink);
+        background: var(--panel-2);
+        border: 1px solid var(--line);
+        border-radius: 11px;
+        padding: 12px 14px;
+        margin: 0 0 22px;
+      }
+      .nameinput:focus { outline: none; border-color: var(--hot); }
+      .namechip {
+        font: 12px var(--mono);
+        letter-spacing: 0.04em;
+        padding: 4px 10px;
+        max-width: 15ch;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
+      .namechip.unset { color: var(--dim); }
+      /* while it is being edited it is a text field, and every playing key is
+         going into it instead of the voice — so it says so, loudly */
+      .nameedit {
+        font: 12px var(--mono);
+        color: var(--ink);
+        background: var(--panel-2);
+        border: 1px solid var(--hot);
+        border-radius: 7px;
+        padding: 4px 8px;
+        width: 15ch;
+      }
+      .nameedit:focus { outline: none; }
+
       .hint { color: var(--dim); font-size: 12px; margin: 2px 0 8px; }
 
       .readout {
@@ -563,6 +624,34 @@
         border-color: var(--hot-line);
       }
       .instruction .keycap.wide { min-width: 2.6em; }
+
+      /* A pitch named inside an instruction, written <A4> in cues.json. Same
+         idea as a key chip, deliberately a different colour: one is something
+         you press, the other something you sing. */
+      .pitchcap {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 24px;
+        height: 22px;
+        padding: 0 7px;
+        border-radius: 999px;
+        border: 1px solid var(--pitch-line);
+        background: var(--pitch-bg);
+        font: 600 13px var(--mono);
+        color: var(--pitch);
+        letter-spacing: 0.02em;
+      }
+      .instruction .pitchcap,
+      .oncoming .pitchcap {
+        font-size: 0.74em;
+        font-weight: 600;
+        min-width: 2em;
+        height: 1.5em;
+        padding: 0 0.5em;
+        margin: 0 0.12em;
+        vertical-align: 0.06em;
+      }
       /* one sentence per line, stacked */
       .instruction .sentence,
       .oncoming .sentence { display: block; }
@@ -572,8 +661,53 @@
       .instruction.waiting { color: var(--dim); }
       .keyhelp { color: var(--dim); font-size: 11.5px; line-height: 1.35; }
 
+      /* the diminuendo, while it is running */
+      .fadetag {
+        font: 11px var(--mono);
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--hot);
+        white-space: nowrap;
+      }
+
       /* ---- piano ---- */
       .pitchbar { display: flex; align-items: center; gap: 14px; margin: 0 0 8px; flex-wrap: wrap; }
+
+      /* The one voice control that belongs beside the strip rather than in the
+         panel: pitch drift is adjusted while listening, not while setting up. */
+      .stripctl { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; flex-wrap: wrap; }
+      .stripctl .ctl { flex-direction: row; align-items: center; gap: 10px; }
+      .stripctl .ctl label { font-size: 11px; white-space: nowrap; }
+      .stripctl .ctl .row { gap: 8px; }
+      .stripctl .ctl input[type="range"] { flex: 0 0 170px; width: 170px; }
+      .whisptag {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font: 11px var(--mono);
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        padding: 3px 9px 3px 5px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        color: var(--dim);
+        cursor: help;
+        user-select: none;
+      }
+      .whisptag .state { font-weight: 700; }
+      .whisptag[data-on="1"] {
+        color: var(--on-hot);
+        background: var(--hot);
+        border-color: var(--hot);
+      }
+      /* on the lit pill the key box has to invert too, or the Z disappears:
+         its own background is a dark panel and --on-hot is nearly black */
+      .whisptag[data-on="1"] .keycap {
+        background: var(--on-hot);
+        color: var(--hot);
+        border-color: var(--on-hot);
+      }
+      .stripctl .ctl output { min-width: 34px; }
       .piano {
         position: relative;
         flex: 1 1 420px;
@@ -613,6 +747,33 @@
       .pkey.black:hover { background: var(--key-black-hover); }
       .pkey.white.on { background: var(--hot); color: var(--on-hot); }
       .pkey.black.on { background: var(--hot); }
+
+      /* Key names. The Cs are always shown and are big enough to find at a
+         glance from playing distance; every other name appears only when the
+         player asks for it, for anyone who does not read a keyboard by eye. */
+      .pkey span { pointer-events: none; }
+      .pkey .octave {
+        font: 700 12px var(--mono);
+        letter-spacing: 0.02em;
+        color: var(--key-ink);
+        opacity: 0.9;
+      }
+      .pkey .name { display: none; }
+      .piano.labelled .pkey .name {
+        display: block;
+        font: 9px var(--mono);
+        color: var(--key-ink);
+      }
+      .piano.labelled .pkey.black .name {
+        color: var(--key-ink-black);
+        opacity: 0.85;
+        position: absolute;
+        bottom: 3px;
+        left: 0;
+        right: 0;
+        text-align: center;
+      }
+      .pkey.white.on .octave, .pkey.white.on .name { color: var(--on-hot); }
       .pitchside { display: flex; flex-direction: column; gap: 8px; min-width: 200px; }
       .pnote { font: 13px var(--mono); color: var(--dim); }
       .note-choices { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
@@ -627,6 +788,17 @@
       }
       .note-chip:hover { border-color: var(--hot); }
       .note-chip.on { background: var(--hot); color: var(--on-hot); border-color: var(--hot); font-weight: 600; }
+      /* which of this part's pitches is yours, and how it was decided */
+      .pitchmode {
+        display: flex;
+        gap: 8px;
+        font: 10px var(--mono);
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--dim);
+        margin-top: 2px;
+      }
+      .note-chip.mine { box-shadow: 0 0 0 2px var(--hot-line); }
       .note-free { font: 12px var(--mono); color: var(--dim); }
       /* the pitches this part may choose from in this phrase */
       .pkey.white.allowed { background: var(--key-white-allowed); }
@@ -848,10 +1020,15 @@
       <div class="modal-card">
         <h2>Tract</h2>
         <p class="modal-sub">by Jason Charney (2026)</p>
+        <p class="modal-ask">What should the conductor call you?</p>
+        <input class="nameinput" id="nameInput" type="text" maxlength="20"
+               placeholder="your name" autocomplete="off" spellcheck="false"
+               title="This laptop remembers it, so you only type it once." />
         <p class="modal-ask">Which part are you singing?</p>
         <div class="partchoices" id="partChoices"></div>
         <p class="modal-foot">
-          Choosing also starts the audio. You can change part later in the top corner.
+          Choosing also starts the audio. You can change your part or your name later in the
+          top corner — this laptop remembers both.
         </p>
       </div>
     </div>
@@ -862,6 +1039,13 @@
       <label class="partpick">part
         <select id="partSel"></select>
       </label>
+      <!-- The chip is a button until you click it, and only then a text field.
+           A permanently-focusable input up here would swallow the playing keys
+           of anyone who clicked it and looked away. -->
+      <button id="nameChip" class="namechip unset"
+              title="What the conductor sees above your strip. Click to change it; this laptop remembers it.">name?</button>
+      <input id="nameEdit" class="nameedit" type="text" maxlength="20"
+             placeholder="your name" autocomplete="off" spellcheck="false" hidden />
       <span class="spacer"></span>
       <span id="wsStatus" class="pill">bridge: —</span>
       <button id="themeSwitch" class="themeswitch" title="Pink Trombone / dark">skin: pink</button>
@@ -876,16 +1060,21 @@
       <canvas id="meter" class="meter" width="420" height="16"
               title="The level actually leaving this laptop: the solid bar is the body of the sound, the pale one its peaks, and the line is the loudest moment of the last second. It turns red within 3 dB of the ceiling."></canvas>
       <span class="meterpeak" id="meterPeak">—</span>
+      <span class="fadetag" id="fadeTag" hidden></span>
     </div>
 
+    <!-- The phrase is a readout, not a control: players move with the number
+         keys, or [ and ]. The steppers and the dots are composer tools and only
+         appear with ?composer=1, where the dots also mark which phrases carry a
+         saved preset. -->
     <div class="phrases">
-      <button class="nav" id="prevPhrase" title="previous phrase (↑)">‹</button>
+      <button class="nav" id="prevPhrase" title="previous phrase ([)" hidden>‹</button>
       <div class="phrase-current">
         <span id="phraseNum">1/8</span>
         <span id="phraseText">—</span>
       </div>
-      <button class="nav" id="nextPhrase" title="next phrase (↓)">›</button>
-      <div class="phrase-dots" id="phraseDots"></div>
+      <button class="nav" id="nextPhrase" title="next phrase (])" hidden>›</button>
+      <div class="phrase-dots" id="phraseDots" hidden></div>
     </div>
     <div class="instruction-row">
       <div class="cuelight" id="cueLight" data-state="idle" title="the conductor's cue light">
@@ -908,10 +1097,24 @@
       scan itself — release and the gate closes.
     </p>
 
+    <div class="stripctl" id="stripControls">
+      <!-- Whisper latches and survives a phrase change, so it needs to be
+           visible where the player is already looking. -->
+      <div class="whisptag" id="whisperTag" data-on="0"
+           title="Z turns whisper on and off. It stays where you put it — a phrase change will not reset it.">
+        <span class="keycap">Z</span>
+        <span class="word">whisper</span>
+        <span class="state">off</span>
+      </div>
+    </div>
+
     <div class="pitchbar">
       <div class="piano" id="piano"></div>
+      <button id="pianoLabels" class="inline-toggle" aria-pressed="false"
+              title="Show the name of every key, not just the Cs.">note names</button>
       <div class="pitchside">
         <div class="note-choices" id="noteChoices"></div>
+        <div class="pitchmode"><span id="seatTag"></span><span id="pitchTag"></span></div>
         <div class="pnote" id="pianoNote">—</div>
       </div>
     </div>
@@ -935,19 +1138,37 @@
             </div>
             <div class="keyrow">
               <span class="keycap">Q</span>
-              <span class="keyhelp">a random phoneme from the phrase</span>
+              <span class="keyhelp">hold for a random <b>voiced</b> phoneme of the phrase</span>
               <span class="keycap">T</span>
-              <span class="keyhelp">a random stop or fricative, unvoiced</span>
+              <span class="keyhelp">hold for a random <b>noisy</b> one — fricative, stop, unvoiced</span>
               <span class="keycap">Z</span>
               <span class="keyhelp">whisper on / off</span>
             </div>
             <div class="keyrow">
-              <span class="keycap wide">1–8</span>
-              <span class="keyhelp">phrase ·</span>
-              <span class="keycap wide">↑ ↓</span>
+              <span class="keycap wide">space</span>
+              <span class="keyhelp">
+                the pedal — hold to sustain wherever the playbar is, and to keep a
+                <b>Q</b> or <b>T</b> going after you have let the key go. ·
+              </span>
+              <span class="keycap">J</span>
+              <span class="keyhelp">move to another of this phrase's pitches</span>
+            </div>
+            <div class="keyrow">
+              <span class="keycap wide">0–8</span>
+              <span class="keyhelp">phrase, 0 is standby ·</span>
+              <span class="keycap">[</span><span class="keycap">]</span>
               <span class="keyhelp">step through them ·</span>
               <span class="keycap wide">Home</span>
               <span class="keyhelp">back to the start of the phrase</span>
+            </div>
+            <div class="keyrow">
+              <span class="keycap wide">↓</span>
+              <span class="keyhelp">
+                the diminuendo at the end — fades this laptop to silence over
+                <b id="fadeLen">5 s</b>, the length the conductor has set ·
+              </span>
+              <span class="keycap wide">↑</span>
+              <span class="keyhelp">call it off</span>
             </div>
             <div class="readout">
               <span id="transportState">—</span>
@@ -982,6 +1203,6 @@
 
     <!-- the ?v= is a cache-buster: bump it whenever scan.js changes, so a browser
          cannot quietly keep running yesterday's module -->
-    <script type="module" src="/scan/src/scan.js?v=2026-09-18d"></script>
+    <script type="module" src="/scan/src/scan.js?v=2026-10-11a"></script>
   </body>
 </html>

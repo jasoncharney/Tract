@@ -1,0 +1,505 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Tract — Player card</title>
+<style>
+/* ==================================================================
+   Tract — the printed materials.
+
+   One stylesheet for all three documents. It is a print stylesheet
+   first: black on white, no colour that has to survive a photocopier,
+   nothing that depends on a screen. The accent grey is the only tone,
+   and everything still reads without it.
+   ================================================================== */
+
+@page {
+  size: letter;
+  margin: 16mm 15mm 14mm;
+}
+
+:root {
+  --ink: #111;
+  --dim: #5b5b5b;
+  --faint: #8a8a8a;
+  --rule: #cfcfcf;
+  --wash: #f2f2f2;
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  --sans: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --mono: "SF Mono", "DejaVu Sans Mono", Menlo, Consolas, monospace;
+}
+
+* { box-sizing: border-box; }
+
+html { font-size: 11pt; }
+
+body {
+  margin: 0;
+  color: var(--ink);
+  background: #fff;
+  font-family: var(--sans);
+  line-height: 1.45;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+/* ---- the running head on every document ---- */
+
+/* Everything on one baseline: title, subtitle, composer, and what the
+   document is. Two lines of masthead is two lines a half sheet cannot spare. */
+.masthead {
+  display: flex;
+  align-items: baseline;
+  gap: 8pt;
+  border-bottom: 1.5pt solid var(--ink);
+  padding-bottom: 3pt;
+  margin-bottom: 12pt;
+}
+.masthead .work {
+  font-family: var(--serif);
+  font-size: 14pt;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  font-weight: normal;
+  margin: 0;
+}
+.masthead .sub {
+  font-family: var(--serif);
+  font-size: 9.5pt;
+  color: var(--dim);
+}
+.masthead .doc {
+  margin-left: auto;
+  font-size: 8.5pt;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--dim);
+  white-space: nowrap;
+}
+
+/* ---- headings ---- */
+
+h2 {
+  font-size: 10pt;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  margin: 18pt 0 6pt;
+  padding-bottom: 2pt;
+  border-bottom: 0.5pt solid var(--rule);
+  break-after: avoid;
+}
+h2:first-of-type { margin-top: 0; }
+
+h3 {
+  font-size: 10.5pt;
+  margin: 12pt 0 3pt;
+  break-after: avoid;
+}
+
+p { margin: 0 0 7pt; max-width: 34em; }
+ul, ol { margin: 0 0 8pt; padding-left: 1.1em; }
+li { margin-bottom: 3pt; max-width: 33em; }
+strong { font-weight: 600; }
+em { font-style: italic; }
+
+/* ---- the two chips, drawn exactly as the player's screen draws them ---- */
+
+.keycap {
+  display: inline-block;
+  min-width: 1.5em;
+  padding: 0.5pt 3pt;
+  margin: 0 1pt;
+  border: 0.6pt solid var(--ink);
+  border-radius: 2.5pt;
+  box-shadow: 0 1pt 0 var(--ink);
+  font-family: var(--mono);
+  font-size: 0.82em;
+  text-align: center;
+  line-height: 1.25;
+}
+.pitchcap {
+  display: inline-block;
+  padding: 0.5pt 3.5pt;
+  margin: 0 1pt;
+  border: 0.6pt solid var(--dim);
+  border-radius: 7pt;
+  background: var(--wash);
+  font-family: var(--mono);
+  font-size: 0.82em;
+  line-height: 1.25;
+}
+
+/* ---- tables ---- */
+
+table { border-collapse: collapse; width: 100%; margin: 0 0 10pt; }
+th, td {
+  text-align: left;
+  vertical-align: top;
+  padding: 3.5pt 6pt 3.5pt 0;
+  border-bottom: 0.4pt solid var(--rule);
+}
+th {
+  font-size: 8pt;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--dim);
+  font-weight: 600;
+  border-bottom: 0.8pt solid var(--ink);
+}
+
+/* ---- a boxed aside ---- */
+
+.box {
+  border: 0.8pt solid var(--ink);
+  padding: 8pt 10pt;
+  margin: 0 0 12pt;
+  break-inside: avoid;
+}
+.box h3 { margin-top: 0; }
+.box p:last-child, .box ul:last-child { margin-bottom: 0; }
+
+/* The guide is one measure: rules, tables and text all end at the same place,
+   and what is left on the right is somewhere to write. The cards and the cue
+   sheet use the full width, so this is scoped to the guide alone. */
+.guide { max-width: 6.1in; }
+.guide p, .guide li { max-width: none; }
+
+.rule-note {
+  font-size: 9.5pt;
+  color: var(--dim);
+  font-style: italic;
+  max-width: 32em;
+}
+
+/* ==================================================================
+   the player card — half a letter sheet, two sides
+   ================================================================== */
+
+/* Nothing here differs part to part: the pitches arrive on the screen. */
+.cardface {
+  font-size: 10pt;
+  line-height: 1.4;
+  display: flex;
+  flex-direction: column;
+  /* the page less its margins: a real height, so the key strip can be pushed
+     to the foot of the card rather than floating under the text */
+  min-height: calc(5.5in - 22mm);
+  break-after: page;
+}
+.cardface:last-child { break-after: auto; }
+.cardface p, .cardface li { max-width: none; }
+.cardface h2 { margin: 0 0 5pt; font-size: 9pt; }
+.cardface h3 { font-size: 9.5pt; }
+.cardface .box { padding: 6pt 8pt; margin: 0; }
+.cardface .rule-note { max-width: none; font-size: 8pt; margin: 5pt 0 0; }
+
+.twoup { display: flex; gap: 16pt; align-items: flex-start; }
+.twoup > * { flex: 1 1 0; min-width: 0; }
+
+ol.tight, ul.tight { margin: 0; padding-left: 1.15em; }
+ol.tight li, ul.tight li { margin-bottom: 2.5pt; }
+
+/* the conductor's lamp, as the player's page draws it: dark panel, amber to
+   stand by, a bright flash to go */
+/* The flash lamp throws rays past the edge of its own circle, and anything
+   that reaches past the page's content box is clipped away when Chrome makes
+   the PDF — which chopped the left-hand rays flat. The padding here is the
+   room those rays need. */
+.lamps { display: flex; flex-direction: column; gap: 7pt; padding-left: 7pt; }
+.lamp-item {
+  display: grid;
+  grid-template-columns: 26pt 1fr;
+  grid-template-rows: auto auto;
+  column-gap: 7pt;
+  align-items: center;
+}
+/* The four lamps.
+   Colour is never the only difference between them, because most of these
+   cards will come off a black-and-white printer. Each one is told apart by
+   its TONE and by its SHAPE: a solid dark disc, a mid disc with a broken ring
+   (the pulse), a mid disc with a numeral in it, and a white disc throwing
+   rays. Photocopy it and all four are still four different things. */
+.lamp {
+  position: relative;
+  grid-row: 1 / 3;
+  width: 22pt;
+  height: 22pt;
+  border-radius: 50%;
+  border: 0.75pt solid #111;
+  background: #23202d;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font: bold 11pt/1 var(--mono);
+  color: #23180a;
+}
+
+/* amber on screen; a clear mid grey once the colour is gone */
+.lamp.prep,
+.lamp.count { background: #e08b2f; }
+
+/* the pulse, drawn as a broken ring inside the disc */
+.lamp.prep::after {
+  content: "";
+  position: absolute;
+  inset: 2.5pt;
+  border-radius: 50%;
+  border: 1pt dashed #23180a;
+}
+
+/* the downbeat: white, and throwing light. The rays are a disc of spokes
+   behind a white disc, so only their outer ends show. */
+.lamp.go::before {
+  content: "";
+  position: absolute;
+  inset: -6pt;
+  border-radius: 50%;
+  background: repeating-conic-gradient(#111 0 5.5deg, transparent 5.5deg 30deg);
+}
+.lamp.go::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: #fff;
+  border: 1pt solid #111;
+}
+
+.lamp-item b { font-size: 8.5pt; align-self: end; }
+.lamp-item span { font-size: 8pt; color: var(--dim); align-self: start; }
+
+/* The keys, at a size you can read at arm's length from a music stand. This
+   block grows upward into whatever the rest of the card has not used: the
+   auto top margin pins it to the foot, and the leading opens out to fill. */
+.keystrip {
+  margin-top: auto;
+  padding-top: 6pt;
+  border-top: 0.8pt solid var(--ink);
+}
+.keystrip h2 { margin-bottom: 7pt; }
+.keyrows {
+  column-count: 2;
+  column-gap: 20pt;
+  font-size: 10.5pt;
+  line-height: 1.6;
+  color: var(--ink);
+}
+/* direct children only — the key boxes inside are spans too, and turning
+   those into blocks stretches each one across the whole column */
+.keyrows > span { display: block; break-inside: avoid; margin-bottom: 4pt; }
+.keystrip .keycap { font-size: 0.86em; padding: 1pt 4pt; min-width: 1.7em; }
+
+/* ==================================================================
+   the score
+   ================================================================== */
+
+/* A phrase starts a page. A conductor turning a page in the middle of one is
+   the thing to avoid; a page with room left at the bottom is not. Cues never
+   split, and a phrase heading never ends a page on its own. */
+.phrase { break-before: page; margin-bottom: 16pt; }
+.front { break-after: page; }
+
+.phrase-head {
+  break-after: avoid;
+  display: flex;
+  align-items: baseline;
+  gap: 10pt;
+  border-bottom: 1pt solid var(--ink);
+  padding-bottom: 3pt;
+  margin-bottom: 8pt;
+}
+.phrase-head .n {
+  font-family: var(--serif);
+  font-size: 20pt;
+  line-height: 1;
+  color: var(--faint);
+}
+.phrase-head .text {
+  font-family: var(--serif);
+  font-size: 15pt;
+  font-style: italic;
+}
+
+.pitchrow { display: flex; gap: 14pt; margin-bottom: 10pt; font-size: 9pt; break-after: avoid; }
+.pitchrow .p { flex: 1 1 0; border-left: 2pt solid var(--rule); padding-left: 6pt; }
+.pitchrow .p b { display: block; font-size: 8pt; letter-spacing: 0.1em; color: var(--dim); }
+.pitchrow .p .mode { color: var(--faint); font-size: 8pt; }
+
+.cue { break-inside: avoid; margin-bottom: 7pt; padding-left: 0; }
+.cue-head {
+  display: flex;
+  align-items: baseline;
+  gap: 7pt;
+  margin-bottom: 2pt;
+}
+.cue-head .id {
+  font-family: var(--mono);
+  font-size: 8.5pt;
+  border: 0.6pt solid var(--dim);
+  border-radius: 2pt;
+  padding: 0 3pt;
+  color: var(--dim);
+}
+.cue-head .label { font-weight: 600; font-size: 10pt; }
+.cue-head .silent { font-size: 8.5pt; color: var(--faint); margin-left: auto; }
+.cue .note {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 9.5pt;
+  color: var(--dim);
+  margin: 0 0 3pt;
+}
+.cue table { margin: 0; }
+.cue th, .cue td { padding-top: 2.8pt; padding-bottom: 2.8pt; }
+.cue td.part {
+  width: 3.2em;
+  font-weight: 600;
+  font-size: 9pt;
+  white-space: nowrap;
+}
+.cue td.instr { font-size: 9.5pt; }
+
+.colophon {
+  margin-top: 20pt;
+  padding-top: 6pt;
+  border-top: 0.5pt solid var(--rule);
+  font-size: 8.5pt;
+  color: var(--faint);
+  max-width: none;
+}
+
+@page { size: 8.5in 5.5in; margin: 11mm 12mm; }
+</style>
+</head>
+<body>
+<!--
+  The player card. One card for everybody — pitches arrive on the screen, so
+  there is nothing on paper that differs part to part.
+
+  Half a letter sheet, two sides: print double-sided and cut across the middle
+  and one sheet makes two cards.
+
+  <div class="masthead">
+  <h1 class="work">Tract</h1>
+  <div class="sub">for laptops SATB · Jason Charney</div>
+  <div class="doc">Player card</div>
+</div> is replaced by make-score.js with the title line. Everything
+  else here is yours to edit; keep it short, because the whole value of the
+  card is that a player can find one thing on it at a glance.
+-->
+
+<!-- FACE ONE — what you need while the piece is running. This is the side
+     that should be lying face up beside the laptop. -->
+<section class="cardface">
+  <div class="masthead">
+  <h1 class="work">Tract</h1>
+  <div class="sub">for laptops SATB · Jason Charney</div>
+  <div class="doc">Player card</div>
+</div>
+
+  <div class="twoup">
+<div>
+      <h2>The cue light</h2>
+      <div class="lamps">
+        <div class="lamp-item">
+          <div class="lamp idle"></div>
+          <b>nothing</b>
+          <span>No cue for you. Carry on.</span>
+        </div>
+        <div class="lamp-item">
+          <div class="lamp prep"></div>
+          <b>amber, pulsing</b>
+          <span>Soon. Your next instruction has been showing under
+          <em>next</em> since the last downbeat — look up, not down.</span>
+        </div>
+        <div class="lamp-item">
+          <div class="lamp count">4</div>
+          <b>counting</b>
+          <span>Sometimes: a count-in. Go on the beat after 1.</span>
+        </div>
+        <div class="lamp-item">
+          <div class="lamp go"></div>
+          <b>a bright flash</b>
+          <span>Go. The new instruction is now the one to follow.</span>
+        </div>
+      </div>
+      <p class="rule-note">The line under <em>next</em> is always there. Read it
+      whenever you like; nothing changes until the flash.</p>
+    </div>
+
+<div>
+      <div class="box">
+        <p style="margin-top: 6pt;">A cue will always say which one it wants.</p>
+        <h3>Two words - they mean different things</h3>
+        <p><strong>SCAN</strong> — hold a key and the playhead moves by itself at different rates:
+        <span class="keycap">A</span> slow, <span class="keycap">S</span> middle,
+        <span class="keycap">D</span> fast. It keeps its place: let go, press again, and it
+        carries on from where it stopped. Run off the end and the next press starts over.</p>
+        <p><strong>SWEEP</strong> — hold the mouse down on the strip and move it yourself. Both left click and <span class="keycap">spacebar</span> hold the phoneme you last hovered over. </p>
+      </div>
+    </div>
+  </div>
+
+<div class="keystrip">
+    <h2>The keys</h2>
+    <div class="keyrows">
+      <span><span class="keycap">A</span><span class="keycap">S</span><span class="keycap">D</span> hold to scan — slow, middle, fast</span>
+      <span><span class="keycap">W</span><span class="keycap">E</span><span class="keycap">R</span> play one word — slow, middle, fast. Press again to start it over</span>
+      <span><span class="keycap">Q</span> a voiced phoneme · <span class="keycap">T</span> a noisy one</span>
+      <span><span class="keycap">Z</span> whisper on / off · <span class="keycap">J</span> change pitch</span>
+      <span><span class="keycap">space</span> hold the sound on · <span class="keycap">esc</span> stop at once</span>
+      <span><span class="keycap">0</span> standby · <span class="keycap">1</span>–<span class="keycap">8</span> phrase · <span class="keycap">↓</span> diminuendo</span>
+    </div>
+  </div>
+</section>
+
+<!-- FACE TWO — read once at the start, and consulted when something is wrong. -->
+<section class="cardface">
+  <div class="masthead">
+  <h1 class="work">Tract</h1>
+  <div class="sub">for laptops SATB · Jason Charney</div>
+  <div class="doc">Player card</div>
+</div>
+
+  <div class="twoup">
+<div>
+      <h2>Getting on</h2>
+      <ol class="tight">
+        <li>Join the wi-fi network the conductor names.</li>
+        <li>Open a browser and type the address they give you — just the numbers,
+        like <code>192.168.1.42:8080</code>. Nothing before it, nothing after.</li>
+        <li>Type your name, then choose your part. This laptop remembers both, so
+        you only do it the first time — the conductor sees your name over your
+        playhead.</li>
+        <li><strong>Click once anywhere on the page.</strong> No browser will make a
+        sound until you do.</li>
+        <li>Turn your volume up. Press <span class="keycap">1</span>, hold
+        <span class="keycap">A</span> for a moment — you should hear yourself — then
+        press <span class="keycap">0</span> for standby, which is silent.</li>
+        <li>Now wait. Your part is named at the top of the page, and the cue light is
+        on the left of your instruction.</li>
+      </ol>
+    </div>
+
+<div>
+      <h2>If you are lost</h2>
+      <ul class="tight">
+        <li>Nothing coming out? <strong>Click once on the page</strong> — the browser will not
+        make a sound until you do — then check your volume.</li>
+        <li>Sounding breathy when it should not? <strong>Whisper is still on</strong> from an
+        earlier phrase. <span class="keycap">Z</span> turns it off.</li>
+        <li>Held key doing nothing? You have <strong>run off the end</strong> of the phrase.
+        Press it again.</li>
+        <li>Started a word at the wrong moment? <span class="keycap">esc</span> stops
+        anything that is running, at once.</li>
+        <li>Lost your place in the piece? The <strong>phrase number</strong> is at the top of
+        your page, and the conductor's instruction is beside your cue light.</li>
+        <li>Never guess at a cue. If no instruction has arrived for you,
+        <strong>carry on with what you are doing</strong> — that is the piece, not an oversight.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+</body>
+</html>

@@ -1,0 +1,681 @@
+{
+  "cues": [
+    {
+      "id": "1",
+      "phrase": 1,
+      "label": "Opening",
+      "note": "wait for the room to settle",
+      "stage": {
+        "title": false,
+        "tracts": false,
+        "text": "",
+        "fade": 3
+      },
+      "parts": {
+        "1": {
+          "instruction": "Make sure your volume is up. Standby for piece start."
+        },
+        "2": {
+          "instruction": "Make sure your volume is up. Standby for piece start."
+        },
+        "3": {
+          "instruction": "Make sure your volume is up. Standby for piece start."
+        },
+        "4": {
+          "instruction": "Make sure your volume is up. Standby for piece start."
+        }
+      }
+    },
+    {
+      "id": "2",
+      "phrase": 1,
+      "label": "Start of Phrase 1",
+      "stage": {
+        "tracts": true,
+        "text": "words strain",
+        "fade": 3
+      },
+      "parts": {
+        "1": {
+          "instruction": "Hold {A} to scan through phrase slowly. Retrigger {A} when you reach the end of the phrase."
+        }
+      }
+    },
+    {
+      "id": "3",
+      "phrase": 1,
+      "label": "Add Part II",
+      "parts": {
+        "2": {
+          "instruction": "Hold {S} to scan through phrase. Retrigger {S} when you reach the end of the phrase."
+        }
+      }
+    },
+    {
+      "id": "4",
+      "phrase": 1,
+      "label": "Add III",
+      "note": "After II begins the second or third loop of the phrase.",
+      "parts": {
+        "3": {
+          "instruction": "Hold {S} to scan through phrase. Retrigger {S} when you reach the end of the phrase."
+        }
+      }
+    },
+    {
+      "id": "5",
+      "phrase": 1,
+      "label": "Add Part IV",
+      "note": " after III begins the second or third loop of the phrase.",
+      "parts": {
+        "4": {
+          "instruction": "Hold {A} to scan through the phrase slowly. Retrigger {A} when you reach the end of the phrase."
+        },
+        "2": {
+          "instruction": "Finish the current phrase scan, and retrigger with {D} to scan through quickly. Retrigger {D} when you reach the end of the phrase."
+        }
+      }
+    },
+    {
+      "id": "6",
+      "phrase": 1,
+      "label": "hold last n",
+      "parts": {
+        "1": {
+          "instruction": "Click and hold on the last n in strain - hold until cued to release."
+        },
+        "2": {
+          "instruction": "Click and hold on the last n in strain - hold until cued to release."
+        },
+        "3": {
+          "instruction": "Click and hold on the last n in strain - hold until cued to release."
+        },
+        "4": {
+          "instruction": "Click and hold on the last n in strain - hold until cued to release."
+        }
+      }
+    },
+    {
+      "id": "7",
+      "phrase": 1,
+      "label": "Release I",
+      "note": "other parts continue to hold",
+      "parts": {
+        "1": {
+          "instruction": "Release mouse. Advance to Phrase {2}. Press {Z} to toggle whisper on. Wait for cue."
+        }
+      }
+    },
+    {
+      "id": "8",
+      "phrase": 2,
+      "label": "Part I 'crack!'",
+      "stage": {
+        "text": "CRACK"
+      },
+      "parts": {
+        "1": {
+          "instruction": "Trigger word with {R} once. Wait a moment, then trigger the word fast and irregularly with {R}."
+        },
+        "2": {
+          "instruction": "Release. Advance to Phrase {2}. Press {Z} to toggle whisper on."
+        },
+        "3": {
+          "instruction": "Release. Advance to Phrase {2}. Press {Z} to toggle whisper on."
+        },
+        "4": {
+          "instruction": "Release. Advance to Phrase {2}."
+        }
+      }
+    },
+    {
+      "id": "9",
+      "phrase": 2,
+      "label": "Part II enters.",
+      "parts": {
+        "2": {
+          "instruction": "Trigger word fast and irregularly with {R}."
+        }
+      }
+    },
+    {
+      "id": "10",
+      "phrase": 2,
+      "label": "Part III enters.",
+      "parts": {
+        "3": {
+          "instruction": "Trigger word irregularly with {E}, occasionally interrupting to restart the word. Occasionally switch pitches with {J}. Repeat."
+        },
+        "2": {
+          "instruction": "Toggle whisper on and off in short bursts with {Z}, erupting from the texture with pitch. Not too much though. Occasionally switch pitches with {J}. Repeat."
+        },
+        "1": {
+          "instruction": "Toggle whisper on and off in short bursts with {Z}, erupting from the texture with pitch. Not too much though. Occasionally switch pitches with {J}. Repeat."
+        }
+      }
+    },
+    {
+      "id": "11",
+      "phrase": 2,
+      "label": "Part IV enter.",
+      "parts": {
+        "2": {
+          "instruction": "Slowly increase the proportion of voiced moments with {Z}, eventually reaching fully voiced. Stop changing pitches – but make sure each possible pitch is sounding among Part II players."
+        },
+        "3": {
+          "instruction": "Slowly increase the proportion of voiced moments with {Z}, eventually reaching fully voiced. Stop changing pitches – but make sure each possible pitch is sounding among Part III players."
+        },
+        "4": {
+          "instruction": "Trigger {W} with regular pulse, synchronizing beginnings with the other Part IV players. Leave a small gap between each press. Get ready for cutoff."
+        }
+      }
+    },
+    {
+      "id": "12",
+      "phrase": 2,
+      "label": "cutoff, silence",
+      "parts": {
+        "1": {
+          "instruction": "Stop - silence. Advance to phrase {3}."
+        },
+        "2": {
+          "instruction": "Stop - silence. Advance to phrase {3}."
+        },
+        "3": {
+          "instruction": "Stop - silence. Advance to phrase {3}."
+        },
+        "4": {
+          "instruction": "Stop - silence. Advance to phrase {3}."
+        }
+      }
+    },
+    {
+      "id": "13",
+      "phrase": 3,
+      "label": "and sometimes break...",
+      "stage": {
+        "text": "and sometimes break under the burden"
+      },
+      "parts": {
+        "1": {
+          "instruction": "Use your mouse to scan slowly through 'and sometimes break.' Listen to the other players to synchronize. Stop when you get to the end of 'break' and wait for cue."
+        },
+        "2": {
+          "instruction": "Use your mouse to scan slowly through 'and sometimes break.' Listen to the other players to synchronize. Stop when you get to the end of 'break' and wait for cue."
+        },
+        "3": {
+          "instruction": "Use your mouse to scan slowly through 'and sometimes break.' Listen to the other players to synchronize. Stop when you get to the end of 'break' and wait for cue."
+        },
+        "4": {
+          "instruction": "Use your mouse to scan slowly through 'and sometimes break.' Listen to the other players to synchronize. Stop when you get to the end of 'break' and wait for cue."
+        }
+      }
+    },
+    {
+      "id": "14",
+      "phrase": 3,
+      "label": "percussive phonemes, IV moving on",
+      "parts": {
+        "1": {
+          "instruction": "Press {T} rapidly and irregularly to create a flurry of noise."
+        },
+        "2": {
+          "instruction": "Press {T} rapidly and irregularly to create a flurry of noise."
+        },
+        "3": {
+          "instruction": "Press {T} rapidly and irregularly to create a flurry of noise."
+        },
+        "4": {
+          "instruction": "Use mouse to repeatedly scan through 'under the burden' together with other Part IV players, slowly, and synchronized."
+        }
+      }
+    },
+    {
+      "id": "15",
+      "phrase": 3,
+      "label": "III joins IV",
+      "parts": {
+        "1": {
+          "instruction": "Press {T} rapidly and irregularly to create a flurry of noise."
+        },
+        "2": {
+          "instruction": "Press {T} rapidly and irregularly to create a flurry of noise."
+        },
+        "3": {
+          "instruction": "Use mouse to slowly scan through 'under the burden,' synchronizing with other Part III and IV players. Repeat."
+        },
+        "4": {
+          "instruction": "Use mouse to slowly scan through 'under the burden,' synchronizing with other Part IV players. Repeat."
+        }
+      }
+    },
+    {
+      "id": "16",
+      "phrase": 3,
+      "label": "II joins III and IV",
+      "parts": {
+        "1": {
+          "instruction": "Press {T} rapidly and irregularly to create a flurry of noise."
+        },
+        "2": {
+          "instruction": "Use mouse to slowly scan through 'under the burden,' synchronizing with other Part II, III, and IV players. Repeat."
+        },
+        "3": {
+          "instruction": "Use mouse to slowly scan through 'under the burden,' synchronizing with other Part III and IV players. Repeat."
+        },
+        "4": {
+          "instruction": "Use mouse to slowly scan through 'under the burden,' synchronizing with other Part IV players. Repeat."
+        }
+      }
+    },
+    {
+      "id": "17",
+      "phrase": 3,
+      "label": "All players one last time",
+      "parts": {
+        "1": {
+          "instruction": "Use mouse to slowly scan through 'under the burden,' synchronizing with other players. When you get to the end of the phrase, hold on the last 'n' until cued."
+        },
+        "2": {
+          "instruction": "All players are reading through 'under the burden' together one last time. When you get to the end of the phrase, hold on the last 'n' until cued."
+        },
+        "3": {
+          "instruction": "All players are reading through 'under the burden' together one last time. When you get to the end of the phrase, hold on the last 'n' until cued."
+        },
+        "4": {
+          "instruction": "All players are reading through 'under the burden' together one last time. When you get to the end of the phrase, hold on the last 'n' until cued."
+        }
+      }
+    },
+    {
+      "id": "18",
+      "phrase": 4,
+      "label": "Release and whisper together",
+      "stage": {
+        "text": "under the tension"
+      },
+      "parts": {
+        "1": {
+          "instruction": "Release! Advance to Phrase {4}. Toggle whisper on with {Z}. Synchronize with other players, scanning through the phrase together slowly, and hold on the final 'n'."
+        },
+        "2": {
+          "instruction": "Release! Advance to Phrase {4}. Toggle whisper on with {Z}. Synchronize with other players, scanning through the phrase together slowly, and hold on the final 'n'."
+        },
+        "3": {
+          "instruction": "Release! Advance to Phrase {4}. Toggle whisper on with {Z}. Synchronize with other players, scanning through the phrase together slowly, and hold on the final 'n'."
+        },
+        "4": {
+          "instruction": "Release! Advance to Phrase {4}. Toggle whisper on with {Z}. Synchronize with other players, scanning through the phrase together slowly, and hold on the final 'n'."
+        }
+      }
+    },
+    {
+      "id": "19",
+      "phrase": 4,
+      "label": "Become voiced",
+      "parts": {
+        "1": {
+          "instruction": "Press {Z} to turn off whisper. Continue to hold 'n' with mouse until cued to release."
+        },
+        "2": {
+          "instruction": "Press {Z} to turn off whisper. Continue to hold 'n' with mouse until cued to release."
+        },
+        "3": {
+          "instruction": "Press {Z} to turn off whisper. Continue to hold 'n' with mouse until cued to release."
+        },
+        "4": {
+          "instruction": "Press {Z} to turn off whisper. Continue to hold 'n' with mouse until cued to release."
+        }
+      }
+    },
+    {
+      "id": "20",
+      "phrase": 4,
+      "label": "Release",
+      "parts": {
+        "1": {
+          "instruction": "Release! Advance to Phrase {5}."
+        },
+        "2": {
+          "instruction": "Release! Advance to Phrase {5}."
+        },
+        "3": {
+          "instruction": "Release! Advance to Phrase {5}."
+        },
+        "4": {
+          "instruction": "Release! Advance to Phrase {5}."
+        }
+      }
+    },
+    {
+      "id": "21",
+      "phrase": 5,
+      "label": "slip, slide, perish",
+      "stage": {
+        "text": "slip, slide, perish"
+      },
+      "parts": {
+        "1": {
+          "instruction": "Choose random pitches between <A4> and <D4>. As you hold {S} to scan through them, choose new pitches to create a glissando."
+        },
+        "2": {
+          "instruction": "Choose random pitches between <G4> and <C4>. As you hold {S} to scan through them, choose new pitches to create a glissando."
+        },
+        "3": {
+          "instruction": "Wait for cue."
+        },
+        "4": {
+          "instruction": "Wait for cue."
+        }
+      }
+    },
+    {
+      "id": "22",
+      "phrase": 5,
+      "label": "Part III enters with random words",
+      "parts": {
+        "3": {
+          "instruction": "Press {E} to play random words. After each word, change your note with {J}."
+        }
+      }
+    },
+    {
+      "id": "23",
+      "phrase": 5,
+      "label": "Part IV enters.",
+      "note": "Part I chooses random words, increase ambitus",
+      "parts": {
+        "1": {
+          "instruction": "Press {E} to choose random words, still gliding between pitches. Start to increase the distance between pitches. Eventually glide between <C4> and <E5>."
+        },
+        "2": {
+          "instruction": "Press {E} to choose random words, still gliding between pitches. Start to increase the distance between pitches. Eventually glide between <E4> and <A5>."
+        },
+        "4": {
+          "instruction": "Listen to other Part IV players to synchronize timing. Press {W} to play through each word slowly. Slide pitch between <G1> and <A♭1> after every word."
+        }
+      }
+    },
+    {
+      "id": "24",
+      "phrase": 5,
+      "label": "Perish scan",
+      "parts": {
+        "1": {
+          "instruction": "Glide to <A4> and stay there. Now scan through the word 'perish' alone with your mouse, at your own speed."
+        },
+        "2": {
+          "instruction": "Glide to <E4> and stay there. Now scan through the word 'perish' alone with your mouse, at your own speed."
+        },
+        "3": {
+          "instruction": "Choose <B♭2> and stay there. Now scan through the word 'perish' alone with your mouse, at your own speed."
+        },
+        "4": {
+          "instruction": "Choose <G1> and stay there. Now scan through the word 'perish' alone with your mouse, at your own speed."
+        }
+      }
+    },
+    {
+      "id": "25",
+      "phrase": 5,
+      "label": "End of perish",
+      "parts": {
+        "1": {
+          "instruction": "Hold on the 'sh' at the end of 'perish.' Wait for cue."
+        },
+        "2": {
+          "instruction": "Hold on the 'sh' at the end of 'perish.' Press {Z} to turn on whisper. Wait for cue."
+        },
+        "3": {
+          "instruction": "Hold on the 'sh' at the end of 'perish.' Press {Z} to turn on whisper. Wait for cue."
+        },
+        "4": {
+          "instruction": "Hold on the 'sh' at the end of 'perish.' Wait for cue."
+        }
+      }
+    },
+    {
+      "id": "26",
+      "phrase": 6,
+      "label": "Decay",
+      "stage": {
+        "text": "decay with imprecision"
+      },
+      "parts": {
+        "1": {
+          "instruction": "Advance to Phrase {6}. Choose <A4>. Press {R} to play words in order, quickly. Gradually move pitch down to create descending glisses through words. Do not go lower than <G3> until the next cue."
+        },
+        "2": {
+          "instruction": "Advance to Phrase {6}. Press {W} to advance through the phrase, slowly, word by word."
+        },
+        "3": {
+          "instruction": "Advance to Phrase {6}. Press {W} to advance through the phrase, slowly, word by word."
+        },
+        "4": {
+          "instruction": "Advance to Phrase {6}. Choose <G2>. Press {R} to play words in order, quickly. Gradually move pitch down to create descending glisses through words. Do not go lower than <C2> until the next cue."
+        }
+      }
+    },
+    {
+      "id": "27",
+      "phrase": 6,
+      "label": "All on mid speed",
+      "parts": {
+        "1": {
+          "instruction": "Press {E} to play words in order, slower now. Gradually move pitch down, now going below <G3>. Do not go below <C3> until next cue."
+        },
+        "2": {
+          "instruction": "Press {E} to advance through the phrase, quicker now, word by word."
+        },
+        "3": {
+          "instruction": "Press {E} to advance through the phrase, quicker now, word by word."
+        },
+        "4": {
+          "instruction": "Press {E} to play words in order, slower now. Gradually move pitch down, now going below <C2>. Do not go below <G1> until next cue."
+        }
+      }
+    },
+    {
+      "id": "28",
+      "phrase": 6,
+      "label": "Final decay and advance to phrase 7",
+      "parts": {
+        "1": {
+          "instruction": "Stay on <G3>. Scan through 'decay' once with your mouse, slowly, synchronizing with the full group. Advance to Phrase {7}."
+        },
+        "2": {
+          "instruction": "Scan through 'decay' once with your mouse, slowly, synchronizing with the full group. Advance to Phrase {7}."
+        },
+        "3": {
+          "instruction": "Scan through 'decay' once with your mouse, slowly, synchronizing with the full group. Advance to Phrase {7}."
+        },
+        "4": {
+          "instruction": "Stay on <C1>. Scan through 'decay' once with your mouse, slowly, synchronizing with the full group. Advance to Phrase {7}."
+        }
+      }
+    },
+    {
+      "id": "29",
+      "phrase": 7,
+      "label": "Start phrase 7",
+      "stage": {
+        "text": "will not stay in place"
+      },
+      "parts": {
+        "1": {
+          "instruction": "Press {Q} to play a random phoneme from the phrase. Repeat irregularly, maybe once every couple of seconds (sparse texture). Change pitch with {J}. Do not synchronize with other players."
+        },
+        "2": {
+          "instruction": "Press {Z} to turn off whisper. Press {Q} to play a random phoneme from the phrase. Repeat irregularly, maybe once every couple of seconds (sparse texture). Change pitch with {J}. Do not synchronize with other players."
+        },
+        "3": {
+          "instruction": "Press {Z} to turn off whisper. Press {Q} to play a random phoneme from the phrase. Repeat irregularly, maybe once every couple of seconds (sparse texture). Change pitch with {J}. Do not synchronize with other players."
+        },
+        "4": {
+          "instruction": "Hold {A} to scan through phrase slowly. Retrigger {A} when you reach the end of the phrase."
+        }
+      }
+    },
+    {
+      "id": "30",
+      "phrase": 7,
+      "label": "Increase density",
+      "parts": {
+        "1": {
+          "instruction": "Press {R} to play a random word from the phrase. Repeat irregularly, increasing density (0.5 to 1 second or so between words). Change pitch with {J}. Do not synchronize with other players."
+        },
+        "2": {
+          "instruction": "Press {R} to play a random word from the phrase. Repeat irregularly, increasing density (0.5 to 1 second or so between words). Change pitch with {J}. Do not synchronize with other players."
+        },
+        "3": {
+          "instruction": "Press {R} to play a random word from the phrase. Repeat irregularly, increasing density (0.5 to 1 second or so between words). Change pitch with {J}. Do not synchronize with other players."
+        },
+        "4": {
+          "instruction": "Hold {S} to scan through phrase a bit faster. Retrigger {S} when you reach the end of the phrase."
+        }
+      }
+    },
+    {
+      "id": "31",
+      "phrase": 7,
+      "label": "Ending phrase 7",
+      "note": "Part IV all together, scanning",
+      "parts": {
+        "1": {
+          "instruction": "Press {R} to play a random word from the phrase. Repeat irregularly, at full density (no space between re-triggers). Change pitch with {J}. Do not synchronize with other players."
+        },
+        "2": {
+          "instruction": "Press {R} to play a random word from the phrase. Repeat irregularly, at full density (no space between re-triggers). Change pitch with {J}. Do not synchronize with other players."
+        },
+        "3": {
+          "instruction": "Press {R} to play a random word from the phrase. Repeat irregularly, at full density (no space between re-triggers). Change pitch with {J}. Do not synchronize with other players."
+        },
+        "4": {
+          "instruction": "With your mouse, scan through 'will not stay' together, and when you get to the [te] tile in 'stay,' scan slowly between [te] and [j], creating subtle timbral changes. Continue to do this."
+        }
+      }
+    },
+    {
+      "id": "32",
+      "phrase": 7,
+      "label": "Release all but IV",
+      "note": "I, II, III move on to 8.",
+      "parts": {
+        "1": {
+          "instruction": "Stop retriggering - silence. Advance to phrase {8}."
+        },
+        "2": {
+          "instruction": "Stop retriggering - silence. Advance to phrase {8}."
+        },
+        "3": {
+          "instruction": "Stop retriggering - silence. Advance to phrase {8}."
+        }
+      }
+    },
+    {
+      "id": "33",
+      "phrase": 8,
+      "label": "Enter Phrase 8",
+      "note": "Just I, release IV",
+      "stage": {
+        "text": "will not stay still"
+      },
+      "parts": {
+        "1": {
+          "instruction": "Scan forward and back across the phrase in graceful motions. Sometimes do a single word, sometimes multiple words, sometimes the whole phrase. Speed up, slow down, and change pitches with {J} ad lib."
+        },
+        "4": {
+          "instruction": "Release into silence. Advance to phrase {8}."
+        }
+      }
+    },
+    {
+      "id": "34",
+      "phrase": 8,
+      "label": "II enters",
+      "parts": {
+        "2": {
+          "instruction": "Sweep forward and back across the phrase in graceful motions. Sometimes do a single word, sometimes multiple words, sometimes the whole phrase. Speed up, slow down, and change pitches with {J} ad lib."
+        }
+      }
+    },
+    {
+      "id": "35",
+      "phrase": 8,
+      "label": "III enters",
+      "note": "II enters",
+      "parts": {
+        "2": {
+          "instruction": "Sweep forward and back across the phrase in graceful motions. Sometimes do a single word, sometimes multiple words, sometimes the whole phrase. Speed up, slow down, and change pitches with {J} ad lib."
+        }
+      }
+    },
+    {
+      "id": "36",
+      "phrase": 8,
+      "label": "IV enters",
+      "parts": {
+        "4": {
+          "instruction": "Hold {A} to scan through phrase slowly. When you get to the final 'l' in 'still', hold spacebar to keep sounding until cued to diminuendo."
+        }
+      }
+    },
+     {
+      "id": "37",
+      "phrase": 8,
+      "label": "stay still slowing down",
+      "note": "cue when IV is approaching 'stay'",
+      "parts": {
+        "1": {
+          "instruction": "Slow down your graceful sweeps, and only sweep along the words 'stay still.'"
+        },
+        "2": {
+          "instruction": "Slow down your graceful sweeps, and only sweep along the words 'stay still.'"
+        },
+        "3": {
+          "instruction": "Slow down your graceful sweeps, and only sweep along the words 'stay still.'"
+        }
+      }
+    },
+     {
+      "id": "38",
+      "phrase": 8,
+      "label": "last still",
+      "parts": {
+        "1": {
+          "instruction": "Stop changing notes. Slowly sweep forward through 'still' once more, and when you get to the final 'l' in 'still,' hold spacebar to keep sounding until cued."
+        },
+        "2": {
+          "instruction": "Stop changing notes. Slowly sweep forward through 'still' once more, and when you get to the final 'l' in 'still,' hold spacebar to keep sounding until cued."
+        },
+        "3": {
+          "instruction": "Stop changing notes. Slowly sweep forward through 'still' once more, and when you get to the final 'l' in 'still,' hold spacebar to keep sounding until cued."
+        }
+      }
+    },
+    {
+      "id": "39",
+      "phrase": 8,
+      "label": "dim al niente",
+      "stage": {
+        "tracts": false,
+        "text": "",
+        "fade": 8
+      },
+      "parts": {
+        "1": {
+          "instruction": "Press {↓} to fade to silence."
+        },
+        "2": {
+          "instruction": "Press {↓} to fade to silence."
+        },
+         "3": {
+          "instruction": "Press {↓} to fade to silence."
+        },
+         "4": {
+          "instruction": "Press {↓} to fade to silence."
+        }
+      }
+    }
+  ]
+}

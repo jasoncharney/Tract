@@ -12,7 +12,7 @@
   player is playing, not an impression of it.
 */
 
-const BUILD = "2026-09-18d";
+const BUILD = "2026-10-11a";
 const $ = (id) => document.getElementById(id);
 
 /* ---- upstream's numbers, so the shape is the shape ---- */
@@ -66,7 +66,28 @@ function connectWS() {
 setInterval(() => send("/stage/hello", [BUILD]), 2000);
 
 function take(message) {
-  if (!message || message.address !== "/tract/frame") return;
+  if (!message) return;
+  if (message.address === "/stage/set") {
+    let block;
+    try {
+      block = JSON.parse(String((message.args || [])[0]));
+    } catch (e) {
+      return;
+    }
+    applyStage(block); // repeating a state it is already in is a no-op
+    return;
+  }
+  // players still announce their phrase; the wall no longer reads anything
+  // into it, but the debug overlay shows it
+  if (message.address === "/tract/phrase") {
+    const args = message.args || [];
+    const machine = String(args[1] || "?");
+    const info = players.get(machine);
+    const phrase = { n: Number(args[2]) || 0, text: String(args[3] || "") };
+    if (info) info.phrase = phrase;
+    return;
+  }
+  if (message.address !== "/tract/frame") return;
   const args = message.args || [];
   const machine = String(args[1] || args[0] || "?");
   let frame;
@@ -82,9 +103,139 @@ function take(message) {
     known.part = String(args[0]);
     known.frame = frame;
   } else {
-    players.set(machine, { part: String(args[0]), at: performance.now(), frame, tile: null });
+    players.set(machine, {
+      part: String(args[0]),
+      at: performance.now(),
+      frame,
+      tile: null,
+      phrase: null,
+    });
     layout();
   }
+}
+
+/* ================================================================ *
+ *  what the wall is doing, and when
+ *
+ *  All of it comes from the cue sheet now. A cue in cues.json may carry a
+ *  "stage" block beside its "parts" block:
+ *
+ *      "stage": {
+ *        "title":  { "main": "Tract", "sub": "…", "by": "…" },  // or a string,
+ *                                                              // or false to hide
+ *        "tracts": true,            // fade the wall of tracts in, or out
+ *        "text":   "words strain",  // the subtitle; "" clears it
+ *        "fade":   2                // seconds, for everything in this block
+ *      }
+ *
+ *  Every key is optional: a block that only says `"text"` changes only the
+ *  words. Nothing here watches the players any more — the wall used to take a
+ *  majority vote of everyone's current phrase, which meant the words changed
+ *  when enough laptops happened to agree rather than when the conductor said
+ *  so. `?subtitles=0` still silences the words for a run.
+ * ================================================================ */
+
+const SUBTITLES = new URLSearchParams(location.search).get("subtitles") !== "0";
+let showing = "";
+
+/**
+ * What is actually in force, so that repeating a block is a no-op.
+ *
+ * The conductor sends the standing state on every heartbeat, which is how a
+ * projector plugged in halfway through catches up. That only works if applying
+ * the same state twice does nothing — otherwise every heartbeat would restart
+ * the fades. So each key is compared against what is already showing, and only
+ * the ones that differ are touched.
+ */
+const current = { title: undefined, tracts: undefined, text: undefined };
+
+/** the three lines of the card, from a string or an object.
+ *  `true` means "show it exactly as it is" — the conductor's button sends that,
+ *  so putting the card back up does not need to restate its words. */
+function setTitleText(title) {
+  if (title === true) return;
+  if (typeof title === "string") {
+    $("titleMain").textContent = title;
+    return;
+  }
+  if (!title || typeof title !== "object") return;
+  if ("main" in title) $("titleMain").textContent = String(title.main);
+  if ("sub" in title) $("titleSub").textContent = String(title.sub);
+  if ("by" in title) $("titleBy").textContent = String(title.by);
+}
+
+function applyStage(block) {
+  if (!block || typeof block !== "object") return;
+  const card = $("titleCard");
+  const wall = $("wall");
+  const seconds = Math.max(0, Math.min(30, Number(block.fade ?? 2)));
+
+  // work out what is actually changing before touching anything
+  const wantTitle =
+    "title" in block
+      ? block.title === false || block.title === null || block.title === ""
+        ? null // away
+        : block.title // an object, a string, or `true` for "as it is"
+      : undefined;
+  const wantTracts = "tracts" in block ? !!block.tracts : undefined;
+  const wantText = "text" in block ? String(block.text ?? "") : undefined;
+
+  const titleChanged =
+    wantTitle !== undefined && JSON.stringify(wantTitle) !== JSON.stringify(current.title);
+  const tractsChanged = wantTracts !== undefined && wantTracts !== current.tracts;
+  const textChanged = wantText !== undefined && wantText !== current.text;
+  if (!titleChanged && !tractsChanged && !textChanged) return;
+
+  document.documentElement.style.setProperty("--card-fade", `${seconds}s`);
+  document.documentElement.style.setProperty("--wall-fade", `${seconds}s`);
+
+  let hidingCard = false;
+  if (titleChanged) {
+    current.title = wantTitle;
+    if (wantTitle === null) {
+      hidingCard = !card.classList.contains("gone");
+      card.classList.add("gone");
+    } else {
+      setTitleText(wantTitle);
+      card.classList.remove("gone");
+    }
+  }
+
+  if (tractsChanged) {
+    current.tracts = wantTracts;
+    // "fade to background, THEN bring the tracts up" — so when one cue does
+    // both, the wall waits for the card to be gone rather than crossing it
+    const light = () => wall.classList.toggle("lit", wantTracts);
+    if (hidingCard && wantTracts) setTimeout(light, seconds * 1000);
+    else light();
+  }
+
+  if (textChanged) {
+    current.text = wantText;
+    setSubtitle(wantText);
+  }
+  layout(); // the hint follows whether the card is up
+}
+
+/** the words along the bottom, and the strip of wall they cost */
+function setSubtitle(text) {
+  const el = $("subtitle");
+  if (!el || !SUBTITLES) return;
+  const next = text || "";
+  if (next === showing) return;
+  showing = next;
+  // the wall gives up a strip for the words rather than drawing behind them
+  document.documentElement.style.setProperty("--subs", next ? "11vh" : "0px");
+  layout();
+  // out, swap, in — so the words change with a breath rather than a jump cut
+  el.classList.add("gone");
+  setTimeout(
+    () => {
+      el.textContent = next;
+      el.classList.toggle("gone", !next);
+    },
+    next ? 260 : 0
+  );
 }
 
 /** drop anyone who has gone quiet, and keep the drawing order stable */
@@ -135,7 +286,10 @@ function layout() {
     return pa - pb || (a < b ? -1 : 1); // by part, then stable by id
   });
   const hint = $("hint");
-  if (hint) hint.classList.toggle("gone", order.length > 0);
+  // the hint is for an empty screen: not while the title card is up, and not
+  // once there is something to look at
+  const cardUp = !$("titleCard").classList.contains("gone");
+  if (hint) hint.classList.toggle("gone", order.length > 0 || cardUp);
   if (!order.length) return;
 
   const width = wall.clientWidth;

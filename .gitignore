@@ -4,3 +4,7 @@ edge-impulse-standalone.wasm
 node_modules
 package.json
 yarn.lock
+
+# the room certificate: regenerated per network, and the key never travels
+scan/tract-cert.pem
+scan/tract-key.pem
