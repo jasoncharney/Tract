@@ -12,7 +12,7 @@
   player is playing, not an impression of it.
 */
 
-const BUILD = "2026-10-11a";
+const BUILD = "2026-10-15b";
 const $ = (id) => document.getElementById(id);
 
 /* ---- upstream's numbers, so the shape is the shape ---- */
@@ -225,7 +225,9 @@ function setSubtitle(text) {
   if (next === showing) return;
   showing = next;
   // the wall gives up a strip for the words rather than drawing behind them
-  document.documentElement.style.setProperty("--subs", next ? "11vh" : "0px");
+  // 6vh of type on 1.2 lines, plus the 2.6vh it sits off the floor and a
+  // little air above: enough that a second line has somewhere to go
+  document.documentElement.style.setProperty("--subs", next ? "15vh" : "0px");
   layout();
   // out, swap, in — so the words change with a breath rather than a jump cut
   el.classList.add("gone");
@@ -278,6 +280,136 @@ function bestGrid(count, width, height) {
   return best;
 }
 
+/* ================================================================ *
+ *  the ring
+ *
+ *  The grid is the safe shape — it gives every drawing the most room there
+ *  is. The ring trades some of that for an arrangement that reads as an
+ *  ensemble rather than a contact sheet, which for an odd number is often the
+ *  better picture: nine in a grid is three tidy rows, nine in a ring is nine
+ *  voices around a space.
+ *
+ *  It is an ellipse, not a circle, because a circle inscribed in a 16:9 wall
+ *  throws away everything to the left and right of it. The tile size is found
+ *  by relaxation rather than by trigonometry: place them, measure the closest
+ *  pair, shrink to fit, repeat. Trigonometry would do for a true circle, but
+ *  on an ellipse the tightest neighbours are not evenly spaced, and this way
+ *  the same code is correct at any count and any shape of screen.
+ * ================================================================ */
+
+/** the centres for a given tile size — bigger tiles mean a tighter ellipse */
+function ringCentres(count, width, height, s) {
+  const rx = Math.max(1, (width - s) / 2);
+  const ry = Math.max(1, (height - s) / 2);
+  const out = [];
+  for (let i = 0; i < count; i++) {
+    // from the top, clockwise, so part I is where a listener looks first
+    const a = -Math.PI / 2 + (2 * Math.PI * i) / count;
+    out.push({ cx: width / 2 + rx * Math.cos(a), cy: height / 2 + ry * Math.sin(a) });
+  }
+  return out;
+}
+
+/**
+ * Can tiles this big sit on the ring without touching?
+ *
+ * Two axis-aligned squares of side s miss each other when they are clear on
+ * EITHER axis — side by side is fine, stacked is fine, and only both at once
+ * is an overlap. The obvious test, "keep the centres s apart", is the wrong
+ * one: it is too weak on the diagonal, where two squares s apart do overlap,
+ * and much too strong everywhere else, which is why a first pass at this put
+ * nine players in 146px boxes on a 1600x760 wall when they had room
+ * for 191.
+ *
+ * Every pair, not just neighbours: on a wide ellipse the closest pair is not
+ * always the next one round.
+ */
+function ringFits(count, width, height, s) {
+  const c = ringCentres(count, width, height, s);
+  for (let i = 0; i < count; i++) {
+    for (let j = i + 1; j < count; j++) {
+      const dx = Math.abs(c[i].cx - c[j].cx);
+      const dy = Math.abs(c[i].cy - c[j].cy);
+      if (Math.max(dx, dy) < s) return false;
+    }
+  }
+  return true;
+}
+
+function placeRing(count, width, height) {
+  if (count === 1) {
+    const s = Math.min(width, height) * 0.82;
+    return [{ x: (width - s) / 2, y: (height - s) / 2, w: s, h: s }];
+  }
+  // Making the tiles bigger also pulls the ellipse inwards, so "does it fit"
+  // only ever goes from true to false as s grows — which is exactly what
+  // bisection needs. Thirty halvings settle it to well under a pixel, and
+  // unlike iterating towards a fixed point it cannot oscillate.
+  let lo = 8;
+  let hi = Math.min(width, height) * 0.9;
+  for (let pass = 0; pass < 30; pass++) {
+    const mid = (lo + hi) / 2;
+    if (ringFits(count, width, height, mid)) lo = mid;
+    else hi = mid;
+  }
+  const s = lo;
+  return ringCentres(count, width, height, s).map((p) => ({
+    x: p.cx - s / 2,
+    y: p.cy - s / 2,
+    w: s,
+    h: s,
+  }));
+}
+
+/** the grid: whichever column count wastes the least of the wall */
+function placeGrid(count, width, height) {
+  const { cols } = bestGrid(count, width, height);
+  const rows = Math.ceil(count / cols);
+  const cellW = width / cols;
+  const cellH = height / rows;
+  const out = [];
+  for (let index = 0; index < count; index++) {
+    const col = index % cols;
+    const row = Math.floor(index / cols);
+    // the last row is centred if it is short, so a five-player grid is not
+    // left-heavy on a wall
+    const inRow = Math.min(cols, count - row * cols);
+    const indent = ((cols - inRow) * cellW) / 2;
+    out.push({ x: indent + col * cellW, y: row * cellH, w: cellW, h: cellH });
+  }
+  return out;
+}
+
+const LAYOUTS = ["grid", "ring"];
+let layoutMode = (() => {
+  const asked = new URLSearchParams(location.search).get("layout");
+  if (LAYOUTS.includes(asked)) return asked;
+  try {
+    const kept = localStorage.getItem("tract.stagelayout");
+    if (LAYOUTS.includes(kept)) return kept;
+  } catch (e) {}
+  return "grid";
+})();
+
+function setLayout(mode) {
+  if (!LAYOUTS.includes(mode)) return;
+  layoutMode = mode;
+  try {
+    localStorage.setItem("tract.stagelayout", mode);
+  } catch (e) {}
+  layout();
+  paintWho();
+}
+
+/* L cycles it, so the shape can be settled in the room with the real number of
+ * players on the wall rather than guessed at beforehand. */
+document.addEventListener("keydown", (event) => {
+  if (event.key === "l" || event.key === "L") {
+    setLayout(LAYOUTS[(LAYOUTS.indexOf(layoutMode) + 1) % LAYOUTS.length]);
+    stirCursor();
+  }
+});
+
 function layout() {
   const wall = $("wall");
   order = [...players.keys()].sort((a, b) => {
@@ -294,9 +426,10 @@ function layout() {
 
   const width = wall.clientWidth;
   const height = wall.clientHeight;
-  const { cols, rows } = bestGrid(order.length, width, height);
-  const cellW = width / cols;
-  const cellH = height / rows;
+  const spots =
+    layoutMode === "ring"
+      ? placeRing(order.length, width, height)
+      : placeGrid(order.length, width, height);
 
   order.forEach((machine, index) => {
     const info = players.get(machine);
@@ -309,22 +442,16 @@ function layout() {
       info.tile = tile;
       info.canvas = canvas;
     }
-    const col = index % cols;
-    const row = Math.floor(index / cols);
-    // the last row is centred if it is short, so a five-player grid is not
-    // left-heavy on a wall
-    const inRow = Math.min(cols, order.length - row * cols);
-    const indent = ((cols - inRow) * cellW) / 2;
-    const x = indent + col * cellW;
-    const y = row * cellH;
-    info.tile.style.left = `${Math.round(x)}px`;
-    info.tile.style.top = `${Math.round(y)}px`;
-    info.tile.style.width = `${Math.round(cellW)}px`;
-    info.tile.style.height = `${Math.round(cellH)}px`;
+    const spot = spots[index];
+    info.tile.style.left = `${Math.round(spot.x)}px`;
+    info.tile.style.top = `${Math.round(spot.y)}px`;
+    info.tile.style.width = `${Math.round(spot.w)}px`;
+    info.tile.style.height = `${Math.round(spot.h)}px`;
     const dpr = Math.min(2, window.devicePixelRatio || 1);
-    info.canvas.width = Math.round(cellW * dpr);
-    info.canvas.height = Math.round(cellH * dpr);
+    info.canvas.width = Math.round(spot.w * dpr);
+    info.canvas.height = Math.round(spot.h * dpr);
   });
+  paintWho();
 }
 
 window.addEventListener("resize", layout);
@@ -475,20 +602,117 @@ function drawTract(ctx, canvas, info, time) {
     ctx.stroke();
     ctx.globalAlpha = 1;
   }
+
+  drawPhoneme(ctx, canvas, info, { fit, box, voiced });
+}
+
+/**
+ * The phoneme being spoken, written in the crook of the throat.
+ *
+ * In slashes, because that is what the notation means: /ɑ/ is a sound, "ah"
+ * is a spelling, and the whole piece is about the difference. It also stops a
+ * one-letter phoneme reading as a word or an initial.
+ *
+ * Where it goes is derived rather than eyeballed. Every point of the shape
+ * sits on an arc about PT.origin, so the origin IS the middle of the hollow —
+ * the concave side of the bend, by construction, at any width the tract
+ * takes. The band only ever lies between radius PT.radius and
+ * PT.radius - PT.scale*d, so the centre is the one place it can never reach.
+ * The small push outward along the middle of the sweep is for the widest
+ * vowels, where the inner edge comes closest to the centre.
+ */
+/* How far into the pocket to sit, as a fraction of the room there is. At the
+ * centre the type is safest but reads as floating near the corner of the tile
+ * rather than tucked into the bend; this walks it back toward the curve and
+ * leaves the rest of the gap as clearance. */
+const CROOK_IN = 0.42;
+
+function drawPhoneme(ctx, canvas, info, { fit, box, voiced }) {
+  const frame = info.frame;
+  const ipa = String(frame.p || "");
+  if (!ipa) return;
+  const length = frame.d.length;
+  const lip = frame.lip || length - 5;
+  const mouth = Math.min(length - 1, lip);
+  const midIndex = Math.round((1 + mouth) / 2);
+  const mid = angleAt(midIndex, lip);
+  // The band lies between PT.radius and PT.radius - PT.scale*d, measured from
+  // the origin, so the room in the pocket along this ray is the inner radius
+  // right here — which shrinks as the vowel opens. Taking a fixed fraction of
+  // it means a wide open /ɑ/ keeps the same proportion of clearance that a
+  // closed stop does, instead of the type drifting into the pink.
+  // Eased, like the fit box above and for the same reason: the tongue moves
+  // every frame, so an anchor read straight off this frame's width would make
+  // the label twitch and resize continuously through a sweep. It drifts to
+  // where the shape is going instead.
+  const want = Math.max(40, PT.radius - PT.scale * (frame.d[midIndex] || 0));
+  info.room = info.room === undefined ? want : info.room + (want - info.room) * 0.06;
+  const room = info.room;
+  const px = PT.origin.x - CROOK_IN * room * Math.cos(mid);
+  const py = PT.origin.y - CROOK_IN * room * Math.sin(mid);
+
+  // out of the shape's coordinates and into the canvas's, so the type is drawn
+  // at a real pixel size rather than scaled up from a 600x500 drawing
+  const ox = (canvas.width - box.w * fit) / 2 - box.x * fit;
+  const oy = (canvas.height - box.h * fit) / 2 - box.y * fit;
+  const x = px * fit + ox;
+  const y = py * fit + oy;
+
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  // and the type gives way if the pocket is ever tight: the clearance left
+  // along the ray caps how big it is allowed to be. Measured across all 112
+  // cells of all eight phrases, the middle of the tract never passes d = 1.30,
+  // which leaves room ≈ 220 and never triggers this — it is a guard against a
+  // shape the piece does not currently make, not something you will see.
+  const clear = (1 - CROOK_IN) * room * fit;
+  const size = Math.max(11, Math.min(Math.min(canvas.width, canvas.height) * 0.17, clear * 0.78));
+  ctx.font = `${size}px ${css("--ipa-font") || "Gentium Plus, Charis SIL, Doulos SIL, serif"}`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  const text = `/${ipa}/`;
+  // a breath of background behind it, so it holds up over the pink if a wide
+  // vowel ever swings close
+  ctx.lineWidth = Math.max(2, size * 0.14);
+  ctx.strokeStyle = css("--bg");
+  ctx.globalAlpha = 0.85;
+  ctx.strokeText(text, x, y);
+  ctx.globalAlpha = voiced ? 1 : 0.55;
+  ctx.fillStyle = css("--ipa") || css("--edge");
+  ctx.fillText(text, x, y);
+  ctx.globalAlpha = 1;
 }
 
 const DEBUG = new URLSearchParams(location.search).get("debug") === "1";
 
+/**
+ * Who is actually feeding this wall.
+ *
+ * "I can see eight and I have nine players" has two quite different causes —
+ * the wall could not place the ninth, or the ninth never reached the wall —
+ * and from the back of a room they look identical. So the count is always
+ * available and never in the way: it appears when the mouse moves and goes
+ * with the cursor a couple of seconds later, which during a performance means
+ * never. `?debug=1` pins it open and lists every machine.
+ */
 function paintWho() {
   const el = $("who");
   if (!el) return;
-  el.hidden = !DEBUG;
-  if (!DEBUG) return;
+  const hushed = document.body.classList.contains("hushed");
+  el.hidden = !DEBUG && hushed;
+  if (el.hidden) return;
+  const count = order.length;
+  const head = `${count} ${count === 1 ? "player" : "players"} · ${layoutMode}${
+    count ? "" : " · nobody feeding this wall"
+  }`;
+  if (!DEBUG) {
+    el.textContent = `${head}\nL changes the layout`;
+    return;
+  }
   const rows = order.map((machine) => {
     const info = players.get(machine);
-    return `part ${info.part}  ${machine}  ${Math.round(performance.now() - info.at)} ms`;
+    return `  part ${info.part}  ${machine}  ${Math.round(performance.now() - info.at)} ms`;
   });
-  el.textContent = rows.length ? rows.join("\n") : "nobody feeding";
+  el.textContent = [head, ...rows].join("\n");
 }
 setInterval(paintWho, 500);
 
@@ -525,19 +749,43 @@ let hush = null;
 function stirCursor() {
   document.body.classList.remove("hushed");
   clearTimeout(hush);
-  hush = setTimeout(() => document.body.classList.add("hushed"), 2500);
+  hush = setTimeout(() => {
+    document.body.classList.add("hushed");
+    paintWho(); // and the count goes with the cursor, in the same breath
+  }, 2500);
+  paintWho(); // not on the next half-second tick: you moved the mouse to look
 }
 document.addEventListener("mousemove", stirCursor);
 stirCursor();
 
 window.stage = {
   BUILD,
+  take, // the wire's entry point, so a test can fill the wall without 9 laptops
+  setLayout,
+  drawTract, // so a test can measure where the type lands, in pixels
+  placeRing,
+  placeGrid,
+  get layout_mode() {
+    return layoutMode;
+  },
   get players() {
     return [...players.entries()].map(([machine, info]) => ({
       machine,
       part: info.part,
       sections: info.frame ? info.frame.d.length : 0,
       age: Math.round(performance.now() - info.at),
+    }));
+  },
+  /* what each player is actually sending, for checking a feed at soundcheck */
+  get frames() {
+    return [...players.entries()].map(([machine, info]) => ({
+      machine,
+      part: info.part,
+      phoneme: info.frame ? info.frame.p : undefined,
+      widest: info.frame ? Math.max(...info.frame.d) : 0,
+      middle: info.frame
+        ? info.frame.d[Math.round((1 + Math.min(info.frame.d.length - 1, info.frame.lip || 39)) / 2)]
+        : 0,
     }));
   },
   get grid() {

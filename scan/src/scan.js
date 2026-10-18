@@ -9,7 +9,7 @@ import { loadPatchedPinkTrombone } from "./patched-pink-trombone.js";
 
 /** bump alongside the ?v= in index.html; printed on load so there is never a
  *  question about which build a browser is actually running */
-const BUILD = "2026-10-11a";
+const BUILD = "2026-10-15b";
 
 const $ = (id) => document.getElementById(id);
 const strip = $("strip");
@@ -102,22 +102,23 @@ function allowedNotes() {
  *  apart. A cell's own width scales it: a narrow pass-through stop takes
  *  half as long as a vowel, a word gap about two thirds.
  * ----------------------------------------------------------------- */
-/* Seconds per phoneme while a scan key is held down. Slow is deliberately
- * glacial: A is a sweep the player ends by letting go, and three to five
- * seconds on one vowel is a held tone you steer, not a word. */
+/* Seconds per phoneme while a scan key is held down. Slow is a sweep the
+ * player ends by letting go, so it can afford to sit on a vowel — but a whole
+ * pass of a phrase is this times its phoneme count, and that is how long the
+ * opening of the piece takes. midi/make-midi.js reads these numbers straight
+ * out of this file, so a change here moves the sequenced run with it. */
 const RATES = {
-  slow: [3, 5], // A
+  slow: [1, 3], // A
   mid: [0.25, 0.75], // S
   fast: [0.1, 0.25], // D — near speaking tempo
 };
 
 /* W, E and R are not held — one press plays one word and there is no way to
- * let go of it early. They therefore cannot use the hold rates: at three to
- * five seconds a phoneme, one tap on W is eight to ten seconds of unstoppable
- * drone, and cue 11 asks Part IV for "a steady pulse... a small gap between
- * presses", which that cannot be. Mid and fast are unchanged — the score is
- * written around them, and they measure right — so only slow comes down, to a
- * word you can pulse rather than a word you are stuck inside. */
+ * let go of it early, so they cannot share the hold rates: whatever "slow"
+ * costs per phoneme, a one-shot pays all of it with no way out, and cue 11
+ * asks Part IV for "a steady pulse... a small gap between presses". Mid and
+ * fast match the hold rates because the score is written around them and they
+ * measure right; only slow is held down to a word you can pulse. */
 const SHOT_RATES = {
   slow: [0.8, 1.6], // W — "CRACK" in 1.6 to 3.2 s
   mid: [0.25, 0.75], // E
@@ -1438,31 +1439,238 @@ function connectMax() {
   bind("gain", "/scan/gain");
 }
 
-/* ---- Web MIDI ---- */
+/* ================================================================ *
+ *  Web MIDI — this laptop as one track in a sequencer
+ *
+ *  A conductor working out how long a phrase should run cannot do it by
+ *  pressing keys on eight laptops at once. So the bottom two octaves of the
+ *  MIDI keyboard are wired to the keys a player presses, one note per key, and
+ *  a DAW track can perform this part: note on is the key going down, note off
+ *  is it coming up, so a held A is a long note and a tap of R is a short one.
+ *
+ *  Anything from C1 up is left alone and still sets the pitch, which is what
+ *  this handler did before and what a keyboard plugged in by hand expects.
+ *
+ *  `?midich=3` makes this window listen to channel 3 only, so eight windows on
+ *  eight channels are eight players. Without it a window answers everything,
+ *  which is what you want with one laptop and one keyboard.
+ * ================================================================ */
+
+/* Note numbers below the piece's own range — the written pitches live between
+ * E3 and A4, and the drawn piano starts at C1 (24). */
+const MIDI_KEYS = {
+  0: { key: "a", hold: true }, //  C-1  scan, slow
+  1: { key: "s", hold: true }, //       scan, middle
+  2: { key: "d", hold: true }, //       scan, fast
+  3: { key: "w" }, //                   one word, slow
+  4: { key: "e" }, //                   one word, middle
+  5: { key: "r" }, //                   one word, fast
+  6: { key: "q", hold: true }, //       a voiced phoneme
+  7: { key: "t", hold: true }, //       a noisy one
+  8: { key: "z" }, //                   whisper on / off
+  9: { key: "space", hold: true }, //   the damper pedal
+  10: { key: "fade" }, //               the diminuendo
+  11: { key: "stop" }, //               esc — stop everything
+  12: { key: "j" }, //                  change pitch
+  // The mouse on the strip. Hold this note for "button down" and draw CC1 for
+  // where the mouse is, and a sweep becomes a curve you can see and drag.
+  13: { key: "gate", hold: true }, //   sweep / hold the strip
+  15: { key: "phrase", phrase: STANDBY }, //  standby
+  16: { key: "phrase", phrase: 0 }, //  C0   phrase 1
+  17: { key: "phrase", phrase: 1 },
+  18: { key: "phrase", phrase: 2 },
+  19: { key: "phrase", phrase: 3 },
+  20: { key: "phrase", phrase: 4 },
+  21: { key: "phrase", phrase: 5 },
+  22: { key: "phrase", phrase: 6 },
+  23: { key: "phrase", phrase: 7 }, // B0   phrase 8
+};
+const MIDI_PITCH_FROM = 24; // C1 and up: the old behaviour, a pitch keyboard
+const MIDI_PHRASE_CC = 20; // where the piece is, as a chaseable controller
+
+/**
+ * MIDI is a development mode, not a feature of the piece.
+ *
+ * A player who opens the address they were given sees nothing about MIDI at
+ * all: no pill, no picker, and the page never asks the browser for access, so
+ * no permission prompt either. Adding `?midi` to the address turns the whole
+ * thing on, and then the channel is chosen in the same panel as the part and
+ * the name — which is also where it is remembered, so a window reopened on
+ * the same laptop comes back on the same channel. `?midich=3` is the shortcut
+ * that both turns it on and preselects the channel, which is what the
+ * generator prints.
+ */
+const MIDI_MODE = SEARCH.has("midi") || SEARCH.has("midich");
+const MIDI_STORE = "tract.midich";
+
+let midiChannel = (() => {
+  if (!MIDI_MODE) return null;
+  const asked = Number(SEARCH.get("midich"));
+  if (asked >= 1 && asked <= 16) return asked;
+  try {
+    const kept = Number(localStorage.getItem(MIDI_STORE));
+    if (kept >= 1 && kept <= 16) return kept;
+  } catch (e) {}
+  return null; // in MIDI mode with no channel chosen yet: listen to all of them
+})();
+
+function setMidiChannel(value) {
+  const n = Number(value);
+  midiChannel = n >= 1 && n <= 16 ? n : null;
+  try {
+    if (midiChannel === null) localStorage.removeItem(MIDI_STORE);
+    else localStorage.setItem(MIDI_STORE, String(midiChannel));
+  } catch (e) {}
+  paintMidiPill();
+}
+
+/**
+ * Go to a phrase, but only if we are not already on it.
+ *
+ * This is what makes the sequencer's phrase track safe to repeat. A phrase
+ * note is held for the whole length of its phrase so you can see and drag it
+ * in the piano roll, and the same phrase arrives again on CC20 every time the
+ * transport is moved — so "go to phrase 5" has to mean "be on phrase 5", not
+ * "start phrase 5 over". Without this guard, locating during a phrase would
+ * stop a running scan and re-apply its preset underneath the player, and
+ * landing on standby would rebuild the engine each time.
+ */
+function goToPhrase(target) {
+  if (target === phraseIndex) return;
+  setPhrase(target);
+}
+
+/**
+ * One note, pressed or released. Held keys follow the note's length; the rest
+ * fire on the way down and ignore the way up, exactly as the keyboard does.
+ */
+async function midiKey(note, on) {
+  const map = MIDI_KEYS[note];
+  if (!map) return;
+  if (!ctx && on) await enableAudio();
+  switch (map.key) {
+    case "a":
+    case "s":
+    case "d":
+      if (on) startScan({ a: "slow", s: "mid", d: "fast" }[map.key], map.key);
+      else stopScan(map.key);
+      break;
+    case "w":
+    case "e":
+    case "r":
+      if (on) startWord({ w: "slow", e: "mid", r: "fast" }[map.key]);
+      break;
+    case "q":
+      if (on) {
+        startRandomPhoneme();
+        heldShot = "q";
+      } else releaseShot("q");
+      break;
+    case "t":
+      if (on) {
+        startPercussion();
+        heldShot = "t";
+      } else releaseShot("t");
+      break;
+    case "z":
+      if (on) toggleWhisper();
+      break;
+    case "space":
+      if (on) pressPedal();
+      else liftPedal();
+      break;
+    case "fade":
+      if (on) startFade();
+      break;
+    case "stop":
+      if (on) {
+        cancelFade();
+        stopTransport();
+      }
+      break;
+    case "j":
+      if (on) rerollChoice();
+      break;
+    case "gate":
+      // explicit, so a CC1 sweep cannot leave the gate open behind it: the
+      // note's own length is the mouse button
+      applyRemote("/scan/gate", [on ? 1 : 0]);
+      break;
+    case "phrase":
+      if (on) goToPhrase(map.phrase);
+      break;
+    default:
+      break;
+  }
+}
+
+/** one message off the wire. Exposed, so a test can play this page a part. */
+function handleMIDI(data) {
+  const [status, d1, d2] = data;
+  const kind = status & 0xf0;
+  // channels are 0-15 on the wire and 1-16 everywhere a person reads them
+  if (midiChannel !== null && (status & 0x0f) + 1 !== midiChannel) return;
+  const down = kind === 0x90 && d2 > 0;
+  const up = kind === 0x80 || (kind === 0x90 && d2 === 0);
+  if ((down || up) && d1 < MIDI_PITCH_FROM) {
+    midiKey(d1, down);
+    return;
+  }
+  if (down) {
+    applyRemote("/scan/note", [d1]);
+    applyRemote("/scan/gate", [1]);
+  } else if (up) {
+    applyRemote("/scan/gate", [0]);
+  } else if (kind === 0xe0) {
+    const bend = ((d2 << 7) | d1) / 8192 - 1;
+    applyRemote("/scan/bend", [bend * 2]);
+  } else if (kind === 0xb0 && d1 === 1) {
+    applyRemote("/scan/norm", [d2 / 127]);
+  } else if (kind === 0xb0 && d1 === MIDI_PHRASE_CC) {
+    // Where the piece is, as a value rather than an event — 0 is standby,
+    // 1-8 the phrases. A DAW re-sends the last controller value whenever you
+    // move the playhead, which a note that already started does not do in
+    // every host. So this is the one that survives skipping around: drop the
+    // playhead into the middle of phrase 5 and the window arrives at phrase 5
+    // on its own. It is idempotent, so it costs nothing when nothing moved.
+    goToPhrase(d2 === 0 ? STANDBY : Math.max(0, Math.min(7, d2 - 1)));
+  }
+}
 
 async function connectMIDI() {
   if (!navigator.requestMIDIAccess) return "no Web MIDI in this browser";
-  const access = await navigator.requestMIDIAccess();
+  let access;
+  try {
+    access = await navigator.requestMIDIAccess();
+  } catch (e) {
+    // the browser asks the player, and they can say no. That is an answer,
+    // not a crash: the window still works, it is just not being sequenced.
+    paintMidiPill();
+    return `MIDI: not allowed in this window — ${e.message}`;
+  }
   const names = [];
   access.inputs.forEach((input) => {
     names.push(input.name);
-    input.onmidimessage = ({ data }) => {
-      const [status, d1, d2] = data;
-      const kind = status & 0xf0;
-      if (kind === 0x90 && d2 > 0) {
-        applyRemote("/scan/note", [d1]);
-        applyRemote("/scan/gate", [1]);
-      } else if (kind === 0x80 || (kind === 0x90 && d2 === 0)) {
-        applyRemote("/scan/gate", [0]);
-      } else if (kind === 0xe0) {
-        const bend = ((d2 << 7) | d1) / 8192 - 1;
-        applyRemote("/scan/bend", [bend * 2]);
-      } else if (kind === 0xb0 && d1 === 1) {
-        applyRemote("/scan/norm", [d2 / 127]);
-      }
-    };
+    input.onmidimessage = ({ data }) => handleMIDI(data);
   });
-  return names.length ? `MIDI: ${names.join(", ")}` : "MIDI: no inputs";
+  midiOn = names.length > 0;
+  paintMidiPill();
+  const where = midiChannel === null ? "all channels" : `channel ${midiChannel}`;
+  return names.length ? `MIDI: ${names.join(", ")} · ${where}` : "MIDI: no inputs";
+}
+
+let midiOn = false;
+
+function paintMidiPill() {
+  const pill = $("midiPill");
+  if (!pill) return;
+  pill.hidden = !MIDI_MODE; // a performer's window never shows this
+  const ch = midiChannel === null ? "all" : midiChannel;
+  pill.textContent = midiOn ? `midi: ch ${ch}` : `midi: ch ${ch} — not connected`;
+  pill.className = midiOn ? "pill on" : "pill warn";
+  pill.title = midiOn
+    ? "This window is being played by a sequencer. The bottom two octaves are the player's keys; C1 and up set the pitch."
+    : "This window was opened with ?midich= but no MIDI input is connected yet.";
 }
 
 /* ================================================================ *
@@ -2455,6 +2663,28 @@ function wireNameChip() {
   edit.addEventListener("blur", () => close(true));
 }
 
+/**
+ * The channel picker, in the same panel as the part and the name.
+ *
+ * It is built only in a ?midi window. In a performer's window the row stays
+ * hidden and empty, so there is nothing to see and nothing to click by
+ * accident on the one panel everybody does have to touch.
+ */
+function fillMidiPicker() {
+  const row = $("modalMidi");
+  const sel = $("midiSel");
+  if (!row || !sel) return;
+  row.hidden = !MIDI_MODE;
+  if (!MIDI_MODE || sel.options.length) {
+    if (sel.options.length) sel.value = String(midiChannel === null ? 0 : midiChannel);
+    return;
+  }
+  sel.appendChild(new Option("all channels", "0"));
+  for (let n = 1; n <= 16; n++) sel.appendChild(new Option(`channel ${n}`, String(n)));
+  sel.value = String(midiChannel === null ? 0 : midiChannel);
+  sel.addEventListener("input", () => setMidiChannel(Number(sel.value)));
+}
+
 /** on opening the page a player must say which part they are on */
 function openPartModal() {
   const modal = $("partModal");
@@ -2462,6 +2692,7 @@ function openPartModal() {
   const nameField = $("nameInput");
   if (!modal || !list) return;
   if (nameField) nameField.value = playerName;
+  fillMidiPicker();
   list.innerHTML = "";
   parts.forEach((p, i) => {
     const button = document.createElement("button");
@@ -2948,6 +3179,12 @@ function sendTractFrame() {
     /* a different shape upstream; the drawing just will not shimmer */
   }
   const p = part();
+  // the phoneme under the playhead, for the stage to write in the crook of the
+  // shape. A gap is sent as nothing at all rather than as its dot: an empty
+  // crook reads as a breath, where "/·/" reads as a symbol nobody can place.
+  const at = Math.max(0, Math.min(cells.length - 1, Math.floor(targetPos)));
+  const cell = cells[at];
+  const sounding = ready && voice && voice.gate > 0;
   sendOut("/tract/frame", [
     p.id,
     MACHINE,
@@ -2958,6 +3195,7 @@ function sendTractFrame() {
       i: Math.round((voice ? voice.gate : 0) * 100) / 100,
       v: whisperOn ? 0 : 1,
       f: Math.round(note * 10) / 10,
+      p: cell && cell.cls !== "silence" && sounding ? String(cell.ipa || "") : "",
     }),
   ]);
 }
@@ -3428,6 +3666,12 @@ window.scan = {
   collectRecording,
   stopRecordingAndDownload,
   connectMIDI,
+  handleMIDI,
+  MIDI_KEYS,
+  get midiChannel() {
+    return midiChannel;
+  },
+  setMidiChannel,
   get cells() {
     return cells;
   },
@@ -3813,6 +4057,14 @@ window.addEventListener("blur", () => {
   if (dictReady() || tries > 200) {
     loadName();
     wireNameChip();
+    // a window opened with ?midich= exists to be played by a sequencer, so it
+    // reaches for the MIDI input itself rather than waiting to be asked
+    paintMidiPill();
+    if (MIDI_MODE) {
+      connectMIDI()
+        .then((said) => console.log(said))
+        .catch((e) => console.log(`MIDI: ${e.message}`));
+    }
     Promise.all([loadParts(), loadPresets()]).then(() => {
       setPhrase(STANDBY, { announce: false }); // the page opens before the piece does
       const forced = SEARCH.get("part");

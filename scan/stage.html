@@ -27,6 +27,11 @@
         --bead: #4a1352;       /* loudness — dark, so it reads on the pink */
         --sub: #6b2b63;        /* the subtitles */
         --dim: #b98aa8;
+        --ipa: #4a1352;        /* the phoneme in the crook — the bead's dark */
+        /* IPA needs a face that actually has the glyphs. These ship with
+           macOS and Windows; the generic serif fallback draws a box for the
+           rarer symbols, which is a legible failure rather than a silent one. */
+        --ipa-font: "Gentium Plus", "Charis SIL", "Doulos SIL", "Lucida Grande", "Segoe UI", serif;
       }
       html[data-theme="dark"] {
         color-scheme: dark;
@@ -36,6 +41,8 @@
         --bead: #7ef7d8;       /* against a pink tract, not another pink */
         --sub: #efe6f2;
         --dim: #6b6478;
+        --ipa: #ffe9f4;
+        --ipa-font: "Gentium Plus", "Charis SIL", "Doulos SIL", "Lucida Grande", "Segoe UI", serif;
       }
       * { box-sizing: border-box; }
       [hidden] { display: none !important; }
@@ -144,12 +151,16 @@
         position: absolute;
         left: 0;
         right: 0;
-        bottom: 2.2vh;
+        bottom: 2.6vh;
         text-align: center;
         padding: 0 4vw;
         color: var(--sub);
-        font-size: clamp(22px, 4.2vh, 60px);
-        line-height: 1.25;
+        /* Read from the back of a room, not from a desk. The wall gives up a
+           strip for these (--subs, set in stage.js) and that strip is sized to
+           match — raising one without the other either crops the words or
+           steals height from the drawings for nothing. */
+        font-size: clamp(30px, 6vh, 86px);
+        line-height: 1.2;
         letter-spacing: 0.01em;
         text-shadow: 0 2px 18px var(--bg);
         transition: opacity 500ms linear;
@@ -188,6 +199,6 @@
       waiting for the conductor…<br />
       click for full screen
     </div> -->
-    <script type="module" src="/scan/src/stage.js?v=2026-09-20a"></script>
+    <script type="module" src="/scan/src/stage.js?v=2026-10-15b"></script>
   </body>
 </html>
