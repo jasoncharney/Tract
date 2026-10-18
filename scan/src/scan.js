@@ -9,7 +9,7 @@ import { loadPatchedPinkTrombone } from "./patched-pink-trombone.js";
 
 /** bump alongside the ?v= in index.html; printed on load so there is never a
  *  question about which build a browser is actually running */
-const BUILD = "2026-10-15b";
+const BUILD = "2026-10-18b";
 
 const $ = (id) => document.getElementById(id);
 const strip = $("strip");

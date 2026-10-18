@@ -12,7 +12,7 @@
   player is playing, not an impression of it.
 */
 
-const BUILD = "2026-10-15b";
+const BUILD = "2026-10-18b";
 const $ = (id) => document.getElementById(id);
 
 /* ---- upstream's numbers, so the shape is the shape ---- */
@@ -152,16 +152,195 @@ const current = { title: undefined, tracts: undefined, text: undefined };
 /** the three lines of the card, from a string or an object.
  *  `true` means "show it exactly as it is" — the conductor's button sends that,
  *  so putting the card back up does not need to restate its words. */
+/* ================================================================ *
+ *  the address, instead of the title
+ *
+ *  `?IP` turns the title card into the thing the ensemble actually needs at
+ *  the start of a rehearsal: where to go. It replaces the title rather than
+ *  sitting beside it, so there is nothing to tidy away before a performance —
+ *  drop the flag and the card is the piece again.
+ *
+ *  `?IP=192.168.1.42:8080` pins an address by hand, for the night the guess
+ *  picks the wrong network card.
+ * ================================================================ */
+
+/* The wi-fi the ensemble should be on. Almost always this one, so it is the
+ * default and nothing needs typing; a different room is one word on the end
+ * of the address. */
+const WIFI_DEFAULT = "hopkins";
+
+/**
+ * Reading the flag.
+ *
+ *   ?IP                      the address, and the usual wi-fi
+ *   ?IP?Fine Arts            ...and that network instead
+ *   ?IP=192.168.1.42:8080    an address pinned by hand
+ *   ?IP=192.168.1.42:8080?Fine Arts
+ *   ?IP&wifi=Fine Arts       the same thing written properly
+ *
+ * A URL only really has one "?" — everything after it is the query, and the
+ * separator between two of them is "&". But "another ? on the end" is how
+ * this gets remembered at five to eight in an unfamiliar room, so the second
+ * "?" is accepted too: it arrives as part of the key or the value, and is
+ * split off here. Both spellings are real; neither is a typo to be corrected.
+ */
+const JOIN = (() => {
+  const off = { on: false, given: "", wifi: WIFI_DEFAULT };
+  let found = null;
+  let wifi = "";
+  // URLSearchParams is case-sensitive and he will type ?IP, so match on the
+  // lowercased key rather than asking for one spelling
+  for (const [key, value] of new URLSearchParams(location.search)) {
+    const lower = key.toLowerCase();
+    if (lower === "wifi" || lower === "net" || lower === "ssid") {
+      wifi = String(value || "").trim();
+      continue;
+    }
+    if (lower !== "ip" && !lower.startsWith("ip?")) continue;
+    // "?IP?Fine Arts" arrives as the key "IP?Fine Arts" with no value
+    const fromKey = key.slice(2).replace(/^\?/, "").trim();
+    // "?IP=addr?Fine Arts" arrives as the value
+    const [address, fromValue] = String(value || "").split("?");
+    found = {
+      on: true,
+      given: String(address || "").trim(),
+      tail: (fromValue || fromKey || "").trim(),
+    };
+  }
+  if (!found) return off;
+  // an explicit wifi= wins over the shorthand, and the usual network stands
+  // when neither is given
+  return { on: true, given: found.given, wifi: wifi || found.tail || WIFI_DEFAULT };
+})();
+
+const LOCAL_ONLY = /^(localhost|127\.0\.0\.1|\[?::1\]?)$/i;
+let joinAddress = "";
+let joinAlso = [];
+
+function withScheme(address) {
+  return /^https?:\/\//i.test(address) ? address : `${location.protocol}//${address}`;
+}
+
+/**
+ * Where to tell the room to go.
+ *
+ * If this page was itself opened over the network, its own address is the
+ * answer and no one has to be asked. It is only when the projection is run on
+ * the bridge machine — the usual case — that `localhost` is useless to
+ * everybody else, and the bridge has to say which addresses it is reachable
+ * at. The scheme comes with it: with a certificate the bridge speaks https
+ * only, and a player who types bare numbers gets a browser trying http and a
+ * failure that looks like the network is down.
+ */
+async function findJoinAddress() {
+  if (JOIN.given) return { main: withScheme(JOIN.given), also: [] };
+  if (!LOCAL_ONLY.test(location.hostname)) {
+    return { main: `${location.protocol}//${location.host}`, also: [] };
+  }
+  try {
+    const response = await fetch("/bridge-info", { cache: "no-store" });
+    const info = await response.json();
+    const list = Array.isArray(info.addresses) ? info.addresses.filter(Boolean) : [];
+    if (list.length) return { main: list[0], also: list.slice(1) };
+  } catch (e) {
+    /* an older bridge, or none: fall through to saying so */
+  }
+  return { main: "", also: [] };
+}
+
+function paintJoinCard() {
+  if (!JOIN.on) return;
+  const main = $("titleMain");
+  const sub = $("titleSub");
+  const by = $("titleBy");
+  $("titleCard").classList.add("join");
+  if (!joinAddress) {
+    main.textContent = "…";
+    sub.textContent = "looking for this machine's address";
+    by.textContent = "";
+    return;
+  }
+  // the scheme set quietly beside the numbers: it has to be typed, but the
+  // numbers are what anybody is reading across a room
+  const split = joinAddress.match(/^(https?:\/\/)(.*)$/i);
+  main.innerHTML = "";
+  if (split) {
+    const scheme = document.createElement("span");
+    scheme.className = "join-scheme";
+    scheme.textContent = split[1];
+    main.appendChild(scheme);
+    main.appendChild(document.createTextNode(split[2]));
+  } else {
+    main.textContent = joinAddress;
+  }
+  sub.textContent = `wi-fi: ${JOIN.wifi}`;
+  // more than one network card, so you can see if it picked the wrong one
+  by.textContent = joinAlso.length ? `also reachable at ${joinAlso.join("   ")}` : "";
+  fitJoinAddress();
+}
+
+/**
+ * Shrink the address until it fits on one line.
+ *
+ * The card is padded, so the room for it is narrower than the screen, and the
+ * address itself varies by eight characters between the shortest and longest
+ * it can be. A fixed size is therefore either too small for a short address
+ * or wraps a long one, and a wrapped address is worse than a small one: half
+ * the room types the first line.
+ *
+ * Measured rather than calculated from a character width — the monospaced
+ * face that actually loads is whatever the projector laptop has.
+ */
+function fitLine(el, floor) {
+  const card = $("titleCard");
+  if (!el || !card) return;
+  el.style.fontSize = "";
+  const room = card.clientWidth - 2 * parseFloat(getComputedStyle(card).paddingLeft || 0);
+  const natural = el.scrollWidth;
+  if (!natural || !room || natural <= room) return;
+  const size = parseFloat(getComputedStyle(el).fontSize);
+  el.style.fontSize = `${Math.max(floor, size * (room / natural) * 0.98)}px`;
+}
+
+function fitJoinAddress() {
+  fitLine($("titleMain"), 12);
+  // the network name comes off the end of the address bar, so it can be
+  // anything — "Fine Arts Building Guest" is a real kind of SSID and would
+  // otherwise run off both sides of the screen
+  fitLine($("titleSub"), 10);
+}
+window.addEventListener("resize", () => {
+  if (JOIN.on && joinAddress) fitJoinAddress();
+});
+
 function setTitleText(title) {
   if (title === true) return;
   if (typeof title === "string") {
     $("titleMain").textContent = title;
-    return;
+  } else if (title && typeof title === "object") {
+    if ("main" in title) $("titleMain").textContent = String(title.main);
+    if ("sub" in title) $("titleSub").textContent = String(title.sub);
+    if ("by" in title) $("titleBy").textContent = String(title.by);
   }
-  if (!title || typeof title !== "object") return;
-  if ("main" in title) $("titleMain").textContent = String(title.main);
-  if ("sub" in title) $("titleSub").textContent = String(title.sub);
-  if ("by" in title) $("titleBy").textContent = String(title.by);
+  // a cue may carry its own title block; in rehearsal the address wins, so it
+  // is put back whatever the cue sheet says
+  paintJoinCard();
+}
+
+if (JOIN.on) {
+  paintJoinCard(); // the placeholder, so the title never flashes up first
+  findJoinAddress().then(({ main, also }) => {
+    joinAddress = main;
+    joinAlso = also;
+    if (!main) {
+      $("titleMain").textContent = "?";
+      $("titleSub").textContent = "this bridge did not say where it is";
+      $("titleBy").textContent = "open the stage from another laptop, or use ?IP=address";
+      return;
+    }
+    paintJoinCard();
+    console.log(`Tract stage: join at ${main}${also.length ? ` (also ${also.join(", ")})` : ""}`);
+  });
 }
 
 function applyStage(block) {

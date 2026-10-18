@@ -123,6 +123,41 @@
         margin-top: 1.5vh;
       }
 
+      /* ?IP — the rehearsal card. An address is not a title: it is read
+         character by character and typed, so it is monospaced, not
+         letter-spaced, and never uppercased, because an uppercased host name
+         is a different thing to read and half the room will type it back. The
+         size is set so the longest address that can appear here, something
+         like https://192.168.100.100:8080, still fits across a screen. */
+      .titlecard.join .titlecard-main {
+        font-family: var(--mono);
+        /* a starting point only: stage.js measures the address and shrinks
+           this until it fits the card, because the difference between
+           https://10.0.0.5:8080 and https://255.255.255.255:65535 is eight
+           characters and no single size is right for both. Never wraps — an
+           address broken across two lines gets typed back wrong. */
+        font-size: min(5.6vw, 11vh);
+        letter-spacing: 0;
+        text-transform: none;
+        white-space: nowrap;
+      }
+      .titlecard.join .join-scheme { opacity: 0.45; }
+      .titlecard.join .titlecard-sub {
+        margin-top: 2.5vh;
+        /* the title card lowercases this line, which is right for "for SATB
+           choir" and wrong for a network name: an SSID is case-sensitive and
+           this one is being read in order to be typed */
+        text-transform: none;
+        white-space: nowrap;
+      }
+      .titlecard.join .titlecard-by {
+        font-family: var(--mono);
+        font-size: 1.4vw;
+        letter-spacing: 0;
+        opacity: 0.5;
+        margin-top: 3vh;
+      }
+
       /* the wall of tracts fades as one, on the same clock as the card */
       #wall {
         opacity: 0;
@@ -199,6 +234,6 @@
       waiting for the conductor…<br />
       click for full screen
     </div> -->
-    <script type="module" src="/scan/src/stage.js?v=2026-10-15b"></script>
+    <script type="module" src="/scan/src/stage.js?v=2026-10-18b"></script>
   </body>
 </html>

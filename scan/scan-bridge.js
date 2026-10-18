@@ -406,7 +406,23 @@ const server = (TLS ? https.createServer.bind(null, TLS) : http.createServer)((r
   if (url === "/bridge-info") {
     response
       .writeHead(200, { "content-type": "application/json", "cache-control": "no-store" })
-      .end(JSON.stringify({ ok: true, write: true, writable: [...WRITABLE] }));
+      .end(
+        JSON.stringify({
+          ok: true,
+          write: true,
+          writable: [...WRITABLE],
+          // Where the other laptops in the room should go. The banner prints
+          // this at startup and it then has to be copied onto a whiteboard;
+          // the stage can put it on the wall instead, so it is served here.
+          // The scheme matters as much as the numbers: with a certificate
+          // this server speaks https only, and a player who types a bare
+          // address gets a browser trying http and failing on a page that
+          // looks like the network is down.
+          scheme: SCHEME,
+          port: PORT,
+          addresses: localIPs().map((ip) => `${SCHEME}://${ip}:${PORT}`),
+        })
+      );
     return;
   }
   if (request.method === "PUT" || request.method === "POST") {
