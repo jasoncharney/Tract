@@ -174,7 +174,7 @@ gymnastics. Left hand only:
 
 | key | |
 | --- | --- |
-| **A** | hold to scan slowly — a fresh 3–5 s drawn for each phoneme |
+| **A** | hold to scan slowly — a fresh 1–3 s drawn for each phoneme |
 | **S** | hold to scan at a middle rate — 0.25–0.75 s per phoneme |
 | **D** | hold to scan fast — 0.1–0.25 s per phoneme |
 | **W E R** | one-shot: play the whole next word, at those same three rates |

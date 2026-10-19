@@ -27,7 +27,7 @@ Left hand, no trackpad needed:
 
 | key | |
 | --- | --- |
-| **A S D** | hold to scan — slow (3–5 s per phoneme), mid (0.25–0.75 s), fast (0.1–0.25 s) |
+| **A S D** | hold to scan — slow (1–3 s per phoneme), mid (0.25–0.75 s), fast (0.1–0.25 s) |
 | **W E R** | one word at slow / mid / fast tempo |
 | **Q** | a random phoneme from the phrase |
 | **T** | a random stop or fricative, unvoiced — percussion |

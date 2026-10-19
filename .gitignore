@@ -5,6 +5,11 @@ node_modules
 package.json
 yarn.lock
 
+# ...but the test folder's own package.json is the one thing that declares
+# Playwright, and without it `cd test && npm run setup` has nothing to read.
+# The piece itself still has no dependencies; these are only for test/.
+!test/package.json
+
 # the room certificate: regenerated per network, and the key never travels
 scan/tract-cert.pem
 scan/tract-key.pem
