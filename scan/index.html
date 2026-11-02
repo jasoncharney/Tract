@@ -718,6 +718,37 @@
         user-select: none;
       }
       .whisptag .state { font-weight: 700; }
+      /* what the score asks for here, when it asks. Quiet when it is already
+         right — a tick nobody has to read — and the piece's amber when it is
+         not, which is the one state worth noticing from a stand. It never
+         changes anything: several cues ask players to flick whisper by hand,
+         and a page that corrected them would be fighting the piece. */
+      .whisptag .asked {
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        padding-left: 7px;
+        margin-left: 1px;
+        border-left: 1px solid var(--line);
+        color: var(--dim);
+      }
+      .whisptag[data-wrong="1"] {
+        border-color: var(--warn);
+        color: var(--warn);
+        animation: whispernag 1.6s ease-in-out infinite;
+      }
+      .whisptag[data-wrong="1"] .asked { color: var(--warn); border-left-color: var(--warn-line); }
+      .whisptag[data-wrong="1"] .keycap {
+        background: var(--warn);
+        color: var(--on-warn, #23180a);
+        border-color: var(--warn);
+      }
+      @keyframes whispernag {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.55; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .whisptag[data-wrong="1"] { animation: none; }
+      }
       .whisptag[data-on="1"] {
         color: var(--on-hot);
         background: var(--hot);
@@ -1137,6 +1168,7 @@
         <span class="keycap">Z</span>
         <span class="word">whisper</span>
         <span class="state">off</span>
+        <span class="asked" hidden></span>
       </div>
     </div>
 
@@ -1235,6 +1267,6 @@
 
     <!-- the ?v= is a cache-buster: bump it whenever scan.js changes, so a browser
          cannot quietly keep running yesterday's module -->
-    <script type="module" src="/scan/src/scan.js?v=2026-10-18e"></script>
+    <script type="module" src="/scan/src/scan.js?v=2026-11-02a"></script>
   </body>
 </html>

@@ -9,7 +9,7 @@ import { loadPatchedPinkTrombone } from "./patched-pink-trombone.js";
 
 /** bump alongside the ?v= in index.html; printed on load so there is never a
  *  question about which build a browser is actually running */
-const BUILD = "2026-10-18e";
+const BUILD = "2026-11-02a";
 
 const $ = (id) => document.getElementById(id);
 const strip = $("strip");
@@ -618,6 +618,10 @@ function setPhrase(index, { announce = true, reset = true } = {}) {
   renderAlts();
   rebuildFromWords();
   paintInstruction();
+  // this phrase may ask something different of whisper, and whisper itself
+  // deliberately survives the change — so the pill has to be re-read here or
+  // it would still be answering the last phrase's question
+  paintWhisperTag(whisperOn);
   lastSpanSeen = -1;
   wordCursor = -1;
   atEnd = false;
@@ -1345,13 +1349,13 @@ export function applyRemote(address, args = []) {
       cueCount(num(a0), args[1]);
       break;
     case "/cue/go":
-      cueGo(a0, args[1], String(args[2] ?? ""));
+      cueGo(a0, args[1], String(args[2] ?? ""), args[3]);
       break;
     case "/cue/clear":
       cueClear(args[0]);
       break;
     case "/cue/state":
-      cueState(a0, args[1], String(args[2] ?? ""));
+      cueState(a0, args[1], String(args[2] ?? ""), args[3]);
       break;
     case "/cue/fade": // how long the diminuendo at the end should take
       fadeSeconds = Math.max(0.2, Math.min(300, num(a0, fadeSeconds)));
@@ -1989,12 +1993,54 @@ function paintBridgePill() {
           : "which bridge this page is talking to";
 }
 
+/**
+ * What the score asks of whisper here, if it asks anything.
+ *
+ * Two places can say, and the nearer one wins: a cue's own `whisper` for this
+ * part, which is how a phrase that changes partway through says so, and
+ * otherwise the phrase's entry in parts.json. Neither is required. Where
+ * nobody has written anything down the answer is null — free — and the page
+ * says nothing at all, which is the right answer for the cues that ask for
+ * bursts of it.
+ */
+function whisperWanted() {
+  const fromCue = cued.whisper;
+  if (fromCue === "on" || fromCue === "off") return fromCue;
+  const entry = (part().phrases || [])[phraseIndex];
+  const fromPhrase = entry && entry.whisper;
+  return fromPhrase === "on" || fromPhrase === "off" ? fromPhrase : null;
+}
+
+/**
+ * The pill under the strip. It has three things to say: where whisper is,
+ * where the score wants it, and — the only one worth a colour — that those
+ * two disagree.
+ *
+ * It never changes anything. Players are told to flick whisper on and off by
+ * hand in several cues, and a page that corrected them would be fighting the
+ * piece; this only makes "you are still whispering from the last phrase"
+ * visible from across a stand.
+ */
 function paintWhisperTag(on) {
   const el = $("whisperTag");
   if (!el) return;
   el.dataset.on = on ? "1" : "0";
+  const want = whisperWanted();
+  const wrong = want !== null && (want === "on") !== !!on;
+  el.dataset.want = want || "";
+  el.dataset.wrong = wrong ? "1" : "0";
   const word = el.querySelector(".state");
   if (word) word.textContent = on ? "on" : "off";
+  const asked = el.querySelector(".asked");
+  if (asked) {
+    asked.textContent = wrong ? `should be ${want}` : want ? "as written" : "";
+    asked.hidden = want === null;
+  }
+  el.title = wrong
+    ? `This phrase asks for whisper ${want}. Press Z. Nothing is forced — if you are meant to be flicking it, carry on.`
+    : want
+      ? `This phrase asks for whisper ${want}, and that is where it is.`
+      : "Z turns whisper on and off. It stays where you put it — a phrase change will not reset it.";
 }
 
 function syncControl(key, value) {
@@ -2556,7 +2602,8 @@ function capturePreset() {
     vibrato: Object.assign({}, vibrato),
   };
   Object.keys(DEFAULTS).forEach((k) => (out.cfg[k] = cfg[k]));
-  out.tractLength = (voice ? voice.tractLength : VOICE.tractLength) - (p.tractDelta || 0);
+  out.tractLength =
+    (voice ? voice.tractLength : VOICE.tractLength) - (p.tractDelta || 0) - seatTract();
   return out;
 }
 
@@ -2616,7 +2663,7 @@ function applyPreset(index) {
 
   const writtenTract =
     preset && typeof preset.tractLength === "number" ? preset.tractLength : VOICE.tractLength;
-  const tract = Math.max(15, Math.min(88, writtenTract + (p.tractDelta || 0)));
+  const tract = Math.max(15, Math.min(88, writtenTract + (p.tractDelta || 0) + seatTract()));
   syncControl("tractLength", tract);
   if (ready) voice.setTractLength(tract, ctx.currentTime);
 
@@ -2829,6 +2876,7 @@ function setPart(index) {
   // conductor's next heartbeat hands this part its own standing instruction
   cued.instruction = null;
   cued.cue = null;
+  cued.whisper = null;
   cued.oncoming = null;
   cued.armed = false;
   showOncoming(null);
@@ -2965,7 +3013,7 @@ if (tractHost) tractHost.addEventListener("transitionend", fitInstruction);
  * the four seconds before a downbeat is a player who is not listening. The
  * text now arrives as soon as the previous downbeat lands, and the light means
  * only "soon". */
-const cued = { instruction: null, cue: null, oncoming: null, armed: false };
+const cued = { instruction: null, cue: null, oncoming: null, armed: false, whisper: null };
 let goFlashTimer = null;
 
 function cueLight(state, label) {
@@ -3029,8 +3077,10 @@ function cueCount(beat, partId) {
   cueLight("count", String(beat));
 }
 
-function cueGo(cue, partId, instruction) {
+function cueGo(cue, partId, instruction, whisper) {
   if (!forMe(partId)) return;
+  cued.whisper = whisper === "on" || whisper === "off" ? whisper : null;
+  paintWhisperTag(whisperOn);
   cued.instruction = instruction;
   cued.cue = cue;
   cued.armed = false;
@@ -3056,8 +3106,10 @@ function cueClear(partId) {
  * reloads, joins late or switches part picks the instruction back up without a
  * flash — they missed the downbeat, they should not be given a fake one.
  */
-function cueState(cue, partId, instruction) {
+function cueState(cue, partId, instruction, whisper) {
   if (!forMe(partId)) return;
+  cued.whisper = whisper === "on" || whisper === "off" ? whisper : null;
+  paintWhisperTag(whisperOn);
   if (cued.instruction === instruction && cued.cue === cue) return;
   cued.instruction = instruction;
   cued.cue = cue;
@@ -3115,12 +3167,40 @@ function seatRoster() {
   return ids.sort();
 }
 
+/**
+ * The small difference between two players on the same part.
+ *
+ * The parts already differ by `tractDelta` — a bigger body for the lower
+ * parts, which is why they do not sound alike on a written unison. Two
+ * players on the SAME part were identical, though, and two people never are.
+ *
+ * This is the same mechanism at a tenth of the size: the length of the throat,
+ * not the pitch. Measured on a held A3 with vibrato off, the four parts' tract
+ * lengths move the spectral centroid by 25% and F2 by 520 cents while leaving
+ * the fundamental at 218.3 Hz for every one of them — 0 cents apart. That is
+ * the argument for doing it here rather than with vibrato: a unison stays a
+ * unison, and it survives the passages written for straight tone.
+ *
+ * ±1.5 because take-to-take measurement noise on the centroid is about ±2%
+ * and a jitter of 1 disappears into it, while 2 is already a seventh of the
+ * way to the next part. Seats 1 and 2 — two players on a part, the usual
+ * case — get the two extremes, so the common case is the clearest.
+ */
+const SEAT_TRACT = [-1.5, 1.5, -0.75, 0.75];
+function seatTract() {
+  return SEAT_TRACT[(Math.max(1, seat) - 1) % SEAT_TRACT.length];
+}
+
 function takeSeat() {
   seatsDirty = false;
   const roster = seatRoster();
   seatsOf = roster.length;
+  const was = seat;
   seat = SEAT_OVERRIDE > 0 ? SEAT_OVERRIDE : roster.indexOf(MACHINE) + 1 || 1;
   paintSeat();
+  // the seat carries a little of the voice with it, so moving seats has to
+  // re-lay the phrase's settings rather than leave the last seat's throat on
+  if (seat !== was) applyPreset(phraseIndex);
 }
 
 function paintSeat() {
@@ -3819,6 +3899,14 @@ window.scan = {
   },
   capturePreset,
   applyPreset,
+  /* the tract length actually in the voice — the written preset plus this
+     part's body plus this seat's share of it */
+  get tractLength() {
+    return voice ? voice.tractLength : VOICE.tractLength;
+  },
+  get seat() {
+    return seat;
+  },
   setPart,
   openPartModal,
   toggleWhisper,

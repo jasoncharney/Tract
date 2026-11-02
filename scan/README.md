@@ -1059,6 +1059,32 @@ change without noticing, so there is a pill under the strip — **Z WHISPER ON**
 in full colour, **Z whisper off** outlined — where they are already looking.
 **T** still borrows whisper for its noise and hands it straight back.
 
+### Saying where whisper should be
+
+The pill can also say what the score asks for, which is the difference between
+a player noticing they are still whispering and a player not noticing for a
+whole phrase. It is optional, and off wherever nothing is written down.
+
+Two places can say it, and the nearer one wins:
+
+```jsonc
+// parts.json — this part, this phrase
+{ "instruction": "...", "pitch": "choose", "whisper": "on" }
+
+// cues.json — this part, this cue, for a phrase that changes partway through
+"2": { "instruction": "Press {Z} for whisper on.", "whisper": "on" }
+```
+
+`"on"`, `"off"`, or leave it out. Left out means **free** — the pill says
+nothing — and that is what the cues asking for bursts of whisper want, so do
+not fill those in.
+
+When it is written and whisper is already there, the pill adds a quiet *as
+written*. When it is written and whisper is **not** there, the pill turns the
+conductor's amber and says *should be on*. It never changes anything: several
+cues ask players to flick whisper by hand, and a page that corrected them
+would be fighting the piece.
+
 ## The stressed-vowel lift
 
 `stressed-vowel lift` in *timing & voice* is how far the pitch rises on a

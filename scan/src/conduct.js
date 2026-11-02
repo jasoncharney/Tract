@@ -16,7 +16,8 @@
       /cue/go    <cue> <partId> <instruction>   the downbeat: flash, and the
                                                 instruction swaps
       /cue/clear <partId>                       never mind
-      /cue/state <cue> <partId> <instruction>   the standing cue, repeated, so a
+      /cue/state <cue> <partId> <instruction> <whisper?>
+                                                the standing cue, repeated, so a
                                                 player who reloads catches up
                                                 without being given a downbeat
 
@@ -29,7 +30,7 @@
   playheads along the bottom of the screen.
 */
 
-const BUILD = "2026-10-18e";
+const BUILD = "2026-11-02a";
 const $ = (id) => document.getElementById(id);
 
 let cues = [];
@@ -444,7 +445,15 @@ function speaksTo(index) {
   if (!c || !c.parts) return [];
   return parts
     .filter((p) => c.parts[String(p.id)] && c.parts[String(p.id)].instruction)
-    .map((p) => ({ id: String(p.id), name: p.name, instruction: c.parts[String(p.id)].instruction }));
+    .map((p) => ({
+      id: String(p.id),
+      name: p.name,
+      instruction: c.parts[String(p.id)].instruction,
+      // optional: "on" or "off" when this cue is explicit about whisper, so a
+      // phrase that changes partway through can say so. Anything else means
+      // nobody wrote it down, and the player's page stays quiet about it.
+      whisper: c.parts[String(p.id)].whisper,
+    }));
 }
 
 /* ================================================================ *
@@ -720,7 +729,9 @@ function go() {
   stopCount();
   const index = armed;
   const c = cue(index);
-  speaksTo(index).forEach((row) => send("/cue/go", [c.id || index + 1, row.id, row.instruction]));
+  speaksTo(index).forEach((row) =>
+    send("/cue/go", [c.id || index + 1, row.id, row.instruction, row.whisper || ""])
+  );
   sendStage(c);
   markCue(index);
   landed = index;
@@ -820,7 +831,7 @@ setInterval(() => {
   const c = cue(landed);
   if (!c) return;
   speaksTo(landed).forEach((row) =>
-    send("/cue/state", [c.id || landed + 1, row.id, row.instruction])
+    send("/cue/state", [c.id || landed + 1, row.id, row.instruction, row.whisper || ""])
   );
 }, 2500);
 

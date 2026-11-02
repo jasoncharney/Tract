@@ -94,6 +94,21 @@ Then `https://localhost:8080/` (player), `/conduct.html` (desk),
 - **Phrase changes from MIDI are idempotent** (`goToPhrase`). Locating in a DAW
   re-sends the current phrase constantly; without the guard every locate would
   stop a running scan and re-apply its preset under the player.
+- **dB(A) is the wrong metric for this piece.** It said the fricatives were
+  6.7 dB below the vowels; with critical-band summation they were level with
+  them, because a vowel puts its energy in a few bands and a sibilant spreads
+  across ten. Anything about perceived balance here has to be measured with
+  band summation, not a weighted sum of energy.
+- **Noisy consonants have an envelope** (`fricativeSustain` and friends in
+  engine.js): full attack, then back to a sustain over a quarter second with
+  the decay redrawn each onset. Raise those toward 1 to put the hiss back.
+  Intensity drives loudness as a square AND narrows the band spread, so the
+  measured drop is roughly twice what the square law alone predicts.
+- **Two voices differ by the length of the throat, never by pitch.** Parts
+  carry `tractDelta`, seats carry `seatTract()`. Measured: the four parts move
+  the spectral centroid 25% and F2 520 cents while all sounding 218.3 Hz — 0
+  cents apart. A preset stores the WRITTEN length with neither added, or
+  saving would walk the voice one seat further every time.
 - **Cell widths are not uniform** (0.5 for a pass-through stop, 1.15 for a held
   one, 0.6 for a gap, 1 otherwise). "Half way through the cells" and "half way
   along the strip" are different places — see `posFraction()`.

@@ -72,6 +72,33 @@ export const DEFAULTS = {
   // already sitting below the voiced average.
   sibilantLevel: 0.93,
 
+  // --- how a held noisy consonant dies back ---
+  //
+  // A sustained /s/ is the one phoneme that gets worse the slower you scan.
+  // Measured against the mean vowel of the piece, with critical-band
+  // summation (which is how the ear adds it up, and which A-weighting cannot
+  // see): /s/ came out 0.7 dB BELOW a vowel on dB(A) by 6.7 dB, and level
+  // with it by loudness — because a vowel puts its energy in a few bands
+  // around its harmonics and a sibilant spreads across ten. Level with a
+  // vowel, held for seconds, and made of noise, is too much.
+  //
+  // So a noisy consonant now keeps its full attack and falls back to a
+  // sustain, the way a real one does: the burst of air at the start is the
+  // part that carries the consonant, and what follows is just hiss. These are
+  // multipliers on intensity, which drives loudness as a SQUARE — 0.75 is
+  // about 5 dB down, not 2.5.
+  // Tuned by measuring, not by the arithmetic: intensity's square law says
+  // 0.87 is 2.4 dB, but the measured loudness drop is about 4, because taking
+  // level off a sibilant also pulls its quietest bands below hearing and a
+  // narrower sound is a quieter one. 0.75 measured 8 dB down, which was too
+  // much. Raise these toward 1 to put the hiss back.
+  fricativeSustain: 0.87, //    unvoiced /s ʃ f θ/: the ones that bite
+  fricativeSustainVoiced: 0.93, // /z ʒ v ð/ carry pitch too; duck them less
+  fricativeSustainWhisper: 0.95, // in whisper the vowels are noise too, so less
+  fricativeDecay: 0.26, //     seconds to fall, nominally
+  fricativeDecayVary: 0.35, // ±this much, redrawn per onset, so a row of
+  //                           them is not one sound repeated
+
   // --- pitch ---
   glide: 0.05, // portamento
   // How long a phoneme takes to die away when the gate closes under a sustain.
@@ -501,6 +528,9 @@ export class ScanVoice {
     this.cfg = Object.assign({}, DEFAULTS, cfg);
     this.cells = [];
     this.curCell = -1;
+    this.fricCell = -1; // which noisy cell the breath envelope is timing
+    this.fricFrom = 0;
+    this.fricTau = 0.25;
     this.appliedLift = 0; // the stress lift currently written into the pitch
     this.closed = false;
     this.released = true;
@@ -1051,7 +1081,47 @@ export class ScanVoice {
       return;
     }
 
-    this.applyPose(this.poseAtPosition(pos), now, this.cfg.smooth);
+    this.applyPose(this.breathe(this.poseAtPosition(pos), pos, now), now, this.cfg.smooth);
+  }
+
+  /**
+   * The envelope on a held noisy consonant: full on arrival, then back to a
+   * sustain over a quarter of a second or so.
+   *
+   * Only while you are SITTING on the cell. Scanning quickly through a word
+   * passes over a fricative in a fraction of the decay time and hears only
+   * the attack, which is what should happen — the complaint this answers is
+   * about holding one, and a fast scan was never the problem.
+   *
+   * The decay time is redrawn on every arrival so that "slip, slide, perish",
+   * which is three sibilants in a row, is not the same sound three times.
+   * Returns the pose untouched for everything else, including the frame after
+   * frame where nothing has changed, so there is no churn.
+   */
+  breathe(p, pos, now) {
+    const cfg = this.cfg;
+    const i = this.cellAt(pos);
+    const cell = this.cells[i];
+    const noisy = cell && (cell.cls === "fricative" || cell.cls === "affricate");
+    if (!noisy) {
+      this.fricCell = -1;
+      return p;
+    }
+    if (i !== this.fricCell) {
+      this.fricCell = i;
+      this.fricFrom = now;
+      const vary = cfg.fricativeDecayVary || 0;
+      this.fricTau = Math.max(0.02, (cfg.fricativeDecay || 0.25) * (1 + (Math.random() * 2 - 1) * vary));
+    }
+    const sustain = this.whisper
+      ? cfg.fricativeSustainWhisper
+      : cell.voiced
+        ? cfg.fricativeSustainVoiced
+        : cfg.fricativeSustain;
+    if (!(sustain < 1)) return p;
+    const k = Math.exp(-Math.max(0, now - this.fricFrom) / this.fricTau);
+    const scale = sustain + (1 - sustain) * k;
+    return Object.assign({}, p, { a: p.a * scale });
   }
 
   /* ---------------- outside control ---------------- */
@@ -1092,6 +1162,7 @@ export class ScanVoice {
     if (!wasOn) {
       this.lockUntil = 0;
       this.curCell = -1; // re-enter, so landing on a stop articulates it
+      this.fricCell = -1; // and a fricative gets its attack again, not its tail
       this.closed = false;
       this.released = true;
       this.cells.forEach((cell) => {
