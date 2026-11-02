@@ -16,75 +16,7 @@ const { suite, ROOT } = require("./lib/harness");
 
 const OUT = path.join(ROOT, "midi", "out");
 
-/** a Standard MIDI File reader, from the spec */
-function parseSMF(buf) {
-  let p = 0;
-  const tag = () => buf.toString("ascii", p, (p += 4));
-  const u32 = () => ((buf[p++] << 24) | (buf[p++] << 16) | (buf[p++] << 8) | buf[p++]) >>> 0;
-  const u16 = () => (buf[p++] << 8) | buf[p++];
-  if (tag() !== "MThd") throw new Error("not a MIDI file");
-  const headerLen = u32();
-  const format = u16();
-  const ntracks = u16();
-  const division = u16();
-  p += headerLen - 6;
-
-  const tracks = [];
-  let tempo = 500000;
-  for (let i = 0; i < ntracks; i++) {
-    if (tag() !== "MTrk") throw new Error(`track ${i} is not an MTrk`);
-    const len = u32();
-    const end = p + len;
-    let tick = 0;
-    let running = null;
-    const events = [];
-    const markers = [];
-    let name = "";
-    while (p < end) {
-      let delta = 0;
-      for (;;) {
-        const b = buf[p++];
-        delta = (delta << 7) | (b & 0x7f);
-        if (!(b & 0x80)) break;
-      }
-      tick += delta;
-      let status = buf[p];
-      if (status & 0x80) p++;
-      else status = running;
-      if (status === undefined) throw new Error("running status with no status");
-      if (status === 0xff) {
-        const type = buf[p++];
-        let n = 0;
-        for (;;) {
-          const b = buf[p++];
-          n = (n << 7) | (b & 0x7f);
-          if (!(b & 0x80)) break;
-        }
-        const data = buf.slice(p, p + n);
-        p += n;
-        if (type === 0x51) tempo = (data[0] << 16) | (data[1] << 8) | data[2];
-        if (type === 0x03) name = data.toString("utf8");
-        if (type === 0x06) markers.push({ tick, text: data.toString("utf8") });
-        running = null;
-        continue;
-      }
-      running = status;
-      const kind = status & 0xf0;
-      const channel = (status & 0x0f) + 1;
-      if (kind === 0xc0 || kind === 0xd0) {
-        p += 1;
-        continue;
-      }
-      const d1 = buf[p++];
-      const d2 = buf[p++];
-      events.push({ tick, kind, channel, d1, d2 });
-    }
-    if (p !== end) throw new Error(`track ${i} overran its declared length by ${p - end}`);
-    tracks.push({ name, events, markers });
-  }
-  if (p !== buf.length) throw new Error("trailing bytes after the last track");
-  return { format, ntracks, division, tempo, tracks };
-}
+const { parseSMF } = require("./lib/smf");
 
 suite("midi", async (t) => {
   t.section("1 — the generator runs and writes a Standard MIDI File");
@@ -155,6 +87,49 @@ suite("midi", async (t) => {
   t.check(held.every((h, i) => i === 0 || h.from >= held[i - 1].to - 0.11), "and they do not overlap");
   t.check(cc20.length === held.length, "a CC20 beside each, for hosts that chase controllers not notes", `${cc20.length}`);
 
+  t.section("2b — a part keeps going until it is told otherwise");
+  const starts = [];
+  let clock = 0;
+  timing.cues.forEach((c) => (starts.push(clock), (clock += c.seconds)));
+  const cueAt = (id) => starts[timing.cues.findIndex((c) => c.id === String(id))];
+  const mid = (id) => cueAt(id) + timing.cues.find((c) => c.id === String(id)).seconds / 2;
+  const sec = (e) => e.tick / all.division;
+  // One NaN in the timeline broke the sort, and the file still parsed — it
+  // just ran 764 s instead of 337, with half the events in the wrong place.
+  const last = Math.max(...players.map((tr) => sec(tr.events[tr.events.length - 1])));
+  t.check(last <= clock + 0.01, "nothing lands after the end of the piece", `last event ${last.toFixed(1)} s of ${clock.toFixed(1)}`);
+  const I1 = players[0].events;
+  const pressesA = I1.filter((e) => e.d1 === 0 && e.kind === 0x90 && e.d2 > 0).map(sec);
+  const heldThrough = (events, note, t) => {
+    let down = null;
+    for (const e of events) {
+      if (e.d1 !== note || e.kind === 0xb0) continue;
+      if (e.kind === 0x90 && e.d2 > 0) down = sec(e);
+      else if (down !== null) {
+        if (down <= t && sec(e) > t) return true;
+        down = null;
+      }
+    }
+    return false;
+  };
+  t.check(
+    pressesA.some((x) => x >= cueAt(3)) && heldThrough(I1, 0, mid(4)),
+    "Part I's A, given in cue 2, is still scanning through II's and III's entries",
+    `A pressed at ${pressesA.map((x) => x.toFixed(0)).join(", ")} s`
+  );
+  // whisper is a held note now, so its state can be read straight off the file
+  const whispers = [
+    [0, 9, true, "I in cue 9, after 'Press {Z} for whisper on' in cue 7"],
+    [0, 19, false, "I in cue 19, 'whisper off'"],
+    [2, 27, true, "II in cue 27, whispering since cue 25"],
+    [2, 30, false, "II in cue 30, after 'whisper off' in cue 29"],
+    [6, 9, false, "IV in cue 9, which was never told to whisper"],
+  ];
+  for (const [p, id, want, what] of whispers) {
+    const got = heldThrough(players[p].events, 14, mid(id));
+    t.check(got === want, `whisper is ${want ? "on" : "off"} for ${what}`, `${got ? "on" : "off"}`);
+  }
+
   t.section("3 — what the page does when those notes arrive");
   const page = await t.player({ query: "&midich=3", audio: true });
   t.check((await page.evaluate(() => window.scan.midiChannel)) === 3, "?midich=3 is picked up");
@@ -222,6 +197,86 @@ suite("midi", async (t) => {
   t.check(Math.round(r.note) === 40 && r.gate, "notes from C1 up still set the pitch, as before");
   await say([OFF, 40, 0], 100);
 
+  t.section("3b — pressing stop in the DAW");
+  // a host that stops with All Notes Off rather than a note off per note
+  for (const [bytes, what] of [
+    [[0xb2, 123, 0], "All Notes Off (CC123)"],
+    [[0xb2, 120, 0], "All Sound Off (CC120)"],
+    [[0xfc], "MIDI Stop (0xFC), which has no channel"],
+  ]) {
+    await say([CH, 9, 100], 100); // the pedal down
+    const held = await say([CH, 0, 100], 400); // and A held under it
+    const after = await say(bytes, 250);
+    const pedal = await page.evaluate(() => window.scan.pedalDown);
+    t.check(
+      held.mode === "scan" && after.mode === null && !after.gate && !pedal,
+      `${what} lets go of a held scan and the pedal`,
+      `mode ${held.mode} → ${after.mode}, gate ${after.gate}, pedal ${pedal}`
+    );
+    await say([OFF, 0, 0], 40);
+    await say([OFF, 9, 0], 40);
+  }
+
+  t.section("3c — clicking into the DAW mid-take");
+  const blurred = await page.evaluate(async () => {
+    window.scan.handleMIDI([0x92, 0, 100]);
+    await new Promise((r2) => setTimeout(r2, 300));
+    window.dispatchEvent(new Event("blur"));
+    await new Promise((r2) => setTimeout(r2, 300));
+    const mode = window.scan.transport.mode;
+    window.scan.handleMIDI([0x82, 0, 0]);
+    return mode;
+  });
+  t.check(blurred === "scan", "a sequenced window losing focus does not drop the note it is holding", `mode ${blurred}`);
+
+  t.section("3d — what the generated files lean on");
+  const w = await page.evaluate(async () => {
+    const wait = (ms) => new Promise((r2) => setTimeout(r2, ms));
+    const seen = [];
+    if (window.scan.whisper) window.scan.toggleWhisper();
+    window.scan.handleMIDI([0x92, 14, 100]);
+    await wait(100);
+    seen.push(window.scan.whisper);
+    window.scan.handleMIDI([0x92, 14, 100]); // a host chasing the note sends it again
+    await wait(100);
+    seen.push(window.scan.whisper);
+    window.scan.handleMIDI([0x82, 14, 0]);
+    await wait(100);
+    seen.push(window.scan.whisper);
+    return seen;
+  });
+  t.check(w[0] && w[1] && !w[2], "note 14 is whisper as a state: on while held, still on when sent twice, off after", w.join(" → "));
+
+  r = await say([0xb2, 21, 62], 200);
+  t.check(Math.round(r.note) === 62 && !r.gate, "CC21 sets the pitch and leaves the gate shut", `note ${r.note}, gate ${r.gate}`);
+
+  await say([CH, 9, 100], 100);
+  await say([CH, 13, 100], 200);
+  const underPedal = await say([OFF, 13, 0], 300);
+  const afterPedal = await say([OFF, 9, 0], 400);
+  t.check(underPedal.gate && !afterPedal.gate, "the mouse coming up under the pedal keeps the sound, until the pedal lifts", `${underPedal.gate} → ${afterPedal.gate}`);
+
+  await say([CH, 3, 100], 150); // W: a long word, playing
+  await say([OFF, 3, 0], 40);
+  const grabbed = await say([CH, 13, 100], 150);
+  await say([OFF, 13, 0], 200);
+  t.check(grabbed.mode === null, "taking the mouse cancels a word still playing, as a real mouse does", `mode ${grabbed.mode}`);
+
+  const sustained = await page.evaluate(async () => {
+    const wait = (ms) => new Promise((r2) => setTimeout(r2, ms));
+    window.scan.applyRemote("/scan/phrase", [2]); // CRACK: two cells, over in a moment on D
+    await wait(300);
+    window.scan.handleMIDI([0x92, 9, 100]);
+    window.scan.handleMIDI([0x92, 2, 100]);
+    await wait(1500);
+    const at = { mode: window.scan.transport.mode, gate: /gate <b>on/.test(document.getElementById("readout").innerHTML) };
+    window.scan.handleMIDI([0x82, 2, 0]);
+    window.scan.handleMIDI([0x82, 9, 0]);
+    await wait(300);
+    return at;
+  });
+  t.check(sustained.mode === null && sustained.gate, "a scan that reaches the end under the pedal keeps sounding", `mode ${sustained.mode}, gate ${sustained.gate}`);
+
   t.section("4 — skipping around in the DAW");
   const landed = await page.evaluate(async () => {
     window.scan.applyRemote("/scan/phrase", [1]);
@@ -276,4 +331,96 @@ suite("midi", async (t) => {
   t.check(hidden.channel === null, "and no channel");
   t.check(asked.length === 0, "the browser is never asked for MIDI access — so no prompt", `asked ${asked.length}x`);
   await plain.close();
+
+  t.section("6 — a window that is not in front");
+  // Eight windows on one laptop means seven behind something, and Chrome all
+  // but stops animation frames for those. Every other check in this file
+  // misses that, because Playwright launches Chrome with background
+  // throttling switched off and keeps the pages it drives "visible" — this
+  // bug was invisible under both. So: the real binary, our own flags, a
+  // second tab in front, and raw CDP that changes nothing about the page.
+  const hidden2 = await behindAnotherTab(t, async (ev) => {
+    return ev(`(async () => {
+      let frames = 0;
+      const c = () => { frames++; requestAnimationFrame(c); };
+      requestAnimationFrame(c);
+      window.scan.handleMIDI([0x92, 0, 100]);
+      await new Promise((r) => setTimeout(r, 2000));
+      const held = window.scan.position;
+      window.scan.handleMIDI([0x82, 0, 0]);
+      window.scan.handleMIDI([0x92, 5, 100]);
+      window.scan.handleMIDI([0x82, 5, 0]);
+      await new Promise((r) => setTimeout(r, 2500));
+      return { vis: document.visibilityState, frames, held, word: window.scan.transport.mode };
+    })()`);
+  });
+  t.check(hidden2.vis === "hidden" && hidden2.frames < 10, "the window really is behind: hidden, frames stopped", `${hidden2.vis}, ${hidden2.frames} frames in 4.5 s`);
+  t.check(hidden2.held > 0.3, "a held A still moves along the strip", `0 → ${hidden2.held.toFixed(2)} in 2 s`);
+  t.check(hidden2.word === null, "and a one-shot word still finishes instead of sounding forever", `mode ${hidden2.word}`);
 });
+
+/** a player on channel 3, phrase 3, audio on, with another tab in front of it */
+async function behindAnotherTab(t, body) {
+  const { chromium } = require("playwright");
+  const { spawn } = require("child_process");
+  const os = require("os");
+  const { freePort } = require("./lib/harness");
+  const dbg = await freePort();
+  const profile = fs.mkdtempSync(path.join(os.tmpdir(), "tract-hidden-"));
+  const chrome = spawn(
+    chromium.executablePath(),
+    [
+      "--headless=new",
+      `--user-data-dir=${profile}`,
+      `--remote-debugging-port=${dbg}`,
+      "--no-first-run",
+      "--no-default-browser-check",
+      "--autoplay-policy=no-user-gesture-required",
+      `${t.base}/scan/?part=III&seat=1&midich=3`,
+    ],
+    { stdio: "ignore" }
+  );
+  try {
+    let target;
+    for (let i = 0; i < 50 && !target; i++) {
+      await t.sleep(200);
+      try {
+        const list = await (await fetch(`http://127.0.0.1:${dbg}/json/list`)).json();
+        target = list.find((x) => x.url.includes("/scan/"));
+      } catch (e) {}
+    }
+    if (!target) throw new Error("the unmanaged Chromium never came up");
+    const ws = new WebSocket(target.webSocketDebuggerUrl);
+    await new Promise((r, j) => ((ws.onopen = r), (ws.onerror = j)));
+    let id = 0;
+    const waiting = new Map();
+    ws.onmessage = (m) => {
+      const d = JSON.parse(m.data);
+      if (waiting.has(d.id)) waiting.get(d.id)(d), waiting.delete(d.id);
+    };
+    const ev = (expression) =>
+      new Promise((r) => {
+        waiting.set(++id, (d) => r(d.result.result.value));
+        ws.send(JSON.stringify({ id, method: "Runtime.evaluate", params: { expression, awaitPromise: true, returnByValue: true } }));
+      });
+    for (let i = 0; i < 150 && !(await ev("!!(window.scan && window.scan.part)")); i++) await t.sleep(200);
+    await ev("window.scan.enableAudio().then(() => 1)");
+    for (let i = 0; i < 150 && !(await ev("window.scan.isReady()")); i++) await t.sleep(200);
+    await ev("(window.scan.applyRemote('/scan/phrase', [3]), 1)");
+    await t.sleep(300);
+    await fetch(`http://127.0.0.1:${dbg}/json/new?about:blank`, { method: "PUT" });
+    await t.sleep(1500);
+    const out = await body(ev);
+    ws.close();
+    return out;
+  } finally {
+    // Chrome is still writing its profile as it exits; removing it under that
+    // fails with ENOTEMPTY, so wait for the process before tidying up
+    const gone = new Promise((r) => chrome.once("exit", r));
+    chrome.kill();
+    await Promise.race([gone, t.sleep(5000)]);
+    try {
+      fs.rmSync(profile, { recursive: true, force: true, maxRetries: 5 });
+    } catch (e) {}
+  }
+}

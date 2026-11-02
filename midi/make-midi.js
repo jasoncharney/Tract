@@ -2,8 +2,7 @@
 /*
   midi/make-midi.js — the piece as eight MIDI tracks, for working out timing.
 
-      node midi/make-midi.js --scaffold   write timing.json from cues.json
-      node midi/make-midi.js              write the .mid files from timing.json
+      node midi/make-midi.js        write the .mid files from timing.json
 
   WHY THIS EXISTS. The one thing the score does not say is how long anything
   lasts — that is the conductor's to decide, and it is hard to decide without
@@ -12,19 +11,28 @@
   thing you are trying to find — the length of every cue — is a number in a
   text file you can edit.
 
+  HOW A PART PLAYS. A part does what it was last told until a cue speaks to
+  it again. That is how the piece is built — parts enter one after another
+  and pile up — and it is the thing the first version of this got wrong: every
+  gesture stopped at the end of its own cue, so each entry was a solo and
+  every cue nobody spoke in was silence.
+
+  So each part has lanes, and a lane changes only when that part's own block
+  says something about it: the sound (a scan, words, a sweep, a hold), the
+  whisper, the pitch, J, the pedal. A block that mentions only the whisper
+  leaves the sound running underneath it.
+
   HOW THE TIMING IS EDITED. Two ways, and they are for different jobs.
 
-    timing.json   one "seconds" per cue: the structure. Change a number, run
-                  this again, hear the whole shape move. This is the file to
-                  work in first.
+    timing.json   one "seconds" per cue: the structure, plus a reading of
+                  each instruction. Change a number, run this again, hear the
+                  whole shape move. This is the file to work in first.
     the DAW       drag the notes. Finer, and it does not survive a
                   regeneration — so do the big decisions in timing.json and
                   the nudging in the DAW.
 
   WHAT THE NOTES MEAN. The bottom two octaves are the player's keyboard, one
-  note per key; a note's LENGTH is how long the key is held. From C1 up, notes
-  set the pitch, as they always did. CC1 is the mouse on the strip: hold note
-  13 for the button and draw CC1 for where it is.
+  note per key; a note's LENGTH is how long the key is held.
 
       C-1   0  A   scan, slow          held
             1  S   scan, middle        held
@@ -34,15 +42,20 @@
             5  R   one word, fast
             6  Q   a voiced phoneme    held
             7  T   a noisy one         held
-            8  Z   whisper on / off
+            8  Z   whisper on / off    (a toggle: not written by this file)
             9  space — the pedal       held
            10  the diminuendo
            11  esc — stop everything
       B-1  12  J   change pitch
            13  the mouse on the strip  held, with CC1
+           14  whisper                 held: whispering for as long as it lasts
            15  standby
       C0   16  phrase 1   ...   23  phrase 8
-      C1   24+ set the pitch, as before
+      C1   24+ set the pitch and open the gate, as a keyboard does
+
+      CC1   where the mouse is on the strip
+      CC20  which phrase — 0 standby, 1–8
+      CC21  the pitch, as a MIDI note number — the gate is left alone
 
   The file is written at 60 bpm with 480 ticks to the quarter, so one beat is
   one second and one 4/4 bar is four. Seconds in timing.json and the DAW's own
@@ -92,13 +105,14 @@ const PLAYERS = [
   { id: "IV-2", part: "4", seat: 2, channel: 8 },
 ];
 
-const KEYNOTE = {
+const NOTE = {
   A: 0, S: 1, D: 2, W: 3, E: 4, R: 5, Q: 6, T: 7, Z: 8,
-  space: 9, fade: 10, stop: 11, J: 12, mouse: 13, standby: 15,
-  phrase1: 16, phrase2: 17, phrase3: 18, phrase4: 19,
-  phrase5: 20, phrase6: 21, phrase7: 22, phrase8: 23,
+  space: 9, fade: 10, stop: 11, J: 12, mouse: 13, whisper: 14, standby: 15,
+  phrase1: 16,
 };
-const HELD = new Set(["A", "S", "D", "Q", "T", "space", "mouse"]);
+const CC_MOUSE = 1;
+const CC_PHRASE = 20;
+const CC_PITCH = 21;
 
 /* ================================================================ *
  *  a repeatable kind of random
@@ -114,264 +128,422 @@ function rng(seedText) {
     h ^= seedText.charCodeAt(i);
     h = Math.imul(h, 16777619);
   }
-  return () => {
+  const next = () => {
     h ^= h << 13; h >>>= 0;
     h ^= h >> 17;
     h ^= h << 5; h >>>= 0;
     return h / 4294967296;
   };
+  // a number, or a [lo, hi] range to pick inside
+  next.pick = (v, fallback = 1) =>
+    Array.isArray(v) ? v[0] + next() * (v[1] - v[0]) : v === undefined ? fallback : Number(v);
+  return next;
 }
 
 /* ================================================================ *
- *  A — the scaffold, read out of the cue text
- *
- *  Every cue names its keys in braces and says in words how often to press
- *  them. That is enough for a first draft and not enough for a final one, so
- *  each entry carries the sentence it came from and is yours to correct.
+ *  how long things take, from the page's own numbers
  * ================================================================ */
 
+/* Where things are on each phrase's strip and how wide each cell is, measured
+ * off a real page. CC1 is a position in cells, so this is also where a sweep
+ * lands. */
 const CELLS = JSON.parse(fs.readFileSync(path.join(HERE, "phrase-cells.json"), "utf8"));
 
 /**
- * How long a phoneme takes under each held key — read out of scan.js, not
- * copied here.
+ * The scan and word rates — read out of scan.js, not copied here.
  *
  * These numbers are the single biggest thing deciding how long the piece
  * runs, and they get tuned by ear. A copy of them in this file would be wrong
  * the first time they changed, and wrong silently: the MIDI would still
- * generate, it would just no longer be the piece. So it reads the real table.
+ * generate, it would just no longer be the piece. So it reads the real tables.
  */
-const SCAN_SECS = (() => {
-  const fallback = { A: 2, S: 0.5, D: 0.175 };
+function readRates(name, fallback) {
   try {
     const src = fs.readFileSync(path.join(SCAN, "src", "scan.js"), "utf8");
-    const block = src.match(/const RATES = \{([\s\S]{0,400}?)\};/);
-    if (!block) throw new Error("no RATES table");
-    const pick = (name) => {
-      const m = block[1].match(new RegExp(`${name}:\\s*\\[\\s*([\\d.]+)\\s*,\\s*([\\d.]+)`));
-      if (!m) throw new Error(`no ${name} rate`);
-      return (Number(m[1]) + Number(m[2])) / 2; // the middle of the range
+    const block = src.match(new RegExp(`const ${name} = \\{([\\s\\S]{0,400}?)\\};`));
+    if (!block) throw new Error(`no ${name} table`);
+    const pick = (rate) => {
+      const m = block[1].match(new RegExp(`${rate}:\\s*\\[\\s*([\\d.]+)\\s*,\\s*([\\d.]+)`));
+      if (!m) throw new Error(`no ${rate} rate in ${name}`);
+      return [Number(m[1]), Number(m[2])];
     };
-    const got = { A: pick("slow"), S: pick("mid"), D: pick("fast") };
-    console.log(
-      `scan rates from scan.js: A ${got.A}s, S ${got.S}s, D ${got.D}s per phoneme`
-    );
-    return got;
+    return { slow: pick("slow"), mid: pick("mid"), fast: pick("fast") };
   } catch (e) {
-    console.log(`could not read the rates from scan.js (${e.message}) — using ${JSON.stringify(fallback)}`);
+    console.log(`could not read ${name} from scan.js (${e.message}) — using ${JSON.stringify(fallback)}`);
     return fallback;
   }
-})();
+}
+const RATES = readRates("RATES", { slow: [1, 3], mid: [0.25, 0.75], fast: [0.1, 0.25] });
+const SHOT_RATES = readRates("SHOT_RATES", { slow: [0.8, 1.6], mid: [0.25, 0.75], fast: [0.1, 0.25] });
+const mean = ([lo, hi]) => (lo + hi) / 2;
+const RATE_OF = { A: "slow", S: "mid", D: "fast", W: "slow", E: "mid", R: "fast" };
+const r3 = (n) => Math.round(n * 1000) / 1000;
+console.log(`scan rates from scan.js: A ${r3(mean(RATES.slow))}s, S ${r3(mean(RATES.mid))}s, D ${r3(mean(RATES.fast))}s per phoneme`);
+console.log(`word rates from scan.js: W ${r3(mean(SHOT_RATES.slow))}s, E ${r3(mean(SHOT_RATES.mid))}s, R ${r3(mean(SHOT_RATES.fast))}s per phoneme`);
 
-/** roughly how long one pass of a held scan takes on this phrase */
+const strip = (phrase) => (CELLS[String(phrase)] || CELLS["1"]).strip;
+
+/**
+ * One pass of a held scan, end to end: how long it should take, and how far
+ * either side of that it lands. The page draws every cell's length at random
+ * inside the rate's range, so a pass is a sum of uniform draws — and holding
+ * for the mean alone lets go of half the passes early and leaves the other
+ * half sitting silent at the end waiting for the next press.
+ */
 function passLength(phrase, key) {
-  const cells = (CELLS[String(phrase)] || {}).cells || 12;
-  return Math.round(cells * (SCAN_SECS[key] || 0.5) * 10) / 10;
+  const [lo, hi] = RATES[RATE_OF[key]];
+  const widths = strip(phrase).map((c) => c[2]);
+  const expected = widths.reduce((a, w) => a + w, 0) * mean([lo, hi]);
+  const sd = Math.sqrt(widths.reduce((a, w) => a + w * w, 0)) * ((hi - lo) / Math.sqrt(12));
+  return { expected, sd };
 }
 
-/**
- * Which stretch of the strip a sweep covers, 0 to 1.
- *
- * The cue quotes the words it wants in single quotes. Matching them against
- * the phrase gives a word range, and words are close enough to even along the
- * strip for a timing sketch — the page itself lays cells out by weight, so
- * this is near but not exact, and a sweep you care about is worth nudging by
- * hand afterwards.
- */
-function sweepRange(text, phrase) {
-  const whole = [0, 1];
-  const said = (CELLS[String(phrase)] || {}).text;
-  if (!said) return whole;
-  const quoted = text.match(/'([^']{2,60})'/);
-  if (!quoted) return whole;
-  const words = said.toLowerCase().replace(/[^a-z' ]/g, "").split(/\s+/).filter(Boolean);
-  const want = quoted[1].toLowerCase().replace(/[^a-z' ]/g, "").split(/\s+/).filter(Boolean);
-  if (!want.length) return whole;
-  for (let i = 0; i + want.length <= words.length; i++) {
-    if (want.every((w, j) => words[i + j] === w)) {
-      return [
-        Math.round((i / words.length) * 1000) / 1000,
-        Math.round(((i + want.length) / words.length) * 1000) / 1000,
-      ];
-    }
-  }
-  // a quoted fragment that is not a run of whole words — "the last [n] in
-  // 'strain'" — is one word, so sweep up to the end of it
-  const one = words.indexOf(want[want.length - 1]);
-  if (one > -1) return [Math.round((one / words.length) * 1000) / 1000, 1];
-  return whole;
+/** each word's length under a one-shot key, in strip order */
+function wordLengths(phrase, key) {
+  const widths = [];
+  strip(phrase).forEach(([, word, width]) => {
+    if (word < 0) return;
+    widths[word] = (widths[word] || 0) + width;
+  });
+  return widths.filter((w) => w !== undefined).map((w) => w * mean(SHOT_RATES[RATE_OF[key]]));
 }
 
-function scaffold() {
-  const cues = read("cues.json").cues || [];
-  const parts = read("parts.json").parts || [];
-  const doc = {
-    _: "Edit 'seconds' to change how long a cue runs — that is the whole point of this file. 'events' is a first draft read out of the cue text; 'from' is the sentence it came from, so you can see what was guessed. Then: node midi/make-midi.js",
-    tempo: 60,
-    spread: 0.15,
-    _spread: "seconds of scatter between the two players on a part, so they are not in robotic unison. 0 to line them up exactly.",
-    cues: [],
-  };
-
-  const held = {}; // part -> the key it is currently holding, across cues
-  cues.forEach((cue, index) => {
-    const entry = {
-      id: String(cue.id || index + 1),
-      phrase: cue.phrase || null,
-      label: cue.label || "",
-      seconds: 12,
-      parts: {},
-    };
-    parts.forEach((p) => {
-      const block = (cue.parts || {})[String(p.id)];
-      if (!block || !block.instruction) return;
-      entry.parts[String(p.id)] = {
-        from: block.instruction,
-        events: derive(block.instruction, cue, held, String(p.id)),
-      };
-    });
-    // A first guess at the length, so the first render sounds like something
-    // rather than like everything cut off. A cue that asks for a held scan
-    // cannot be shorter than one pass of it — phrase 3 held on A is most of a
-    // minute — and a cue nobody plays is a breath, not a section. These are
-    // the numbers you are here to change.
-    let longest = 0;
-    Object.values(entry.parts).forEach((block) =>
-      block.events.forEach((e) => {
-        if (typeof e.hold === "number") longest = Math.max(longest, e.hold);
-      })
-    );
-    if (Object.keys(entry.parts).length === 0) entry.seconds = 6;
-    else if (longest > 0) entry.seconds = Math.round(longest + 4);
-    doc.cues.push(entry);
-  });
-  return doc;
-}
-
-/**
- * One instruction, turned into events. Deliberately simple-minded: it reads
- * the braces for which keys, and a handful of words for how often. Where it
- * cannot tell, it leaves a single press at the top of the cue, which is wrong
- * in an obvious way rather than a subtle one.
- */
-function derive(text, cue, held, partId) {
-  const out = [];
-  const keys = [...text.matchAll(/\{([^}]{1,12})\}/g)].map((m) => m[1]);
-  const has = (re) => re.test(text);
-  const phrase = cue.phrase || 1;
-
-  // going somewhere: always first, and the rest of the cue happens there
-  keys.forEach((k) => {
-    if (/^[1-8]$/.test(k) && /Phrase \{/.test(text)) out.push({ k: `phrase${k}`, at: 0 });
-    if (k === "0") out.push({ k: "standby", at: 0 });
-  });
-
-  // the pedal is the one thing that survives a cue boundary
-  if (/Release \{space\}/.test(text) && held[partId] === "space") {
-    held[partId] = null; // the hold started in an earlier cue; it ends here
-    // "Release once silent" comes after the diminuendo, not before it
-    out.push({ k: "_releaseSpace", at: /once silent|when silent/.test(text) ? "rest" : 0 });
+/* W/E/R plays the next word, or a random one — per phrase, in the presets.
+ * In order, the generator knows which word each press gets and waits for a
+ * long word ("imprecision") instead of cutting it off. */
+const PRESETS = (() => {
+  try {
+    return read("presets.json");
+  } catch (e) {
+    return {};
   }
-  if (/hold with \{space\}|Hold \{space\}/.test(text)) {
-    held[partId] = "space";
-    out.push({ k: "space", at: 1.5, hold: "rest" });
-  }
-
-  if (keys.includes("↓")) out.push({ k: "fade", at: 0.5 });
-  if (/^Stop|Silence/.test(text)) out.push({ k: "stop", at: 0 });
-
-  // the mouse: "sweep" and "scan ... with the mouse" are a curve, not a key.
-  // A cue that quotes the words it wants — "sweep slowly through 'under the
-  // burden'" — gets a curve across those words only, not the whole strip,
-  // which is the difference between the cue and a different cue.
-  if (/[Ss]weep|with your mouse/.test(text)) {
-    out.push({ k: "mouse", at: 1, hold: "rest", sweep: sweepRange(text, phrase) });
-  }
-
-  // held scans, re-pressed at the end of each pass
-  ["A", "S", "D"].forEach((k) => {
-    if (!keys.includes(k)) return;
-    const pass = passLength(phrase, k);
-    out.push({ k, from: 1, to: "rest", every: [pass + 0.6, pass + 1.6], hold: pass });
-  });
-
-  // one-shot words
-  ["W", "E", "R"].forEach((k) => {
-    if (!keys.includes(k)) return;
-    if (has(/once/)) out.push({ k, at: 1 });
-    if (has(/quickly and irregular/)) out.push({ k, from: 4, to: "rest", every: [0.35, 0.9] });
-    else if (has(/steady pulse/)) out.push({ k, from: 1, to: "rest", every: 2.2 });
-    else if (has(/irregular/)) out.push({ k, from: 1, to: "rest", every: [0.9, 2.4] });
-    else if (!has(/once/)) out.push({ k, from: 1, to: "rest", every: [1.2, 2.6] });
-  });
-
-  // the percussive keys
-  ["Q", "T"].forEach((k) => {
-    if (!keys.includes(k)) return;
-    const quick = has(/quickly|rapid/);
-    out.push({
-      k,
-      from: 1,
-      to: "rest",
-      every: quick ? [0.2, 0.6] : [0.7, 1.8],
-      hold: 0.12,
-    });
-  });
-
-  if (keys.includes("Z")) {
-    if (has(/short bursts|on and off/)) {
-      out.push({ k: "Z", from: 1, to: "rest", every: [1.4, 3.2] });
-    } else {
-      out.push({ k: "Z", at: 0.4 });
-    }
-  }
-  if (keys.includes("J")) {
-    out.push({ k: "J", from: 2, to: "rest", every: has(/from time to time/) ? [6, 12] : [3, 7] });
-  }
-
-  if (out.length === 0) out.push({ k: "_nothing", at: 0 });
-  return out;
-}
+})();
+const wordModeOf = (phrase) => ((PRESETS[String(phrase - 1)] || {}).wordMode === "random" ? "random" : "next");
 
 /* ================================================================ *
- *  B — events into notes
+ *  B — a timing.json part block, into notes
+ *
+ *  Times inside a block, all relative to the moment the cue reaches this
+ *  player (its start, nudged by the seat's spread):
+ *
+ *    0     let go: the pedal, and whatever the last sound was holding
+ *    0.1   go to a phrase — or at "goAt"
+ *    0.2   whisper, when the block both moves phrase and sets it
+ *    0.3   the new sound, pitch and J, when anything above happened first;
+ *          otherwise at 0. "soundAt" overrides.
+ *
+ *  The gaps are a few frames on the page. They are there because a phrase
+ *  change stops the transport, so a scan that started before it would be
+ *  stopped by it.
  * ================================================================ */
 
-/** expand one event into [{note, at, hold}] within a cue of this length */
-function expand(event, cueSeconds, random) {
-  const span = (v) => (v === "rest" ? cueSeconds : Number(v) || 0);
-  const notes = [];
-  const holdOf = (fallback) =>
-    event.hold === "rest" ? null : event.hold === undefined ? fallback : Number(event.hold);
+function renderPlayer(player, timing, starts, total, spread) {
+  const ch = (player.channel - 1) & 0x0f;
+  const events = [];
+  // order at a shared tick: note offs, then controllers, then note ons — so a
+  // sweep's first position is in place before the mouse goes down, and a key
+  // re-pressed on the same tick is let go first
+  const off = (t, note) => events.push({ t, order: 0, bytes: [0x80 | ch, note, 0] });
+  const cc = (t, number, value) =>
+    events.push({ t, order: 1, bytes: [0xb0 | ch, number, Math.max(0, Math.min(127, Math.round(value)))] });
+  const on = (t, note) => events.push({ t, order: 2, bytes: [0x90 | ch, note, 100] });
+  const tap = (t, note, length = 0.08) => (on(t, note), off(t + length, note));
 
-  if (event.k === "_nothing" || event.k === "_releaseSpace") return notes;
-  const note = KEYNOTE[event.k];
-  if (note === undefined) return notes;
-  const isHeld = HELD.has(event.k);
-  const base = isHeld ? 0.4 : 0.08;
+  /* every block this player's part is given, with its moments worked out */
+  const blocks = [];
+  timing.cues.forEach((cue, i) => {
+    const block = (cue.parts || {})[player.part];
+    if (!block) return;
+    const nudge = block.together || spread === 0 ? 0 : (player.seat - 1.5) * spread;
+    const t = starts[i] + Math.max(0, nudge);
+    const moves = block.go !== undefined && block.goAt === undefined;
+    const settles = moves || typeof block.whisper === "boolean";
+    blocks.push({
+      cue,
+      block,
+      t,
+      random: rng(`${cue.id}|${player.id}`),
+      goAt: t + (block.goAt !== undefined ? Number(block.goAt) : 0.1),
+      whisperAt: t + (moves ? 0.2 : 0),
+      act: t + (block.soundAt !== undefined ? Number(block.soundAt) : settles ? 0.3 : 0),
+    });
+  });
 
-  const push = (at) => {
-    let hold = holdOf(base);
-    if (hold === null) hold = Math.max(0.2, cueSeconds - at - 0.2); // "rest" = to the end
-    if (at >= cueSeconds) return;
-    notes.push({ note, at, hold: Math.min(hold, cueSeconds - at - 0.05) });
+  /* ---- the phrase lane ----
+   *
+   * One long note per phrase rather than a blip at each change, plus CC20.
+   * In the piano roll it is a bar you can see and drag; and it is what makes
+   * skipping around in the DAW work: a host that chases notes retriggers the
+   * bar you land inside, and CC20 carries the same thing for hosts that chase
+   * only controllers. The page ignores either one when it is already there. */
+  const phrases = blocks.filter((b) => b.block.go !== undefined).map((b) => ({ t: b.goAt, phrase: Number(b.block.go) }));
+  phrases.forEach((seg, i) => {
+    const to = i + 1 < phrases.length ? phrases[i + 1].t : total;
+    const note = seg.phrase === 0 ? NOTE.standby : NOTE.phrase1 + seg.phrase - 1;
+    cc(seg.t, CC_PHRASE, seg.phrase);
+    on(seg.t, note);
+    off(Math.max(seg.t + 0.2, to - 0.05), note);
+  });
+  const phraseAt = (t) => {
+    let p = 1;
+    phrases.forEach((seg) => seg.t <= t + 1e-6 && (p = seg.phrase || p));
+    return p;
   };
 
-  if (event.at !== undefined) {
-    push(Number(event.at) || 0);
-    return notes;
+  /* ---- the lanes that run until replaced ---- */
+  // `lets` is when the next block in this lane ends the one before it
+  const lane = (key, when, lets = when) =>
+    blocks
+      .filter((b) => b.block[key] !== undefined)
+      .map((b) => ({ ...b, at: when(b), letsGo: lets(b), spec: b.block[key] }))
+      .map((e, i, list) => ({ ...e, until: i + 1 < list.length ? list[i + 1].letsGo : total }));
+
+  const wordPresses = []; // when each word starts and ends, for "after each word"
+
+  /* sound */
+  // The old sound lets go the moment this part is spoken to — before the
+  // phrase change, not after it. Letting a sweep run on to the new sound's
+  // start sent its last CC1s after the phrase had changed, and dragged the
+  // new phrase's playhead half way along before its first scan began.
+  lane("sound", (b) => b.act, (b) => (b.block.soundAt !== undefined ? b.act : b.t)).forEach((e) => {
+    const segments = Array.isArray(e.spec) ? e.spec : [e.spec];
+    // only an object has an "at" of its own: "stop".at is String.prototype.at,
+    // a function, and Number() of it put NaN into the timeline
+    const offset = (seg) => (seg && typeof seg === "object" && seg.at !== undefined ? Number(seg.at) : 0);
+    segments.forEach((seg, k) => {
+      const t0 = e.at + offset(seg);
+      const next = segments[k + 1];
+      const t1 = next ? e.at + offset(next) : e.until;
+      sound(seg, t0, t1, phraseAt(t0), e.random);
+    });
+  });
+
+  function sound(spec, t0, t1, phrase, random) {
+    const end = t1 - 0.03; // anything held lets go just before the next thing
+    if (spec === null || spec === undefined || end <= t0) return;
+    if (spec === "stop") return tap(t0, NOTE.stop);
+
+    if (spec.scan) {
+      const key = NOTE[spec.scan];
+      if (spec.once) {
+        on(t0, key);
+        off(Math.min(end, spec.secs ? t0 + Number(spec.secs) : end), key);
+        return;
+      }
+      // "When you reach the end, press it again." The pass is random on the
+      // page, so the press cannot know where the end is. Let go too early and
+      // the press only finishes the old pass — then sits silent for a whole
+      // hold, which a played-through run showed: 18 s of nothing from Part I
+      // in cues 4-5. Too late only means waiting at the end, which is what
+      // the score describes. So: 2.2 standard deviations past the mean, which
+      // a pass outlasts about one time in seventy.
+      const { expected, sd } = passLength(phrase, spec.scan);
+      const hold = expected + 2.2 * sd;
+      // A new scan starts from the top of the strip. Pressed where the last
+      // gesture left the playhead, its first press only finished the old
+      // pass and then waited out a whole hold — IV changing from A to S in
+      // cue 30 sounded half the cue. "continue" is "finish the scan you are on".
+      if (!spec.continue) cc(t0, CC_MOUSE, 0);
+      for (let t = t0; t < end - 0.2; ) {
+        on(t, key);
+        off(Math.min(end, t + hold), key);
+        t += hold + random.pick([0.1, 0.3]);
+      }
+      return;
+    }
+
+    if (spec.words) {
+      const key = spec.words;
+      const lengths = wordLengths(phrase, key);
+      const mean = lengths.reduce((a, b) => a + b, 0) / lengths.length;
+      const inOrder = wordModeOf(phrase) === "next";
+      let cursor = -1;
+      for (let t = t0; t < end - 0.05; ) {
+        cursor = (cursor + 1) % lengths.length;
+        const length = inOrder ? lengths[cursor] : mean;
+        tap(t, NOTE[key]);
+        wordPresses.push({ t, end: t + length });
+        if (spec.jAfter) tap(t + length + 0.05, NOTE.J);
+        if (spec.once) return;
+        t += spec.gap !== undefined ? length + random.pick(spec.gap) : random.pick(spec.every, 1);
+      }
+      return;
+    }
+
+    if (spec.shots) {
+      for (let t = t0; t < end - 0.05; t += random.pick(spec.every, 1)) {
+        on(t, NOTE[spec.shots]);
+        off(Math.min(end, t + random.pick(spec.hold, 0.12)), NOTE[spec.shots]);
+      }
+      return;
+    }
+
+    if (spec.hold !== undefined) {
+      cc(t0, CC_MOUSE, Number(spec.hold) * 127);
+      on(t0, NOTE.mouse);
+      off(end, NOTE.mouse);
+      return;
+    }
+
+    if (spec.sweep) {
+      const [a, b] = spec.sweep;
+      // the mouse moving, drawn as a CC1 curve ten points a second
+      const ramp = (from, to, start, secs) => {
+        const steps = Math.max(2, Math.round(secs * 10));
+        for (let s = 0; s <= steps; s++) {
+          const t = start + (secs * s) / steps;
+          if (t > end) break;
+          cc(t, CC_MOUSE, (from + ((to - from) * s) / steps) * 127);
+        }
+        return start + secs;
+      };
+      const mode = spec.mode || "once";
+      if (mode === "once") {
+        cc(t0, CC_MOUSE, a * 127);
+        on(t0, NOTE.mouse);
+        const done = ramp(a, b, t0, random.pick(spec.secs, 4));
+        off(spec.then === "hold" ? end : Math.min(end, done + 0.3), NOTE.mouse);
+      } else if (mode === "loop") {
+        // again and again, lifting the mouse to go back to the start
+        for (let t = t0; t < end - 0.5; ) {
+          const secs = random.pick(spec.secs, 4);
+          cc(t, CC_MOUSE, a * 127);
+          on(t, NOTE.mouse);
+          const done = ramp(a, b, t, secs);
+          off(Math.min(end, done + 0.15), NOTE.mouse);
+          t = done + random.pick([0.3, 0.7]);
+        }
+      } else {
+        // pingpong: back and forth across the range; wander: anywhere inside
+        // it, sometimes one word and sometimes all of it, faster and slower
+        cc(t0, CC_MOUSE, a * 127);
+        on(t0, NOTE.mouse);
+        let here = a;
+        let t = t0;
+        let toward = b;
+        while (t < end - 0.3) {
+          let there = toward;
+          let secs = random.pick(spec.secs, 2);
+          if (mode === "wander") {
+            there = a + random() * (b - a);
+            secs *= Math.max(0.3, Math.abs(there - here) / Math.max(0.01, b - a));
+          }
+          t = ramp(here, there, t, secs);
+          if (mode === "wander" && random() < 0.3) t += random.pick([0.2, 0.9]); // a breath, still held
+          here = there;
+          toward = toward === b ? a : b;
+        }
+        off(end, NOTE.mouse);
+      }
+      return;
+    }
   }
-  const from = span(event.from === undefined ? 0 : event.from);
-  const to = span(event.to === undefined ? "rest" : event.to);
-  const every = event.every === undefined ? 1 : event.every;
-  let t = from;
-  let guard = 0;
-  while (t < to && guard++ < 2000) {
-    push(t);
-    const gap = Array.isArray(every) ? every[0] + random() * (every[1] - every[0]) : Number(every) || 1;
-    t += Math.max(0.05, gap);
-  }
-  return notes;
+
+  /* whisper, as a held note 14 — the page sets the state, never flips it */
+  const whispering = []; // [from, to] spans
+  let state = false;
+  let since = 0;
+  const set = (t, value) => {
+    if (value === state) return;
+    if (value) since = t;
+    else whispering.push([since, t]);
+    state = value;
+  };
+  lane("whisper", (b) => b.whisperAt).forEach((e) => {
+    const spec = e.spec;
+    if (spec === true || spec === false) return set(e.at, spec);
+    if (spec === "steady") return; // stop the bursts, keep whatever the base was
+    if (spec.bursts) {
+      // single voiced notes breaking out of the whisper: short gaps in it
+      set(e.at, true);
+      for (let t = e.at + e.random.pick(spec.bursts); t < e.until - 0.5; t += e.random.pick(spec.bursts)) {
+        const length = e.random.pick(spec.len, 0.4);
+        set(t, false);
+        set(Math.min(e.until - 0.1, t + length), true);
+        t += length;
+      }
+      return;
+    }
+    if (spec.voiced) {
+      // "more and more of your sound voiced, until you are fully voiced": the
+      // voiced gaps grow and the whispered ones shrink, then it stays voiced
+      const by = Math.min(e.until, e.at + Number(spec.voiced));
+      set(e.at, true);
+      for (let t = e.at + 0.5; t < by - 0.3; ) {
+        const k = (t - e.at) / (by - e.at);
+        const voiced = 0.25 + k * 1.6;
+        set(t, false);
+        t += voiced;
+        if (t >= by - 0.3) break;
+        set(t, true);
+        t += Math.max(0.15, 1.4 * (1 - k));
+      }
+      set(by, false);
+    }
+  });
+  if (state) whispering.push([since, total]);
+  whispering.forEach(([a, b]) => {
+    if (b - a < 0.05) return;
+    on(a, NOTE.whisper);
+    off(b, NOTE.whisper);
+  });
+
+  /* pitch, as CC21 — a note number, without touching the gate */
+  lane("pitch", (b) => b.act).forEach((e) => {
+    const spec = e.spec;
+    const span = e.until - e.at;
+    if (spec === "stay" || span <= 0) return;
+    if (spec.set !== undefined) return cc(e.at, CC_PITCH, spec.set);
+    if (spec.slide || spec.widen) {
+      for (let t = e.at; t < e.until - 0.1; t += e.random.pick(spec.every, 1.5)) {
+        const k = (t - e.at) / span;
+        const [lo, hi] = spec.slide || [
+          spec.widen[0][0] + k * (spec.widen[1][0] - spec.widen[0][0]),
+          spec.widen[0][1] + k * (spec.widen[1][1] - spec.widen[0][1]),
+        ];
+        cc(t, CC_PITCH, lo + e.random() * (hi - lo));
+      }
+      return;
+    }
+    if (spec.drift) {
+      // little by little, a semitone at a time, arriving at the end of the span
+      const [from, to] = spec.drift;
+      const steps = Math.abs(to - from);
+      for (let s = 0; s <= steps; s++) cc(e.at + (span * s) / (steps + 1), CC_PITCH, from + Math.sign(to - from) * s);
+      return;
+    }
+    if (spec.alternate) {
+      // after every word, to the other one
+      let k = 0;
+      wordPresses
+        .filter((w) => w.t >= e.at - 0.01 && w.t < e.until)
+        .forEach((w) => cc(Math.min(e.until - 0.05, w.end + 0.05), CC_PITCH, spec.alternate[k++ % 2]));
+      cc(e.at, CC_PITCH, spec.alternate[1]);
+    }
+  });
+
+  /* J, from time to time */
+  lane("j", (b) => b.act).forEach((e) => {
+    if (!Array.isArray(e.spec)) return; // "stop"
+    for (let t = e.at + e.random.pick(e.spec); t < e.until - 0.2; t += e.random.pick(e.spec)) tap(t, NOTE.J);
+  });
+
+  /* the pedal: down and up where the blocks say */
+  let pedal = false;
+  blocks
+    .filter((b) => b.block.pedal)
+    .forEach((b) => {
+      const t = b.t + Number(b.block.pedalAt || 0);
+      if (b.block.pedal === "down" && !pedal) on(t, NOTE.space);
+      if (b.block.pedal === "up" && pedal) off(t, NOTE.space);
+      pedal = b.block.pedal === "down";
+    });
+  if (pedal) off(total, NOTE.space);
+
+  /* the diminuendo */
+  blocks.filter((b) => b.block.fade !== undefined).forEach((b) => tap(b.t + Number(b.block.fade), NOTE.fade));
+
+  return events;
 }
 
 /* ================================================================ *
@@ -412,7 +584,7 @@ function track(events, name) {
   events.sort((a, b) => a.tick - b.tick || a.order - b.order);
   let last = 0;
   events.forEach((e) => {
-    body.push(...varint(Math.max(0, Math.round(e.tick - last))), ...e.bytes);
+    body.push(...varint(Math.max(0, e.tick - last)), ...e.bytes);
     last = e.tick;
   });
   body.push(...varint(0), 0xff, 0x2f, 0x00);
@@ -421,7 +593,7 @@ function track(events, name) {
 
 function build(timing) {
   const bpm = Number(timing.tempo) || 60;
-  const secToTick = (s) => (s * bpm * PPQ) / 60;
+  const secToTick = (s) => Math.round((s * bpm * PPQ) / 60);
   const spread = Number(timing.spread) || 0;
 
   /* where every cue starts, and the markers that say so */
@@ -433,115 +605,33 @@ function build(timing) {
   });
   const total = clock;
 
-  const conductor = [];
-  conductor.push({
-    tick: 0,
-    order: 0,
-    bytes: [0xff, 0x51, 0x03, ...[16, 8, 0].map((_, i) => [(60000000 / bpm) >> 16 & 255, (60000000 / bpm) >> 8 & 255, (60000000 / bpm) & 255][i])],
-  });
-  conductor.push({ tick: 0, order: 1, bytes: [0xff, 0x58, 0x04, 4, 2, 24, 8] });
+  const tempo = Math.round(60000000 / bpm);
+  const conductor = [
+    { tick: 0, order: 0, bytes: [0xff, 0x51, 0x03, (tempo >> 16) & 255, (tempo >> 8) & 255, tempo & 255] },
+    { tick: 0, order: 1, bytes: [0xff, 0x58, 0x04, 4, 2, 24, 8] },
+  ];
   timing.cues.forEach((cue, i) => {
     const text = `cue ${cue.id}${cue.phrase ? ` · ph ${cue.phrase}` : ""}${cue.label ? ` · ${cue.label}` : ""}`;
     conductor.push({ tick: secToTick(starts[i]), order: 2, bytes: meta(0x06, text) });
   });
 
   const tracks = PLAYERS.map((player) => {
-    const events = [];
-    const ch = (player.channel - 1) & 0x0f;
-    let pedalOpenedAt = null;
-
-    /* ---- the phrase lane ----
-     *
-     * Where this player is in the piece, drawn as one long note per phrase
-     * rather than a blip at each change. Two reasons. In the piano roll it is
-     * a bar you can see and drag, which is what you want when the question is
-     * "should phrase 3 start later". And it is what makes skipping around in
-     * the DAW work: a host that chases notes retriggers the bar you land
-     * inside, and CC20 carries the same thing for hosts that chase only
-     * controllers. The page ignores either one when it is already on that
-     * phrase, so both arriving is harmless. */
-    const lane = [];
-    timing.cues.forEach((cue, i) => {
-      const block = (cue.parts || {})[player.part];
-      if (!block || !Array.isArray(block.events)) return;
-      block.events.forEach((e) => {
-        const m = /^phrase([1-8])$/.exec(e.k);
-        if (!m && e.k !== "standby") return;
-        const phrase = e.k === "standby" ? 0 : Number(m[1]);
-        const at = starts[i] + (Number(e.at) || 0);
-        if (lane.length) lane[lane.length - 1].to = at;
-        lane.push({ phrase, from: at, to: total });
-      });
-    });
-    lane.forEach((seg) => {
-      const note = seg.phrase === 0 ? KEYNOTE.standby : KEYNOTE[`phrase${seg.phrase}`];
-      const until = Math.max(seg.from + 0.2, seg.to - 0.05);
-      events.push({ tick: secToTick(seg.from), order: -2, bytes: [0xb0 | ch, 20, seg.phrase] });
-      events.push({ tick: secToTick(seg.from), order: -1, bytes: [0x90 | ch, note, 100] });
-      events.push({ tick: secToTick(until), order: 2000, bytes: [0x80 | ch, note, 0] });
-    });
-
-    timing.cues.forEach((cue, i) => {
-      const block = (cue.parts || {})[player.part];
-      const t0 = starts[i];
-      const seconds = Math.max(0.2, Number(cue.seconds) || 0);
-      // the two players on a part are not a machine: nudge one of them
-      const jitter = spread === 0 ? 0 : (player.seat - 1.5) * spread;
-      if (!block || !Array.isArray(block.events)) return;
-      const random = rng(`${cue.id}|${player.id}`);
-
-      block.events.forEach((event, n) => {
-        // the phrase lane above already drew these, as held notes
-        if (/^phrase[1-8]$/.test(event.k) || event.k === "standby") return;
-        if (event.k === "_releaseSpace" && pedalOpenedAt !== null) {
-          // close a pedal that was opened in an earlier cue. "rest" means at
-          // the end of this cue — "release once silent" comes after the
-          // diminuendo, not at the downbeat that starts it.
-          const when = event.at === "rest" ? t0 + seconds - 0.1 : t0 + (Number(event.at) || 0);
-          events.push({ tick: secToTick(when), order: 0, bytes: [0x80 | ch, KEYNOTE.space, 0] });
-          pedalOpenedAt = null;
-          return;
-        }
-        expand(event, seconds, random).forEach((hit) => {
-          const at = Math.max(0, t0 + hit.at + (hit.at > 0 ? jitter : 0));
-          const off = at + Math.max(0.05, hit.hold);
-          if (event.k === "space" && event.hold === "rest") {
-            // leave it open: a later cue's "Release {space}" closes it
-            events.push({ tick: secToTick(at), order: n, bytes: [0x90 | ch, hit.note, 100] });
-            pedalOpenedAt = at;
-            return;
-          }
-          events.push({ tick: secToTick(at), order: n, bytes: [0x90 | ch, hit.note, 100] });
-          events.push({ tick: secToTick(off), order: 1000 + n, bytes: [0x80 | ch, hit.note, 0] });
-          // a sweep draws its curve under the held note
-          if (event.sweep) {
-            const [a, b] = event.sweep;
-            const steps = Math.max(2, Math.round((off - at) * 8));
-            for (let s = 0; s <= steps; s++) {
-              const k = s / steps;
-              events.push({
-                tick: secToTick(at + (off - at) * k),
-                order: 500 + s,
-                bytes: [0xb0 | ch, 1, Math.round((a + (b - a) * k) * 127)],
-              });
-            }
-          }
-        });
-      });
-    });
-
-    if (pedalOpenedAt !== null) {
-      events.push({ tick: secToTick(total), order: 9999, bytes: [0x80 | ch, KEYNOTE.space, 0] });
-    }
+    const rendered = renderPlayer(player, timing, starts, total, spread);
+    // One NaN time breaks the sort, and a track out of order is not a
+    // malformed file — it parses, every delta clamped at zero, and the piece
+    // quietly runs twice as long with half of it in the wrong place.
+    const bad = rendered.find((e) => !isFinite(e.t) || e.bytes.some((b) => !Number.isInteger(b)));
+    if (bad) throw new Error(`${player.id}: an event with no proper time or value — ${bad.t} [${bad.bytes}]`);
+    const events = rendered.map((e) => ({
+      tick: secToTick(Math.max(0, Math.min(total, e.t))),
+      order: e.order,
+      bytes: e.bytes,
+    }));
     return { player, buf: track(events, `${player.id} (ch ${player.channel})`), count: events.length };
   });
 
   const header = (n) => chunk("MThd", [0, 1, (n >> 8) & 255, n & 255, (PPQ >> 8) & 255, PPQ & 255]);
-  const all = Buffer.concat([
-    header(tracks.length + 1),
-    track(conductor, "conductor"),
-    ...tracks.map((t) => t.buf),
-  ]);
+  const all = Buffer.concat([header(tracks.length + 1), track(conductor, "conductor"), ...tracks.map((t) => t.buf)]);
   const singles = tracks.map((t) => ({
     player: t.player,
     count: t.count,
@@ -554,21 +644,33 @@ function build(timing) {
  *  running it
  * ================================================================ */
 
-const WANT_SCAFFOLD = process.argv.includes("--scaffold");
-
-if (WANT_SCAFFOLD || !fs.existsSync(TIMING)) {
-  if (fs.existsSync(TIMING) && WANT_SCAFFOLD) {
-    const backup = TIMING.replace(/\.json$/, `.${Date.now()}.json`);
-    fs.copyFileSync(TIMING, backup);
-    console.log(`your timing.json was kept as ${path.basename(backup)}`);
-  }
-  fs.writeFileSync(TIMING, JSON.stringify(scaffold(), null, 2) + "\n");
-  console.log(`wrote ${path.relative(process.cwd(), TIMING)} — edit the "seconds", then run this again`);
-  if (WANT_SCAFFOLD) process.exit(0);
+if (process.argv.includes("--scaffold")) {
+  console.log(
+    "--scaffold is gone: timing.json is a reading of the score now, written by\n" +
+      "hand, and a scaffold guessed from the cue text would overwrite it. Edit it."
+  );
+  process.exit(1);
 }
 
 const timing = JSON.parse(fs.readFileSync(TIMING, "utf8"));
-const { all, singles, starts, total } = build(timing);
+
+/* a reading of a cue that has since been rewritten is a reading of a
+ * different cue — say so rather than playing the old one quietly */
+const score = read("cues.json").cues || [];
+timing.cues.forEach((cue, i) => {
+  const now = score[i];
+  if (!now) return console.log(`! timing.json has a cue ${cue.id} that cues.json no longer does`);
+  Object.entries(cue.parts || {}).forEach(([part, block]) => {
+    const said = ((now.parts || {})[part] || {}).instruction;
+    if (block.from && said !== block.from) console.log(`! cue ${cue.id}, part ${part}: the instruction has changed since timing.json read it`);
+  });
+  Object.keys(now.parts || {}).forEach((part) => {
+    if (!(cue.parts || {})[part]) console.log(`! cue ${cue.id}, part ${part}: an instruction timing.json has no reading of`);
+  });
+});
+if (score.length > timing.cues.length) console.log(`! cues.json has ${score.length - timing.cues.length} cue(s) timing.json does not`);
+
+const { all, singles, total } = build(timing);
 fs.mkdirSync(OUT, { recursive: true });
 fs.writeFileSync(path.join(OUT, "tract-all.mid"), all);
 singles.forEach((s) => fs.writeFileSync(path.join(OUT, `tract-${s.player.id}.mid`), s.buf));
@@ -576,7 +678,7 @@ singles.forEach((s) => fs.writeFileSync(path.join(OUT, `tract-${s.player.id}.mid
 /* what you actually want to see: where the time goes */
 const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
 const byPhrase = new Map();
-timing.cues.forEach((cue, i) => {
+timing.cues.forEach((cue) => {
   const key = cue.phrase || "—";
   byPhrase.set(key, (byPhrase.get(key) || 0) + Math.max(0.2, Number(cue.seconds) || 0));
 });
@@ -591,13 +693,7 @@ console.log(`\n  out/tract-all.mid        ${(all.length / 1024).toFixed(0)} kB, 
 singles.forEach((s) =>
   console.log(`  out/tract-${s.player.id}.mid`.padEnd(27) + `${s.count} events, channel ${s.player.channel}`)
 );
-console.log("\nwindows to open, one per track:");
+console.log("\nwindows: node midi/testers.js opens all eight, or by hand:");
 PLAYERS.forEach((p) =>
   console.log(`  ch ${String(p.channel).padStart(2)}  /scan/?part=${["", "I", "II", "III", "IV"][Number(p.part)]}&seat=${p.seat}&midich=${p.channel}`)
 );
-console.log(
-  "\n?midich= both turns MIDI on and sets the channel. A bare ?midi turns it on\n" +
-    "and lets you pick the channel in the part panel. Without either, the window\n" +
-    "is an ordinary player's page and knows nothing about MIDI."
-);
-void starts;

@@ -5,7 +5,14 @@ cd test && npm run setup      # once: installs Playwright and a Chromium
 node test/run-all.js          # from the repo root
 node test/run-all.js stage    # only the suites whose name matches
 node test/stage-join.test.js  # or one on its own
+node test/play-midi.js        # ~6 min: play the generated MIDI into real pages
 ```
+
+`play-midi.js` is not a suite — it takes as long as the piece, so `run-all`
+leaves it out. Run it after changing `midi/timing.json` or `make-midi.js`.
+
+Suites start their own bridge on free TCP and UDP ports, so they run alongside
+the real bridge holding 8080 and 7400.
 
 **The piece has no dependencies. These tests do** — Playwright, confined to
 this folder, never required to run or perform *Tract*. Nothing in `scan/`,
@@ -32,6 +39,17 @@ Things that were caught only by looking at the result:
   floating near the corner of the tile
 - the join address wrapped onto two lines at its longest, which is worse than
   small type, because people type the first line
+- a MIDI-driven window behind another one never scanned, and a one-shot word
+  in it never ended — Chrome stops animation frames for a window not in
+  front, and the transport ran on them. No Playwright page could show it:
+  Playwright launches Chrome with background throttling off and keeps the
+  pages it drives visible. `midi.test.js` §6 launches the binary itself,
+  `--headless=new`, puts a tab in front and talks raw CDP
+- the regenerated MIDI read back perfectly and played wrong twice: a sweep's
+  last positions arrived after the phrase change and dragged the next scan
+  half way along its strip, and a scan re-pressed just before the end of a
+  pass only finished it, then sat silent for eighteen seconds. Only playing
+  the file into pages (`play-midi.js`) showed either
 
 A check that passes while proving nothing is the failure mode to watch for.
 One here once asserted a phoneme "was a string", sampled it with the gate shut
@@ -46,7 +64,7 @@ and passed on the empty string the page correctly sends for silence.
 | `stage-layout` | grid and ring at every count 1–20 on two screen shapes, subtitles, the count readout |
 | `stage-phoneme` | the phoneme in the crook, in pixels, across the real range of tract widths |
 | `stage-join` | `?IP`, the network name, and that none of it leaks into a performance |
-| `midi` | the generated files parsed back from the spec, and the note map on a live page |
+| `midi` | the generated files parsed back from the spec, parts carrying on and whisper state in them, the note map on a live page, DAW stop, a window that is not in front |
 
 ## Writing another
 

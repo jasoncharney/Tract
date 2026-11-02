@@ -41,11 +41,25 @@ function freePort() {
   });
 }
 
+/** a free UDP port: the bridge's OSC input, so a suite can run while the real
+ *  bridge is up on this machine holding 7400 */
+function freeUdpPort() {
+  const dgram = require("dgram");
+  return new Promise((resolve) => {
+    const s = dgram.createSocket("udp4");
+    s.bind(0, "127.0.0.1", () => {
+      const { port } = s.address();
+      s.close(() => resolve(port));
+    });
+  });
+}
+
 async function startBridge(port) {
+  const udpIn = await freeUdpPort();
   // --no-tls because a self-signed certificate would make every page in every
   // suite an interstitial. The pages' own https-only paths (AudioWorklet) are
   // satisfied by 127.0.0.1, which browsers treat as a secure context.
-  const proc = spawn("node", ["scan/scan-bridge.js", "--port", String(port), "--no-tls"], {
+  const proc = spawn("node", ["scan/scan-bridge.js", "--port", String(port), "--udp-in", String(udpIn), "--no-tls"], {
     cwd: ROOT,
     stdio: "ignore",
   });

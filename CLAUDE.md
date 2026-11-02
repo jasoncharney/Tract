@@ -25,7 +25,7 @@ Then `https://localhost:8080/` (player), `/conduct.html` (desk),
 | `scan/src/stage.js` | the projection — the wall of tracts, subtitles, title card |
 | `scan/scan-bridge.js` | static HTTPS + WebSocket relay + OSC bridge, dependency-free |
 | `scan/cues.json` `parts.json` `presets.json` | the score, written by the pages themselves |
-| `midi/make-midi.js` | the piece as 8 MIDI tracks, for working out timing |
+| `midi/make-midi.js` | the piece as 8 MIDI tracks, for working out timing, from `midi/timing.json` (a hand-written reading of every cue) |
 | `score/make-score.js` | the printed guide, player cards and cue sheet |
 
 ## Conventions
@@ -46,7 +46,8 @@ Then `https://localhost:8080/` (player), `/conduct.html` (desk),
 
   ```
   cd test && npm run setup     # once
-  node test/run-all.js         # ~100s, 145 checks, 6 suites
+  node test/run-all.js         # ~110s, 164 checks, 6 suites
+  node test/play-midi.js       # ~6 min, after touching midi/: the file played into pages
   node test/run-all.js stage   # just the matching ones
   ```
 
@@ -77,6 +78,12 @@ Then `https://localhost:8080/` (player), `/conduct.html` (desk),
 - **Feeds are gated on a listener.** Players send `/tract/frame` only while a
   stage is saying hello, and `/player/at` only while a desk is pinging. A page
   that isn't listening gets nothing, by design.
+- **A window not in front gets almost no animation frames**, and a Playwright
+  page can never show you that: Playwright turns background throttling off and
+  keeps its pages visible. Anything that must keep time — the transport, the
+  voice — runs from `step()`, which a worker heartbeat calls when frames stop
+  arriving. Painting stays on rAF. To test hidden behaviour, launch the binary
+  yourself; see `behindAnotherTab` in `test/midi.test.js`.
 - **`MACHINE` is regenerated on every page load** and deliberately not stored.
   It lived in sessionStorage once; browsers copy that into a duplicated tab, so
   three players opened that way all claimed to be one machine.

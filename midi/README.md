@@ -8,12 +8,13 @@ is how long the key is held. Eight browser windows, each listening to one
 channel, are eight players.
 
 ```
-node midi/make-midi.js --scaffold    # read cues.json, write timing.json
-node midi/make-midi.js               # write the .mid files from timing.json
+node midi/make-midi.js        # write the .mid files from timing.json
+node test/play-midi.js        # play them into real pages and say what happened (~6 min)
 ```
 
-`--scaffold` overwrites `timing.json` (it keeps a dated copy first). Once you
-have started editing, run it **without** the flag.
+**A part keeps doing what it was last told** until a cue speaks to it again.
+Parts enter one after another and pile up; a cue that speaks only to Part III
+leaves I, II and IV exactly as they were.
 
 ---
 
@@ -32,7 +33,22 @@ node scan/scan-bridge.js
 Web MIDI needs a secure context, same as the synth does, so use the `https://`
 address the bridge prints — not `http://`.
 
-**3. Eight windows.** The generator prints these at the end of every run:
+**3. Eight windows.** The quick way: double-click `midi/open-testers.command`
+in the Finder, or run
+
+```
+node midi/testers.js
+```
+
+It starts the bridge if it isn't running, and opens all eight windows tiled
+four by two in a Chrome of their own — its own profile, so it can skip the
+certificate warning, the MIDI permission and the click-to-start-audio that
+your everyday browser rightly asks for. It prints one line per window saying
+whether its audio and its MIDI came up. Run it again and it replaces the eight
+rather than adding eight more. If it started the bridge, the bridge stops when
+you close that terminal.
+
+By hand, the generator prints the addresses at the end of every run:
 
 ```
 ch  1  /scan/?part=I&seat=1&midich=1
@@ -49,7 +65,14 @@ ch  8  /scan/?part=IV&seat=2&midich=8
 and lets you pick the channel in the same panel where you choose the part and
 type a name; that choice is remembered on that laptop, so the window comes back
 on the same channel. A pill in the header says which channel it is, so eight
-identical windows are tellable apart. Click each one once to start its audio.
+identical windows are tellable apart. Click each one once, anywhere, to start
+its audio — until you do, the pill says *click to start audio*, and notes are
+taken but nothing moves or sounds.
+
+The windows can overlap. A window behind another still scans and still
+finishes its words: the sound is clocked by a worker, not by the screen
+redrawing, which Chrome all but stops for anything not in front. Clicking into
+the DAW, or between windows, does not release what a window is holding.
 
 **MIDI is a development mode.** Without `?midi` or `?midich`, a window has no
 pill, no picker, and never asks the browser for MIDI access — so a performer
@@ -70,14 +93,15 @@ hand.
 
 Two places, for two different jobs.
 
-**`timing.json` — the structure.** One `seconds` per cue. This is the number
-you are looking for. Change it, run `node midi/make-midi.js`, and the whole
-piece re-lays itself around it. The run prints where the time went:
+**`timing.json` — the structure.** One `seconds` per cue: how long until the
+next one. This is the number you are looking for. Change it, run
+`node midi/make-midi.js`, and the whole piece re-lays itself around it. The
+run prints where the time went:
 
 ```
   phrase   length   running
-     1      2:14    2:14
-     2      1:00    3:14
+     1      0:53    0:53
+     2      0:41    1:34
 ```
 
 **The DAW — the nudging.** Drag the notes. Finer than the JSON, and *it does
@@ -87,30 +111,61 @@ save the DAW for the last ten per cent.
 Also in `timing.json`:
 
 - `spread` — seconds of scatter between the two players on a part, so they are
-  not in robotic unison. `0` lines them up exactly.
+  not in robotic unison. `0` lines them up exactly. A block marked
+  `"together": true` ignores it.
 - `tempo` — leave it at 60 unless you have a reason. At 60 bpm one beat is one
   second and one 4/4 bar is four, so the DAW's grid and the numbers in this
   file are the same ruler.
 
-### The events
+If a cue's wording changes in `cues.json`, the run says so — `! cue 14, part 2:
+the instruction has changed since timing.json read it` — rather than quietly
+playing the old reading.
 
-`events` is a first draft, read out of the cue text. Each block keeps the
-sentence it came from under `from`, so you can see what was guessed. Correct
-anything that is wrong — it is a guess from prose, and some of it will be.
+### A part's block
+
+`timing.json` is one reading of the score, written by hand. Every block keeps
+the instruction it reads under `from`. A block has **lanes**, and a lane it
+does not mention carries on from before:
+
+| | |
+|---|---|
+| `go` | go to a phrase (0 is standby) |
+| `sound` | what is playing — replaces the last one. `null` is silence, `"stop"` is esc |
+| `whisper` | `true` / `false`, or `{"bursts": [gap], "len": [len]}` for voiced notes breaking out of a whisper, or `{"voiced": 9}` for more and more voiced over 9 s, or `"steady"` to end the bursts |
+| `pitch` | `{"set": 69}`, `{"slide": [62, 69], "every": [0.8, 2]}`, `{"widen": [[62, 69], [60, 76]]}`, `{"drift": [69, 55]}` (a semitone at a time, across the span), `{"alternate": [31, 32]}` (after every word), or `"stay"` |
+| `j` | `[5, 10]` presses J every 5–10 s; `"stop"` |
+| `pedal`, `pedalAt` | `"down"` / `"up"`, so many seconds into the cue |
+| `fade` | the diminuendo, so many seconds in |
+
+Sounds:
 
 ```jsonc
-{ "k": "R", "at": 1 }                                  // one press, 1 s in
-{ "k": "A", "at": 0, "hold": 36 }                      // held for 36 s
-{ "k": "R", "from": 4, "to": "rest", "every": [0.35, 0.9] }   // irregular
-{ "k": "W", "from": 1, "to": "rest", "every": 2.2 }    // a steady pulse
-{ "k": "mouse", "at": 1, "hold": "rest", "sweep": [0.5, 1] }  // the second half
-{ "k": "phrase3", "at": 0 }                            // go to phrase 3
+{ "scan": "A" }                                 // held, pressed again at the end of each pass
+{ "scan": "A", "once": true }                   // held until the next instruction
+{ "words": "R", "every": [0.35, 0.9] }          // a press every 0.35–0.9 s
+{ "words": "W", "gap": [0.3, 0.45] }            // each word, then a gap: a pulse
+{ "words": "E", "gap": [0.2, 0.6], "jAfter": true }  // and J after each one
+{ "shots": "T", "every": [0.12, 0.4], "hold": [0.06, 0.12] }
+{ "sweep": [0.5, 0.944], "secs": 3, "mode": "once", "then": "hold" }
+{ "sweep": [0.6, 1], "secs": [5, 6.5], "mode": "loop" }   // again and again
+{ "sweep": [0.47, 0.53], "secs": [1.2, 2], "mode": "pingpong" }
+{ "sweep": [0, 1], "secs": [1.5, 5], "mode": "wander" }   // anywhere, freely
+{ "hold": 0.967 }                               // the mouse held at one place
+[ { "words": "R", "once": true }, { "at": 1.8, "words": "R", "every": [0.35, 0.9] } ]
 ```
 
-`"rest"` means *to the end of this cue*, so a held note follows the cue's
-length when you change it. `every` as a pair is a random interval inside that
-range — but seeded from the cue and the player, so the same file always renders
-the same irregularity. Two takes can be compared.
+Positions are 0–1 along the strip, by cell, from `phrase-cells.json` — 0.944 on
+phrase 1 is the last [n] of 'strain'. A list is a sequence, each with its `at`.
+Any range is random inside it, seeded from the cue and the player, so the same
+file always renders the same irregularity and two takes can be compared.
+
+A held scan is held for the pass's expected length **plus 2.2 standard
+deviations** and then pressed again. The page draws each cell's length at
+random, so the press cannot know where the end is; let go early and the next
+press only finishes the old pass and then waits out a whole hold. Waiting a
+moment at the end is what the score describes anyway. A new scan starts from
+the top of the strip unless it says `"continue": true` — "finish the scan you
+are on".
 
 ---
 
@@ -129,21 +184,32 @@ pitch, exactly as they did before — a keyboard plugged in by hand still works.
 | 5 | | `R` | one word, fast |
 | 6 | | `Q` | a voiced phoneme — **held** |
 | 7 | | `T` | a noisy one — **held** |
-| 8 | | `Z` | whisper on / off |
+| 8 | | `Z` | whisper on / off (a toggle — the files use 14) |
 | 9 | | `space` | the damper pedal — **held** |
 | 10 | | | the diminuendo |
 | 11 | | `esc` | stop everything |
 | 12 | B-1 | `J` | change pitch |
 | 13 | | | the mouse on the strip — **held**, with CC1 |
+| 14 | | | whisper — **held**: whispering for as long as it lasts |
 | 15 | | | standby |
 | 16–23 | C0–B0 | | phrases 1–8 — **held**, see below |
-| 24+ | C1 | | set the pitch |
+| 24+ | C1 | | set the pitch, and open the gate as a keyboard does |
 | CC 1 | | | the mouse's position on the strip |
 | CC 20 | | | which phrase — 0 standby, 1–8 |
+| CC 21 | | | the pitch as a note number — the gate is left alone |
+| CC 120 / 123 | | | all sound off / all notes off — lets go of everything held |
+| Stop (0xFC) | | | the same, from a host that sends transport to the bus |
 
 **Sweeps** are note 13 plus CC1: hold the note for the mouse button and draw
 CC1 for where the mouse is. Letting the note go closes the gate, so a sweep
-cannot be left hanging open.
+cannot be left hanging open — unless the pedal is down, which is "sweep to the
+[n] and hold with {space}". Pressing the note cancels a running key, as taking
+hold of the strip does.
+
+**Whisper is a lane, not a toggle.** Z flips whatever the window is doing, so
+a run of Zs is only right if every window started the right way round and
+nobody located the playhead — neither of which a DAW promises. Note 14 held is
+whispering; let go, voiced.
 
 **The phrase lane, and skipping around.** Phrases are not a blip at each
 change — each one is a single long note held for as long as that phrase lasts,
@@ -157,13 +223,11 @@ at all. That matters: without it, locating during a phrase would stop a running
 scan and re-apply its preset underneath the player, and landing on standby
 would rebuild the synth every time.
 
-You still declare phrase changes the same way in `timing.json`
-(`{"k": "phrase3", "at": 0}`); the generator turns a part's run of them into
-the held lane.
-
-Pitches are left to the page — it deals them out by seat from `parts.json`,
-which is why the two players on a part are on different seats. Send a note from
-C1 up on a player's channel if you want to override one.
+Pitches are dealt out by the page, by seat, from `parts.json` — which is why
+the two players on a part are on different seats. Where a cue names one
+("Choose <A4>", "slide between <D4> and <A4>"), the files send it on CC21,
+which sets the note without opening the gate. A note from C1 up would open
+it, and its note off would punch a hole in whatever was scanning.
 
 ---
 
@@ -172,9 +236,10 @@ C1 up on a player's channel if you want to override one.
 Two inputs decide how long a held scan takes, and the generator gets both
 rather than keeping its own copy:
 
-- **the rates** come out of `scan/src/scan.js` — it reads the `RATES` table and
-  prints what it found on every run. Retune `slow` by ear and the sequenced run
-  follows you.
-- **`phrase-cells.json`** is how many phoneme cells each phrase has, measured
-  off a real page. Change the words of a phrase and that file is stale: the
-  guesses drift, nothing breaks.
+- **the rates** come out of `scan/src/scan.js` — it reads the `RATES` and
+  `SHOT_RATES` tables and prints what it found on every run. Retune `slow` by
+  ear and the sequenced run follows you.
+- **`phrase-cells.json`** is each phrase's strip as a real page lays it out:
+  every cell's phoneme, word and width. Pass lengths, word lengths and sweep
+  positions all come from it. Change the words of a phrase and that file is
+  stale: the timings drift and the sweeps land on the wrong letters.

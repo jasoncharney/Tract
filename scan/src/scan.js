@@ -9,7 +9,7 @@ import { loadPatchedPinkTrombone } from "./patched-pink-trombone.js";
 
 /** bump alongside the ?v= in index.html; printed on load so there is never a
  *  question about which build a browser is actually running */
-const BUILD = "2026-10-18b";
+const BUILD = "2026-10-18e";
 
 const $ = (id) => document.getElementById(id);
 const strip = $("strip");
@@ -320,6 +320,7 @@ async function enableAudio() {
     return;
   }
   ctx = new AudioContext();
+  ctx.addEventListener("statechange", paintMidiPill);
 
   const { applied, missed } = await loadPatchedPinkTrombone({
     patch: !NO_PATCH,
@@ -1102,11 +1103,16 @@ function liftPedal() {
 let paintedCell = -1;
 let paintedClosed = false;
 
-function frame() {
-  requestAnimationFrame(frame);
+/**
+ * The sound's half of a frame: move the playhead and tell the voice where it
+ * is. Kept apart from the painting because it must not depend on the window
+ * being on screen — see the heartbeat below.
+ */
+let lastStep = 0;
+function step() {
+  lastStep = performance.now();
   if (seatsDirty && seatsCanSettle()) takeSeat();
   if (!ready) return;
-
   const now = ctx.currentTime;
   tickTransport(now);
   if (whisperRestoreAt && now >= whisperRestoreAt) {
@@ -1115,6 +1121,33 @@ function frame() {
     syncControl("whisper", whisperOn);
   }
   voice.update(targetPos, now);
+}
+
+/*
+ * Chrome all but stops requestAnimationFrame for a window that is not in
+ * front. Measured on the real binary with eight-windows-on-one-laptop in mind:
+ * a window behind another got 8 frames in 4.5 s instead of 271, and a held A
+ * sent over MIDI opened the gate and sat on the first phoneme for the whole
+ * hold — the playhead never left 0. A sequenced rig is exactly the case where
+ * seven of eight windows are behind something. A dedicated worker's timer is
+ * not throttled like the page's own, so it ticks the sound whenever frames
+ * have stopped arriving; when they are arriving it does nothing.
+ */
+try {
+  const beat = new Worker(
+    URL.createObjectURL(new Blob(["setInterval(() => postMessage(0), 20)"], { type: "text/javascript" }))
+  );
+  beat.onmessage = () => {
+    if (performance.now() - lastStep > 40) step();
+  };
+} catch (e) {
+  console.warn(`Tract: no heartbeat worker (${e.message}) — a window behind another will not scan`);
+}
+
+function frame() {
+  requestAnimationFrame(frame);
+  step();
+  if (!ready) return;
 
   const stripRect = strip.getBoundingClientRect();
   cursor.style.opacity = voice.gate > 0 ? "1" : "0.28";
@@ -1475,6 +1508,11 @@ const MIDI_KEYS = {
   // The mouse on the strip. Hold this note for "button down" and draw CC1 for
   // where the mouse is, and a sweep becomes a curve you can see and drag.
   13: { key: "gate", hold: true }, //   sweep / hold the strip
+  // Whisper as a state, not a toggle: whispering for as long as the note is
+  // held. Z flips whatever the window happens to be doing, so a sequence of
+  // Zs is only right if every window started the right way round and nobody
+  // located the playhead in between — neither of which a DAW promises.
+  14: { key: "whisper", hold: true }, //  whisper while held
   15: { key: "phrase", phrase: STANDBY }, //  standby
   16: { key: "phrase", phrase: 0 }, //  C0   phrase 1
   17: { key: "phrase", phrase: 1 },
@@ -1487,6 +1525,7 @@ const MIDI_KEYS = {
 };
 const MIDI_PITCH_FROM = 24; // C1 and up: the old behaviour, a pitch keyboard
 const MIDI_PHRASE_CC = 20; // where the piece is, as a chaseable controller
+const MIDI_PITCH_CC = 21; // the pitch as a value — sets the note, leaves the gate alone
 
 /**
  * MIDI is a development mode, not a feature of the piece.
@@ -1593,8 +1632,20 @@ async function midiKey(note, on) {
       break;
     case "gate":
       // explicit, so a CC1 sweep cannot leave the gate open behind it: the
-      // note's own length is the mouse button
-      applyRemote("/scan/gate", [on ? 1 : 0]);
+      // note's own length is the mouse button. Under the pedal, letting go
+      // leaves the sound where it is — "sweep to the [n] and hold with
+      // {space}" is the mouse coming up with the pedal down.
+      if (!on && pedal) explicitGate = 1;
+      else {
+        // taking hold of the strip overrides a running key, as the real
+        // mouse does — otherwise a word still playing out drags the playhead
+        // against the sweep
+        if (on) cancelTransport();
+        applyRemote("/scan/gate", [on ? 1 : 0]);
+      }
+      break;
+    case "whisper":
+      if (on !== whisperOn) toggleWhisper();
       break;
     case "phrase":
       if (on) goToPhrase(map.phrase);
@@ -1604,9 +1655,28 @@ async function midiKey(note, on) {
   }
 }
 
+/**
+ * Let go of everything a sequencer could be holding down: a scan, a held
+ * phoneme, the pedal, the mouse. Not the phrase — stopping the DAW is not
+ * leaving the phrase.
+ */
+function midiAllOff() {
+  stopTransport();
+  heldShot = null;
+  liftPedal();
+  applyRemote("/scan/gate", [0]);
+}
+
 /** one message off the wire. Exposed, so a test can play this page a part. */
 function handleMIDI(data) {
   const [status, d1, d2] = data;
+  // System real-time has no channel. Stop (0xFC) is what a host that sends
+  // transport to the bus says when you press stop; the rest — clock above all,
+  // 24 to the beat — is not ours.
+  if (status >= 0xf0) {
+    if (status === 0xfc) midiAllOff();
+    return;
+  }
   const kind = status & 0xf0;
   // channels are 0-15 on the wire and 1-16 everywhere a person reads them
   if (midiChannel !== null && (status & 0x0f) + 1 !== midiChannel) return;
@@ -1624,8 +1694,18 @@ function handleMIDI(data) {
   } else if (kind === 0xe0) {
     const bend = ((d2 << 7) | d1) / 8192 - 1;
     applyRemote("/scan/bend", [bend * 2]);
+  } else if (kind === 0xb0 && (d1 === 120 || d1 === 123)) {
+    // All Sound Off / All Notes Off: many hosts send one of these on stop
+    // instead of a note off for every note still sounding. Ignored, a held A
+    // ran on past the end of the take.
+    midiAllOff();
   } else if (kind === 0xb0 && d1 === 1) {
     applyRemote("/scan/norm", [d2 / 127]);
+  } else if (kind === 0xb0 && d1 === MIDI_PITCH_CC) {
+    // A pitch note from C1 up also opens the gate, as a keyboard should, and
+    // its note off closes it — in the middle of a scan that is a hole. A
+    // slide or a "choose <A4>" wants the note and nothing else.
+    applyRemote("/scan/note", [d2]);
   } else if (kind === 0xb0 && d1 === MIDI_PHRASE_CC) {
     // Where the piece is, as a value rather than an event — 0 is standby,
     // 1-8 the phrases. A DAW re-sends the last controller value whenever you
@@ -1648,13 +1728,21 @@ async function connectMIDI() {
     paintMidiPill();
     return `MIDI: not allowed in this window — ${e.message}`;
   }
-  const names = [];
-  access.inputs.forEach((input) => {
-    names.push(input.name);
-    input.onmidimessage = ({ data }) => handleMIDI(data);
-  });
-  midiOn = names.length > 0;
-  paintMidiPill();
+  // Bound again whenever a port comes or goes: an IAC bus switched on after
+  // the windows were opened, or a DAW's own virtual port appearing when it
+  // starts, was otherwise never heard until every window was reloaded.
+  const bind = () => {
+    const names = [];
+    access.inputs.forEach((input) => {
+      names.push(input.name);
+      input.onmidimessage = ({ data }) => handleMIDI(data);
+    });
+    midiOn = names.length > 0;
+    paintMidiPill();
+    return names;
+  };
+  access.onstatechange = () => bind();
+  const names = bind();
   const where = midiChannel === null ? "all channels" : `channel ${midiChannel}`;
   return names.length ? `MIDI: ${names.join(", ")} · ${where}` : "MIDI: no inputs";
 }
@@ -1666,11 +1754,21 @@ function paintMidiPill() {
   if (!pill) return;
   pill.hidden = !MIDI_MODE; // a performer's window never shows this
   const ch = midiChannel === null ? "all" : midiChannel;
-  pill.textContent = midiOn ? `midi: ch ${ch}` : `midi: ch ${ch} — not connected`;
-  pill.className = midiOn ? "pill on" : "pill warn";
-  pill.title = midiOn
-    ? "This window is being played by a sequencer. The bottom two octaves are the player's keys; C1 and up set the pitch."
-    : "This window was opened with ?midich= but no MIDI input is connected yet.";
+  // A note can arrive before anyone has clicked the window, and the browser
+  // will not start audio without a click. The page then has a synth whose
+  // clock does not move: notes are taken, nothing scans, nothing sounds.
+  const asleep = !ctx || ctx.state !== "running";
+  pill.textContent = !midiOn
+    ? `midi: ch ${ch} — not connected`
+    : asleep
+      ? `midi: ch ${ch} — click to start audio`
+      : `midi: ch ${ch}`;
+  pill.className = midiOn && !asleep ? "pill on" : "pill warn";
+  pill.title = !midiOn
+    ? "This window was opened with ?midich= but no MIDI input is connected yet."
+    : asleep
+      ? "MIDI is arriving, but this window's audio has not been started. Click anywhere in it once."
+      : "This window is being played by a sequencer. The bottom two octaves are the player's keys; C1 and up set the pitch.";
 }
 
 /* ================================================================ *
@@ -2217,7 +2315,11 @@ function tickTransport(now) {
     if (transport.mode === "scan") atEnd = true;
     transport.mode = null;
     transport.key = null;
-    openGate(false);
+    // A scan or a word that reaches its end under the pedal keeps sounding on
+    // the last phoneme, the same as letting the key go would. Cue 36 is
+    // exactly this: hold A, and at the last [l] hold the spacebar.
+    if (pedal) explicitGate = 1;
+    else openGate(false);
     paintTransport();
   }
 }
@@ -3696,6 +3798,9 @@ window.scan = {
   get pressed() {
     return pressed;
   },
+  get pedalDown() {
+    return pedal;
+  },
   isReady: () => ready,
   enableAudio,
   get transport() {
@@ -4046,6 +4151,11 @@ document.addEventListener("keyup", (event) => {
   }
 });
 window.addEventListener("blur", () => {
+  // A sequenced window is never the one with focus — the DAW is — and the
+  // keys it holds come from note offs, not from this keyboard. Releasing on
+  // blur cut off every held scan and pedal the moment you clicked into the
+  // DAW, or into another player's window, mid-take.
+  if (MIDI_MODE) return;
   stopScan();
   heldShot = null;
   liftPedal(); // nothing held survives losing focus
@@ -4061,6 +4171,9 @@ window.addEventListener("blur", () => {
     // reaches for the MIDI input itself rather than waiting to be asked
     paintMidiPill();
     if (MIDI_MODE) {
+      // the browser starts audio only on a click, and in a sequenced window
+      // there is no reason to make that click land on any particular button
+      document.addEventListener("pointerdown", () => enableAudio(), { once: true, capture: true });
       connectMIDI()
         .then((said) => console.log(said))
         .catch((e) => console.log(`MIDI: ${e.message}`));

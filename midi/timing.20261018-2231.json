@@ -1,0 +1,2043 @@
+{
+  "_": "Edit 'seconds' to change how long a cue runs — that is the whole point of this file. 'events' is a first draft read out of the cue text; 'from' is the sentence it came from, so you can see what was guessed. Then: node midi/make-midi.js",
+  "tempo": 60,
+  "spread": 0.15,
+  "_spread": "seconds of scatter between the two players on a part, so they are not in robotic unison. 0 to line them up exactly.",
+  "cues": [
+    {
+      "id": "1",
+      "phrase": 1,
+      "label": "Opening",
+      "seconds": 12,
+      "parts": {
+        "1": {
+          "from": "Turn your volume up. Go to Phrase {1}. Wait for the next cue.",
+          "events": [
+            {
+              "k": "phrase1",
+              "at": 0
+            }
+          ]
+        },
+        "2": {
+          "from": "Turn your volume up. Go to Phrase {1}. Wait for the next cue.",
+          "events": [
+            {
+              "k": "phrase1",
+              "at": 0
+            }
+          ]
+        },
+        "3": {
+          "from": "Turn your volume up. Go to Phrase {1}. Wait for the next cue.",
+          "events": [
+            {
+              "k": "phrase1",
+              "at": 0
+            }
+          ]
+        },
+        "4": {
+          "from": "Turn your volume up. Go to Phrase {1}. Wait for the next cue.",
+          "events": [
+            {
+              "k": "phrase1",
+              "at": 0
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "2",
+      "phrase": 1,
+      "label": "Start of Phrase 1",
+      "seconds": 22,
+      "parts": {
+        "1": {
+          "from": "Hold {A} to scan slowly through the phrase. When you reach the end, press {A} again to scan it again.",
+          "events": [
+            {
+              "k": "A",
+              "from": 1,
+              "to": "rest",
+              "every": [
+                18.6,
+                19.6
+              ],
+              "hold": 18
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "3",
+      "phrase": 1,
+      "label": "Part II enters",
+      "seconds": 9,
+      "parts": {
+        "2": {
+          "from": "Hold {S} to scan through the phrase. When you reach the end, press {S} again to scan it again.",
+          "events": [
+            {
+              "k": "S",
+              "from": 1,
+              "to": "rest",
+              "every": [
+                5.1,
+                6.1
+              ],
+              "hold": 4.5
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "4",
+      "phrase": 1,
+      "label": "Part III enters",
+      "seconds": 9,
+      "parts": {
+        "3": {
+          "from": "Hold {S} to scan through the phrase. When you reach the end, press {S} again to scan it again.",
+          "events": [
+            {
+              "k": "S",
+              "from": 1,
+              "to": "rest",
+              "every": [
+                5.1,
+                6.1
+              ],
+              "hold": 4.5
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "5",
+      "phrase": 1,
+      "label": "Part IV enters",
+      "seconds": 22,
+      "parts": {
+        "2": {
+          "from": "Finish the scan you are on. Then hold {D} to scan quickly. When you reach the end, press {D} again.",
+          "events": [
+            {
+              "k": "D",
+              "from": 1,
+              "to": "rest",
+              "every": [
+                2.2,
+                3.2
+              ],
+              "hold": 1.6
+            }
+          ]
+        },
+        "4": {
+          "from": "Hold {A} to scan slowly through the phrase. When you reach the end, press {A} again to scan it again.",
+          "events": [
+            {
+              "k": "A",
+              "from": 1,
+              "to": "rest",
+              "every": [
+                18.6,
+                19.6
+              ],
+              "hold": 18
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "6",
+      "phrase": 1,
+      "label": "Hold the last n",
+      "seconds": 12,
+      "parts": {
+        "1": {
+          "from": "Sweep to the last [n] in 'strain' and hold with {space}. Keep holding until the next cue.",
+          "events": [
+            {
+              "k": "space",
+              "at": 1.5,
+              "hold": "rest"
+            },
+            {
+              "k": "mouse",
+              "at": 1,
+              "hold": "rest",
+              "sweep": [
+                0.5,
+                1
+              ]
+            }
+          ]
+        },
+        "2": {
+          "from": "Sweep to the last [n] in 'strain' and hold with {space}. Keep holding until the next cue.",
+          "events": [
+            {
+              "k": "space",
+              "at": 1.5,
+              "hold": "rest"
+            },
+            {
+              "k": "mouse",
+              "at": 1,
+              "hold": "rest",
+              "sweep": [
+                0.5,
+                1
+              ]
+            }
+          ]
+        },
+        "3": {
+          "from": "Sweep to the last [n] in 'strain' and hold with {space}. Keep holding until the next cue.",
+          "events": [
+            {
+              "k": "space",
+              "at": 1.5,
+              "hold": "rest"
+            },
+            {
+              "k": "mouse",
+              "at": 1,
+              "hold": "rest",
+              "sweep": [
+                0.5,
+                1
+              ]
+            }
+          ]
+        },
+        "4": {
+          "from": "Sweep to the last [n] in 'strain' and hold with {space}. Keep holding until the next cue.",
+          "events": [
+            {
+              "k": "space",
+              "at": 1.5,
+              "hold": "rest"
+            },
+            {
+              "k": "mouse",
+              "at": 1,
+              "hold": "rest",
+              "sweep": [
+                0.5,
+                1
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "7",
+      "phrase": 1,
+      "label": "Release I",
+      "seconds": 12,
+      "parts": {
+        "1": {
+          "from": "Release {space}. Go to Phrase {2}. Press {Z} for whisper on. Wait for the next cue.",
+          "events": [
+            {
+              "k": "phrase2",
+              "at": 0
+            },
+            {
+              "k": "_releaseSpace",
+              "at": 0
+            },
+            {
+              "k": "Z",
+              "at": 0.4
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "8",
+      "phrase": 2,
+      "label": "Part I 'crack!'",
+      "seconds": 12,
+      "parts": {
+        "1": {
+          "from": "Press {R} once to play the word. Wait a moment. Then press {R} quickly and irregularly.",
+          "events": [
+            {
+              "k": "R",
+              "at": 1
+            },
+            {
+              "k": "R",
+              "from": 4,
+              "to": "rest",
+              "every": [
+                0.35,
+                0.9
+              ]
+            }
+          ]
+        },
+        "2": {
+          "from": "Release {space}. Go to Phrase {2}. Press {Z} for whisper on.",
+          "events": [
+            {
+              "k": "phrase2",
+              "at": 0
+            },
+            {
+              "k": "_releaseSpace",
+              "at": 0
+            },
+            {
+              "k": "Z",
+              "at": 0.4
+            }
+          ]
+        },
+        "3": {
+          "from": "Release {space}. Go to Phrase {2}. Press {Z} for whisper on.",
+          "events": [
+            {
+              "k": "phrase2",
+              "at": 0
+            },
+            {
+              "k": "_releaseSpace",
+              "at": 0
+            },
+            {
+              "k": "Z",
+              "at": 0.4
+            }
+          ]
+        },
+        "4": {
+          "from": "Release {space}. Go to Phrase {2}.",
+          "events": [
+            {
+              "k": "phrase2",
+              "at": 0
+            },
+            {
+              "k": "_releaseSpace",
+              "at": 0
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "9",
+      "phrase": 2,
+      "label": "Part II enters",
+      "seconds": 12,
+      "parts": {
+        "2": {
+          "from": "Press {R} quickly and irregularly to play the word.",
+          "events": [
+            {
+              "k": "R",
+              "from": 4,
+              "to": "rest",
+              "every": [
+                0.35,
+                0.9
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "10",
+      "phrase": 2,
+      "label": "Part III enters",
+      "seconds": 12,
+      "parts": {
+        "1": {
+          "from": "Press {Z} on and off in short bursts, so single voiced notes break out of the whisper – only a few. Change pitch with {J} from time to time. Keep going.",
+          "events": [
+            {
+              "k": "Z",
+              "from": 1,
+              "to": "rest",
+              "every": [
+                1.4,
+                3.2
+              ]
+            },
+            {
+              "k": "J",
+              "from": 2,
+              "to": "rest",
+              "every": [
+                6,
+                12
+              ]
+            }
+          ]
+        },
+        "2": {
+          "from": "Press {Z} on and off in short bursts, so single voiced notes break out of the whisper – only a few. Change pitch with {J} from time to time. Keep going.",
+          "events": [
+            {
+              "k": "Z",
+              "from": 1,
+              "to": "rest",
+              "every": [
+                1.4,
+                3.2
+              ]
+            },
+            {
+              "k": "J",
+              "from": 2,
+              "to": "rest",
+              "every": [
+                6,
+                12
+              ]
+            }
+          ]
+        },
+        "3": {
+          "from": "Press {E} irregularly to play the word. Sometimes press again before the word finishes, so it starts over. Change pitch with {J} from time to time. Keep going.",
+          "events": [
+            {
+              "k": "E",
+              "from": 1,
+              "to": "rest",
+              "every": [
+                0.9,
+                2.4
+              ]
+            },
+            {
+              "k": "J",
+              "from": 2,
+              "to": "rest",
+              "every": [
+                6,
+                12
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "11",
+      "phrase": 2,
+      "label": "Part IV enters",
+      "seconds": 12,
+      "parts": {
+        "2": {
+          "from": "Use {Z} to make more and more of your sound voiced, until you are fully voiced. Stop changing pitch — but make sure every pitch in your part is being sung by someone in Part II.",
+          "events": [
+            {
+              "k": "Z",
+              "at": 0.4
+            }
+          ]
+        },
+        "3": {
+          "from": "Use {Z} to make more and more of your sound voiced, until you are fully voiced. Stop changing pitch — but make sure every pitch in your part is being sung by someone in Part III.",
+          "events": [
+            {
+              "k": "Z",
+              "at": 0.4
+            }
+          ]
+        },
+        "4": {
+          "from": "Press {W} in a steady pulse. Start together with the other Part IV players. Leave a small gap between presses. Be ready to stop.",
+          "events": [
+            {
+              "k": "W",
+              "from": 1,
+              "to": "rest",
+              "every": 2.2
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "12",
+      "phrase": 2,
+      "label": "Cut off — silence",
+      "seconds": 12,
+      "parts": {
+        "1": {
+          "from": "Stop. Silence. Go to Phrase {3}.",
+          "events": [
+            {
+              "k": "phrase3",
+              "at": 0
+            },
+            {
+              "k": "stop",
+              "at": 0
+            }
+          ]
+        },
+        "2": {
+          "from": "Stop. Silence. Go to Phrase {3}.",
+          "events": [
+            {
+              "k": "phrase3",
+              "at": 0
+            },
+            {
+              "k": "stop",
+              "at": 0
+            }
+          ]
+        },
+        "3": {
+          "from": "Stop. Silence. Go to Phrase {3}.",
+          "events": [
+            {
+              "k": "phrase3",
+              "at": 0
+            },
+            {
+              "k": "stop",
+              "at": 0
+            }
+          ]
+        },
+        "4": {
+          "from": "Stop. Silence. Go to Phrase {3}.",
+          "events": [
+            {
+              "k": "phrase3",
+              "at": 0
+            },
+            {
+              "k": "stop",
+              "at": 0
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "13",
+      "phrase": 3,
+      "label": "and sometimes break...",
+      "seconds": 12,
+      "parts": {
+        "1": {
+          "from": "Sweep slowly through 'and sometimes break'. Listen to the other players and stay together. Stop at the end of 'break' and wait for the next cue.",
+          "events": [
+            {
+              "k": "mouse",
+              "at": 1,
+              "hold": "rest",
+              "sweep": [
+                0,
+                0.5
+              ]
+            }
+          ]
+        },
+        "2": {
+          "from": "Sweep slowly through 'and sometimes break'. Listen to the other players and stay together. Stop at the end of 'break' and wait for the next cue.",
+          "events": [
+            {
+              "k": "mouse",
+              "at": 1,
+              "hold": "rest",
+              "sweep": [
+                0,
+                0.5
+              ]
+            }
+          ]
+        },
+        "3": {
+          "from": "Sweep slowly through 'and sometimes break'. Listen to the other players and stay together. Stop at the end of 'break' and wait for the next cue.",
+          "events": [
+            {
+              "k": "mouse",
+              "at": 1,
+              "hold": "rest",
+              "sweep": [
+                0,
+                0.5
+              ]
+            }
+          ]
+        },
+        "4": {
+          "from": "Sweep slowly through 'and sometimes break'. Listen to the other players and stay together. Stop at the end of 'break' and wait for the next cue.",
+          "events": [
+            {
+              "k": "mouse",
+              "at": 1,
+              "hold": "rest",
+              "sweep": [
+                0,
+                0.5
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "14",
+      "phrase": 3,
+      "label": "percussive phonemes, IV moving on",
+      "seconds": 4,
+      "parts": {
+        "1": {
+          "from": "Press {T} fast and irregularly, to make a flurry of noise.",
+          "events": [
+            {
+              "k": "T",
+              "from": 1,
+              "to": "rest",
+              "every": [
+                0.7,
+                1.8
+              ],
+              "hold": 0.12
+            }
+          ]
+        },
+        "2": {
+          "from": "Press {T} fast and irregularly, to make a flurry of noise.",
+          "events": [
+            {
+              "k": "T",
+              "from": 1,
+              "to": "rest",
+              "every": [
+                0.7,
+                1.8
+              ],
+              "hold": 0.12
+            }
+          ]
+        },
+        "3": {
+          "from": "Press {T} fast and irregularly, to make a flurry of noise.",
+          "events": [
+            {
+              "k": "T",
+              "from": 1,
+              "to": "rest",
+              "every": [
+                0.7,
+                1.8
+              ],
+              "hold": 0.12
+            }
+          ]
+        },
+        "4": {
+          "from": "Sweep slowly through 'under the burden', again and again. Stay together with the other Part IV players.",
+          "events": [
+            {
+              "k": "mouse",
+              "at": 1,
+              "hold": "rest",
+              "sweep": [
+                0.5,
+                1
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "15",
+      "phrase": 3,
+      "label": "III joins IV",
+      "seconds": 12,
+      "parts": {
+        "3": {
+          "from": "Sweep slowly through 'under the burden', again and again. Stay together with Parts III and IV.",
+          "events": [
+            {
+              "k": "mouse",
+              "at": 1,
+              "hold": "rest",
+              "sweep": [
+                0.5,
+                1
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "16",
+      "phrase": 3,
+      "label": "II joins III and IV",
+      "seconds": 12,
+      "parts": {
+        "2": {
+          "from": "Sweep slowly through 'under the burden', again and again. Stay together with Parts II, III and IV.",
+          "events": [
+            {
+              "k": "mouse",
+              "at": 1,
+              "hold": "rest",
+              "sweep": [
+                0.5,
+                1
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "17",
+      "phrase": 3,
+      "label": "All players one last time",
+      "seconds": 12,
+      "parts": {
+        "1": {
+          "from": "Sweep slowly through 'under the burden' one last time, together with everyone. At the end, hold on the last [n] until the next cue.",
+          "events": [
+            {
+              "k": "mouse",
+              "at": 1,
+              "hold": "rest",
+              "sweep": [
+                0.5,
+                1
+              ]
+            }
+          ]
+        },
+        "2": {
+          "from": "Sweep slowly through 'under the burden' one last time, together with everyone. At the end, hold on the last [n] until the next cue.",
+          "events": [
+            {
+              "k": "mouse",
+              "at": 1,
+              "hold": "rest",
+              "sweep": [
+                0.5,
+                1
+              ]
+            }
+          ]
+        },
+        "3": {
+          "from": "Sweep slowly through 'under the burden' one last time, together with everyone. At the end, hold on the last [n] until the next cue.",
+          "events": [
+            {
+              "k": "mouse",
+              "at": 1,
+              "hold": "rest",
+              "sweep": [
+                0.5,
+                1
+              ]
+            }
+          ]
+        },
+        "4": {
+          "from": "Sweep slowly through 'under the burden' one last time, together with everyone. At the end, hold on the last [n] until the next cue.",
+          "events": [
+            {
+              "k": "mouse",
+              "at": 1,
+              "hold": "rest",
+              "sweep": [
+                0.5,
+                1
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "18",
+      "phrase": 4,
+      "label": "Release and whisper together",
+      "seconds": 12,
+      "parts": {
+        "1": {
+          "from": "Release. Go to Phrase {4}. Press {Z} for whisper on. Sweep slowly through the phrase together with the other players, and hold on the last [n].",
+          "events": [
+            {
+              "k": "phrase4",
+              "at": 0
+            },
+            {
+              "k": "mouse",
+              "at": 1,
+              "hold": "rest",
+              "sweep": [
+                0,
+                1
+              ]
+            },
+            {
+              "k": "Z",
+              "at": 0.4
+            }
+          ]
+        },
+        "2": {
+          "from": "Release. Go to Phrase {4}. Press {Z} for whisper on. Sweep slowly through the phrase together with the other players, and hold on the last [n].",
+          "events": [
+            {
+              "k": "phrase4",
+              "at": 0
+            },
+            {
+              "k": "mouse",
+              "at": 1,
+              "hold": "rest",
+              "sweep": [
+                0,
+                1
+              ]
+            },
+            {
+              "k": "Z",
+              "at": 0.4
+            }
+          ]
+        },
+        "3": {
+          "from": "Release. Go to Phrase {4}. Press {Z} for whisper on. Sweep slowly through the phrase together with the other players, and hold on the last [n].",
+          "events": [
+            {
+              "k": "phrase4",
+              "at": 0
+            },
+            {
+              "k": "mouse",
+              "at": 1,
+              "hold": "rest",
+              "sweep": [
+                0,
+                1
+              ]
+            },
+            {
+              "k": "Z",
+              "at": 0.4
+            }
+          ]
+        },
+        "4": {
+          "from": "Release. Go to Phrase {4}. Press {Z} for whisper on. Sweep slowly through the phrase together with the other players, and hold on the last [n].",
+          "events": [
+            {
+              "k": "phrase4",
+              "at": 0
+            },
+            {
+              "k": "mouse",
+              "at": 1,
+              "hold": "rest",
+              "sweep": [
+                0,
+                1
+              ]
+            },
+            {
+              "k": "Z",
+              "at": 0.4
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "19",
+      "phrase": 4,
+      "label": "Become voiced",
+      "seconds": 12,
+      "parts": {
+        "1": {
+          "from": "Press {Z} for whisper off. Keep holding [n] with the mouse until the next cue.",
+          "events": [
+            {
+              "k": "Z",
+              "at": 0.4
+            }
+          ]
+        },
+        "2": {
+          "from": "Press {Z} for whisper off. Keep holding [n] with the mouse until the next cue.",
+          "events": [
+            {
+              "k": "Z",
+              "at": 0.4
+            }
+          ]
+        },
+        "3": {
+          "from": "Press {Z} for whisper off. Keep holding [n] with the mouse until the next cue.",
+          "events": [
+            {
+              "k": "Z",
+              "at": 0.4
+            }
+          ]
+        },
+        "4": {
+          "from": "Press {Z} for whisper off. Keep holding [n] with the mouse until the next cue.",
+          "events": [
+            {
+              "k": "Z",
+              "at": 0.4
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "20",
+      "phrase": 4,
+      "label": "Release",
+      "seconds": 12,
+      "parts": {
+        "1": {
+          "from": "Release. Go to Phrase {5}.",
+          "events": [
+            {
+              "k": "phrase5",
+              "at": 0
+            }
+          ]
+        },
+        "2": {
+          "from": "Release. Go to Phrase {5}.",
+          "events": [
+            {
+              "k": "phrase5",
+              "at": 0
+            }
+          ]
+        },
+        "3": {
+          "from": "Release. Go to Phrase {5}.",
+          "events": [
+            {
+              "k": "phrase5",
+              "at": 0
+            }
+          ]
+        },
+        "4": {
+          "from": "Release. Go to Phrase {5}.",
+          "events": [
+            {
+              "k": "phrase5",
+              "at": 0
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "21",
+      "phrase": 5,
+      "label": "slip, slide, perish",
+      "seconds": 12,
+      "parts": {
+        "1": {
+          "from": "Choose pitches at random between <D4> and <A4>. Hold {S} to scan, and keep choosing new pitches so the pitch slides.",
+          "events": [
+            {
+              "k": "S",
+              "from": 1,
+              "to": "rest",
+              "every": [
+                8.1,
+                9.1
+              ],
+              "hold": 7.5
+            }
+          ]
+        },
+        "2": {
+          "from": "Choose pitches at random between <C4> and <G4>. Hold {S} to scan, and keep choosing new pitches so the pitch slides.",
+          "events": [
+            {
+              "k": "S",
+              "from": 1,
+              "to": "rest",
+              "every": [
+                8.1,
+                9.1
+              ],
+              "hold": 7.5
+            }
+          ]
+        },
+        "3": {
+          "from": "Wait for the next cue.",
+          "events": [
+            {
+              "k": "_nothing",
+              "at": 0
+            }
+          ]
+        },
+        "4": {
+          "from": "Wait for the next cue.",
+          "events": [
+            {
+              "k": "_nothing",
+              "at": 0
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "22",
+      "phrase": 5,
+      "label": "Part III enters",
+      "seconds": 12,
+      "parts": {
+        "3": {
+          "from": "Press {E} to play a word at random. After each word, change pitch with {J}.",
+          "events": [
+            {
+              "k": "E",
+              "from": 1,
+              "to": "rest",
+              "every": [
+                1.2,
+                2.6
+              ]
+            },
+            {
+              "k": "J",
+              "from": 2,
+              "to": "rest",
+              "every": [
+                3,
+                7
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "23",
+      "phrase": 5,
+      "label": "Part IV enters",
+      "seconds": 12,
+      "parts": {
+        "1": {
+          "from": "Press {E} to play words at random, still sliding between pitches. Make the jumps bigger and bigger, until you are sliding between <C4> and <E5>.",
+          "events": [
+            {
+              "k": "E",
+              "from": 1,
+              "to": "rest",
+              "every": [
+                1.2,
+                2.6
+              ]
+            }
+          ]
+        },
+        "2": {
+          "from": "Press {E} to play words at random, still sliding between pitches. Make the jumps bigger and bigger, until you are sliding between <E4> and <A5>.",
+          "events": [
+            {
+              "k": "E",
+              "from": 1,
+              "to": "rest",
+              "every": [
+                1.2,
+                2.6
+              ]
+            }
+          ]
+        },
+        "4": {
+          "from": "Start together with the other Part IV players. Press {W} to play through each word slowly. After every word, slide the pitch between <G1> and <A♭1>.",
+          "events": [
+            {
+              "k": "W",
+              "from": 1,
+              "to": "rest",
+              "every": [
+                1.2,
+                2.6
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "24",
+      "phrase": 5,
+      "label": "Perish scan",
+      "seconds": 12,
+      "parts": {
+        "1": {
+          "from": "Slide to <A4> and stay there. Now sweep through the word 'perish' on your own, at your own speed. Keep sweeping.",
+          "events": [
+            {
+              "k": "mouse",
+              "at": 1,
+              "hold": "rest",
+              "sweep": [
+                0.667,
+                1
+              ]
+            }
+          ]
+        },
+        "2": {
+          "from": "Slide to <E4> and stay there. Now sweep through the word 'perish' on your own, at your own speed. Keep sweeping.",
+          "events": [
+            {
+              "k": "mouse",
+              "at": 1,
+              "hold": "rest",
+              "sweep": [
+                0.667,
+                1
+              ]
+            }
+          ]
+        },
+        "3": {
+          "from": "Go to <B♭2> and stay there. Now sweep through the word 'perish' on your own, at your own speed. Keep sweeping.",
+          "events": [
+            {
+              "k": "mouse",
+              "at": 1,
+              "hold": "rest",
+              "sweep": [
+                0.667,
+                1
+              ]
+            }
+          ]
+        },
+        "4": {
+          "from": "Go to <G1> and stay there. Now sweep through the word 'perish' on your own, at your own speed. Keep sweeping.",
+          "events": [
+            {
+              "k": "mouse",
+              "at": 1,
+              "hold": "rest",
+              "sweep": [
+                0.667,
+                1
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "25",
+      "phrase": 5,
+      "label": "End of perish",
+      "seconds": 12,
+      "parts": {
+        "1": {
+          "from": "Hold on the last 'sh' in 'perish'. Wait for the next cue.",
+          "events": [
+            {
+              "k": "_nothing",
+              "at": 0
+            }
+          ]
+        },
+        "2": {
+          "from": "Hold on the last 'sh' in 'perish'. Press {Z} for whisper on. Wait for the next cue.",
+          "events": [
+            {
+              "k": "Z",
+              "at": 0.4
+            }
+          ]
+        },
+        "3": {
+          "from": "Hold on the last 'sh' in 'perish'. Press {Z} for whisper on. Wait for the next cue.",
+          "events": [
+            {
+              "k": "Z",
+              "at": 0.4
+            }
+          ]
+        },
+        "4": {
+          "from": "Hold on the last 'sh' in 'perish'. Wait for the next cue.",
+          "events": [
+            {
+              "k": "_nothing",
+              "at": 0
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "26",
+      "phrase": 6,
+      "label": "Decay",
+      "seconds": 12,
+      "parts": {
+        "1": {
+          "from": "Go to Phrase {6}. Choose <A4>. Press {R} to play the words in order, quickly. Move your pitch down little by little, so the words slide downward. Do not go below <G3> before the next cue.",
+          "events": [
+            {
+              "k": "phrase6",
+              "at": 0
+            },
+            {
+              "k": "R",
+              "from": 1,
+              "to": "rest",
+              "every": [
+                1.2,
+                2.6
+              ]
+            }
+          ]
+        },
+        "2": {
+          "from": "Go to Phrase {6}. Press {W} to move through the phrase slowly, one word at a time.",
+          "events": [
+            {
+              "k": "phrase6",
+              "at": 0
+            },
+            {
+              "k": "W",
+              "from": 1,
+              "to": "rest",
+              "every": [
+                1.2,
+                2.6
+              ]
+            }
+          ]
+        },
+        "3": {
+          "from": "Go to Phrase {6}. Press {W} to move through the phrase slowly, one word at a time.",
+          "events": [
+            {
+              "k": "phrase6",
+              "at": 0
+            },
+            {
+              "k": "W",
+              "from": 1,
+              "to": "rest",
+              "every": [
+                1.2,
+                2.6
+              ]
+            }
+          ]
+        },
+        "4": {
+          "from": "Go to Phrase {6}. Choose <G2>. Press {R} to play the words in order, quickly. Move your pitch down little by little, so the words slide downward. Do not go below <C2> before the next cue.",
+          "events": [
+            {
+              "k": "phrase6",
+              "at": 0
+            },
+            {
+              "k": "R",
+              "from": 1,
+              "to": "rest",
+              "every": [
+                1.2,
+                2.6
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "27",
+      "phrase": 6,
+      "label": "All on mid speed",
+      "seconds": 12,
+      "parts": {
+        "1": {
+          "from": "Press {E} to play the words in order, slower now. Keep moving your pitch down, now below <G3>. Do not go below <C3> before the next cue.",
+          "events": [
+            {
+              "k": "E",
+              "from": 1,
+              "to": "rest",
+              "every": [
+                1.2,
+                2.6
+              ]
+            }
+          ]
+        },
+        "2": {
+          "from": "Press {E} to move through the phrase, faster now, one word at a time.",
+          "events": [
+            {
+              "k": "E",
+              "from": 1,
+              "to": "rest",
+              "every": [
+                1.2,
+                2.6
+              ]
+            }
+          ]
+        },
+        "3": {
+          "from": "Press {E} to move through the phrase, faster now, one word at a time.",
+          "events": [
+            {
+              "k": "E",
+              "from": 1,
+              "to": "rest",
+              "every": [
+                1.2,
+                2.6
+              ]
+            }
+          ]
+        },
+        "4": {
+          "from": "Press {E} to play the words in order, slower now. Keep moving your pitch down, now below <C2>. Do not go below <G1> before the next cue.",
+          "events": [
+            {
+              "k": "E",
+              "from": 1,
+              "to": "rest",
+              "every": [
+                1.2,
+                2.6
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "28",
+      "phrase": 6,
+      "label": "Final decay and advance to phrase 7",
+      "seconds": 12,
+      "parts": {
+        "1": {
+          "from": "Stay on <G3>. Sweep through 'decay' once, slowly, together with everyone. Go to Phrase {7}.",
+          "events": [
+            {
+              "k": "phrase7",
+              "at": 0
+            },
+            {
+              "k": "mouse",
+              "at": 1,
+              "hold": "rest",
+              "sweep": [
+                0,
+                0.333
+              ]
+            }
+          ]
+        },
+        "2": {
+          "from": "Sweep through 'decay' once, slowly, together with everyone. Go to Phrase {7}.",
+          "events": [
+            {
+              "k": "phrase7",
+              "at": 0
+            },
+            {
+              "k": "mouse",
+              "at": 1,
+              "hold": "rest",
+              "sweep": [
+                0,
+                0.333
+              ]
+            }
+          ]
+        },
+        "3": {
+          "from": "Sweep through 'decay' once, slowly, together with everyone. Go to Phrase {7}.",
+          "events": [
+            {
+              "k": "phrase7",
+              "at": 0
+            },
+            {
+              "k": "mouse",
+              "at": 1,
+              "hold": "rest",
+              "sweep": [
+                0,
+                0.333
+              ]
+            }
+          ]
+        },
+        "4": {
+          "from": "Stay on <C1>. Sweep through 'decay' once, slowly, together with everyone. Go to Phrase {7}.",
+          "events": [
+            {
+              "k": "phrase7",
+              "at": 0
+            },
+            {
+              "k": "mouse",
+              "at": 1,
+              "hold": "rest",
+              "sweep": [
+                0,
+                0.333
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "29",
+      "phrase": 7,
+      "label": "Start phrase 7",
+      "seconds": 40,
+      "parts": {
+        "1": {
+          "from": "Press {Q} to play one phoneme at random from the phrase. Repeat irregularly, about once every two seconds, so the texture stays thin. Change pitch with {J}. Do not try to stay together with the other players.",
+          "events": [
+            {
+              "k": "Q",
+              "from": 1,
+              "to": "rest",
+              "every": [
+                0.7,
+                1.8
+              ],
+              "hold": 0.12
+            },
+            {
+              "k": "J",
+              "from": 2,
+              "to": "rest",
+              "every": [
+                3,
+                7
+              ]
+            }
+          ]
+        },
+        "2": {
+          "from": "Press {Z} for whisper off. Press {Q} to play one phoneme at random from the phrase. Repeat irregularly, about once every two seconds, so the texture stays thin. Change pitch with {J}. Do not try to stay together with the other players.",
+          "events": [
+            {
+              "k": "Q",
+              "from": 1,
+              "to": "rest",
+              "every": [
+                0.7,
+                1.8
+              ],
+              "hold": 0.12
+            },
+            {
+              "k": "Z",
+              "at": 0.4
+            },
+            {
+              "k": "J",
+              "from": 2,
+              "to": "rest",
+              "every": [
+                3,
+                7
+              ]
+            }
+          ]
+        },
+        "3": {
+          "from": "Press {Z} for whisper off. Press {Q} to play one phoneme at random from the phrase. Repeat irregularly, about once every two seconds, so the texture stays thin. Change pitch with {J}. Do not try to stay together with the other players.",
+          "events": [
+            {
+              "k": "Q",
+              "from": 1,
+              "to": "rest",
+              "every": [
+                0.7,
+                1.8
+              ],
+              "hold": 0.12
+            },
+            {
+              "k": "Z",
+              "at": 0.4
+            },
+            {
+              "k": "J",
+              "from": 2,
+              "to": "rest",
+              "every": [
+                3,
+                7
+              ]
+            }
+          ]
+        },
+        "4": {
+          "from": "Hold {A} to scan slowly through the phrase. When you reach the end, press {A} again to scan it again.",
+          "events": [
+            {
+              "k": "A",
+              "from": 1,
+              "to": "rest",
+              "every": [
+                36.6,
+                37.6
+              ],
+              "hold": 36
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "30",
+      "phrase": 7,
+      "label": "Increase density",
+      "seconds": 13,
+      "parts": {
+        "1": {
+          "from": "Press {R} to play one word at random from the phrase. Repeat irregularly, getting denser — about half a second to a second between words. Change pitch with {J}. Do not try to stay together with the other players.",
+          "events": [
+            {
+              "k": "R",
+              "from": 1,
+              "to": "rest",
+              "every": [
+                0.9,
+                2.4
+              ]
+            },
+            {
+              "k": "J",
+              "from": 2,
+              "to": "rest",
+              "every": [
+                3,
+                7
+              ]
+            }
+          ]
+        },
+        "2": {
+          "from": "Press {R} to play one word at random from the phrase. Repeat irregularly, getting denser — about half a second to a second between words. Change pitch with {J}. Do not try to stay together with the other players.",
+          "events": [
+            {
+              "k": "R",
+              "from": 1,
+              "to": "rest",
+              "every": [
+                0.9,
+                2.4
+              ]
+            },
+            {
+              "k": "J",
+              "from": 2,
+              "to": "rest",
+              "every": [
+                3,
+                7
+              ]
+            }
+          ]
+        },
+        "3": {
+          "from": "Press {R} to play one word at random from the phrase. Repeat irregularly, getting denser — about half a second to a second between words. Change pitch with {J}. Do not try to stay together with the other players.",
+          "events": [
+            {
+              "k": "R",
+              "from": 1,
+              "to": "rest",
+              "every": [
+                0.9,
+                2.4
+              ]
+            },
+            {
+              "k": "J",
+              "from": 2,
+              "to": "rest",
+              "every": [
+                3,
+                7
+              ]
+            }
+          ]
+        },
+        "4": {
+          "from": "Hold {S} to scan a little faster through the phrase. When you reach the end, press {S} again to scan it again.",
+          "events": [
+            {
+              "k": "S",
+              "from": 1,
+              "to": "rest",
+              "every": [
+                9.6,
+                10.6
+              ],
+              "hold": 9
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "31",
+      "phrase": 7,
+      "label": "End of Phrase 7",
+      "seconds": 12,
+      "parts": {
+        "1": {
+          "from": "Press {R} to play one word at random from the phrase. Repeat irregularly, at full density, with no gap between words. Change pitch with {J}. Do not try to stay together with the other players.",
+          "events": [
+            {
+              "k": "R",
+              "from": 1,
+              "to": "rest",
+              "every": [
+                0.9,
+                2.4
+              ]
+            },
+            {
+              "k": "J",
+              "from": 2,
+              "to": "rest",
+              "every": [
+                3,
+                7
+              ]
+            }
+          ]
+        },
+        "2": {
+          "from": "Press {R} to play one word at random from the phrase. Repeat irregularly, at full density, with no gap between words. Change pitch with {J}. Do not try to stay together with the other players.",
+          "events": [
+            {
+              "k": "R",
+              "from": 1,
+              "to": "rest",
+              "every": [
+                0.9,
+                2.4
+              ]
+            },
+            {
+              "k": "J",
+              "from": 2,
+              "to": "rest",
+              "every": [
+                3,
+                7
+              ]
+            }
+          ]
+        },
+        "3": {
+          "from": "Press {R} to play one word at random from the phrase. Repeat irregularly, at full density, with no gap between words. Change pitch with {J}. Do not try to stay together with the other players.",
+          "events": [
+            {
+              "k": "R",
+              "from": 1,
+              "to": "rest",
+              "every": [
+                0.9,
+                2.4
+              ]
+            },
+            {
+              "k": "J",
+              "from": 2,
+              "to": "rest",
+              "every": [
+                3,
+                7
+              ]
+            }
+          ]
+        },
+        "4": {
+          "from": "Sweep through 'will not stay' together with the other Part IV players. When you reach the [te] in 'stay', sweep slowly back and forth between [te] and [j], so the timbre changes a little. Keep going.",
+          "events": [
+            {
+              "k": "mouse",
+              "at": 1,
+              "hold": "rest",
+              "sweep": [
+                0,
+                0.6
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "32",
+      "phrase": 7,
+      "label": "Release all but IV",
+      "seconds": 12,
+      "parts": {
+        "1": {
+          "from": "Stop pressing. Silence. Go to Phrase {8}.",
+          "events": [
+            {
+              "k": "phrase8",
+              "at": 0
+            },
+            {
+              "k": "stop",
+              "at": 0
+            }
+          ]
+        },
+        "2": {
+          "from": "Stop pressing. Silence. Go to Phrase {8}.",
+          "events": [
+            {
+              "k": "phrase8",
+              "at": 0
+            },
+            {
+              "k": "stop",
+              "at": 0
+            }
+          ]
+        },
+        "3": {
+          "from": "Stop pressing. Silence. Go to Phrase {8}.",
+          "events": [
+            {
+              "k": "phrase8",
+              "at": 0
+            },
+            {
+              "k": "stop",
+              "at": 0
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "33",
+      "phrase": 8,
+      "label": "Enter Phrase 8",
+      "seconds": 12,
+      "parts": {
+        "1": {
+          "from": "Sweep forward and back across the phrase in smooth, graceful movements. Sometimes one word, sometimes several, sometimes the whole phrase. Speed up and slow down freely, and change pitch with {J} whenever you like.",
+          "events": [
+            {
+              "k": "mouse",
+              "at": 1,
+              "hold": "rest",
+              "sweep": [
+                0,
+                1
+              ]
+            },
+            {
+              "k": "J",
+              "from": 2,
+              "to": "rest",
+              "every": [
+                3,
+                7
+              ]
+            }
+          ]
+        },
+        "4": {
+          "from": "Release into silence. Go to Phrase {8}.",
+          "events": [
+            {
+              "k": "phrase8",
+              "at": 0
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "34",
+      "phrase": 8,
+      "label": "Part II enters",
+      "seconds": 12,
+      "parts": {
+        "2": {
+          "from": "Sweep forward and back across the phrase in smooth, graceful movements. Sometimes one word, sometimes several, sometimes the whole phrase. Speed up and slow down freely, and change pitch with {J} whenever you like.",
+          "events": [
+            {
+              "k": "mouse",
+              "at": 1,
+              "hold": "rest",
+              "sweep": [
+                0,
+                1
+              ]
+            },
+            {
+              "k": "J",
+              "from": 2,
+              "to": "rest",
+              "every": [
+                3,
+                7
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "35",
+      "phrase": 8,
+      "label": "Part III enters",
+      "seconds": 12,
+      "parts": {
+        "3": {
+          "from": "Sweep forward and back across the phrase in smooth, graceful movements. Sometimes one word, sometimes several, sometimes the whole phrase. Speed up and slow down freely, and change pitch with {J} whenever you like.",
+          "events": [
+            {
+              "k": "mouse",
+              "at": 1,
+              "hold": "rest",
+              "sweep": [
+                0,
+                1
+              ]
+            },
+            {
+              "k": "J",
+              "from": 2,
+              "to": "rest",
+              "every": [
+                3,
+                7
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "36",
+      "phrase": 8,
+      "label": "Part IV enters",
+      "seconds": 32,
+      "parts": {
+        "4": {
+          "from": "Hold {A} to scan slowly through the phrase. When you reach the last [l] in 'still', hold the spacebar to keep the sound going until the diminuendo cue.",
+          "events": [
+            {
+              "k": "A",
+              "from": 1,
+              "to": "rest",
+              "every": [
+                28.6,
+                29.6
+              ],
+              "hold": 28
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "37",
+      "phrase": 8,
+      "label": "stay still slowing down",
+      "seconds": 12,
+      "parts": {
+        "1": {
+          "from": "Make your sweeps slower, and sweep only across the words 'stay still'.",
+          "events": [
+            {
+              "k": "mouse",
+              "at": 1,
+              "hold": "rest",
+              "sweep": [
+                0.5,
+                1
+              ]
+            }
+          ]
+        },
+        "2": {
+          "from": "Make your sweeps slower, and sweep only across the words 'stay still'.",
+          "events": [
+            {
+              "k": "mouse",
+              "at": 1,
+              "hold": "rest",
+              "sweep": [
+                0.5,
+                1
+              ]
+            }
+          ]
+        },
+        "3": {
+          "from": "Make your sweeps slower, and sweep only across the words 'stay still'.",
+          "events": [
+            {
+              "k": "mouse",
+              "at": 1,
+              "hold": "rest",
+              "sweep": [
+                0.5,
+                1
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "38",
+      "phrase": 8,
+      "label": "last still",
+      "seconds": 12,
+      "parts": {
+        "1": {
+          "from": "Stop changing pitch. Sweep slowly forward through 'still' one more time. When you reach the last [l], hold {space} to keep the sound going.",
+          "events": [
+            {
+              "k": "stop",
+              "at": 0
+            },
+            {
+              "k": "mouse",
+              "at": 1,
+              "hold": "rest",
+              "sweep": [
+                0.75,
+                1
+              ]
+            }
+          ]
+        },
+        "2": {
+          "from": "Stop changing pitch. Sweep slowly forward through 'still' one more time. When you reach the last [l], hold {space} to keep the sound going.",
+          "events": [
+            {
+              "k": "stop",
+              "at": 0
+            },
+            {
+              "k": "mouse",
+              "at": 1,
+              "hold": "rest",
+              "sweep": [
+                0.75,
+                1
+              ]
+            }
+          ]
+        },
+        "3": {
+          "from": "Stop changing pitch. Sweep slowly forward through 'still' one more time. When you reach the last [l], hold {space} to keep the sound going.",
+          "events": [
+            {
+              "k": "stop",
+              "at": 0
+            },
+            {
+              "k": "mouse",
+              "at": 1,
+              "hold": "rest",
+              "sweep": [
+                0.75,
+                1
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "39",
+      "phrase": 8,
+      "label": "dim al niente",
+      "seconds": 12,
+      "parts": {
+        "1": {
+          "from": "Continue to hold {space}. Press {↓} to fade slowly to silence. Release {space} once silent. ",
+          "events": [
+            {
+              "k": "fade",
+              "at": 0.5
+            }
+          ]
+        },
+        "2": {
+          "from": "Continue to hold {space}. Press {↓} to fade slowly to silence. Release {space} once silent.",
+          "events": [
+            {
+              "k": "fade",
+              "at": 0.5
+            }
+          ]
+        },
+        "3": {
+          "from": "Continue to hold {space}. Press {↓} to fade slowly to silence. Release {space} once silent.",
+          "events": [
+            {
+              "k": "fade",
+              "at": 0.5
+            }
+          ]
+        },
+        "4": {
+          "from": "Continue to hold {space}. Press {↓} to fade slowly to silence. Release {space} once silent.",
+          "events": [
+            {
+              "k": "fade",
+              "at": 0.5
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
