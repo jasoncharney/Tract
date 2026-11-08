@@ -9,7 +9,7 @@ import { loadPatchedPinkTrombone } from "./patched-pink-trombone.js";
 
 /** bump alongside the ?v= in index.html; printed on load so there is never a
  *  question about which build a browser is actually running */
-const BUILD = "2026-11-02a";
+const BUILD = "2026-11-08a";
 
 const $ = (id) => document.getElementById(id);
 const strip = $("strip");
@@ -67,6 +67,17 @@ let parts = DEFAULT_PARTS;
 let partsDoc = {}; // whatever else parts.json carries — the _comment, mainly — so
 // that writing the file back does not quietly delete it
 let partIndex = 0;
+/* Has a human actually said which part this is?
+ *
+ * partIndex starts at 0 so the page has something to draw, and a remembered
+ * part from localStorage replaces it before the picker opens. Neither is a
+ * claim: a laptop sitting on the open part-picker used to tell the desk it was
+ * on part I, which inflated part I's count, fed the per-part coverage warning
+ * a number that was wrong, and — worse — took a seat on part I, shifting the
+ * pitches every other player on that part was handed. It says nothing about
+ * its part now until setPart runs, which is every path a person can choose by:
+ * the picker, ?part=, the composer's select, and /player/part from the desk. */
+let partChosen = false;
 
 const part = () => parts[partIndex] || { tractDelta: 0, phrases: [] };
 const partPhrase = () => {
@@ -2867,6 +2878,7 @@ function openPartModal() {
 
 function setPart(index) {
   partIndex = Math.max(0, Math.min(parts.length - 1, index));
+  partChosen = true; // every caller of this is somebody deciding
   try {
     localStorage.setItem("tract.part", parts[partIndex].id);
   } catch (e) {}
@@ -3431,7 +3443,9 @@ const MACHINE = `${Date.now().toString(36).slice(-4)}${Math.random().toString(36
 function sayHello() {
   const p = part();
   sendOut("/player/hello", [
-    p.id,
+    // no part until one is chosen: the desk still counts this laptop in its
+    // total, because it is here, but no part row claims it
+    partChosen ? p.id : "",
     p.name,
     cued.cue === null ? -1 : Number(cued.cue) || 0,
     MACHINE,
@@ -3489,6 +3503,8 @@ function sendWords() {
 
 function sendPlayhead() {
   if (!deskIsWatching() || !ws || ws.readyState !== 1) return;
+  // and nothing to draw a strip from until this page knows whose strip it is
+  if (!partChosen) return;
   sendWords();
   const p = part();
   const i = Math.max(0, Math.min(cells.length - 1, Math.floor(targetPos)));
@@ -3928,6 +3944,11 @@ window.scan = {
   },
   get part() {
     return parts[partIndex];
+  },
+  /** whether a person has chosen this part, as opposed to it being the
+   *  default or the one this browser remembers */
+  get partChosen() {
+    return partChosen;
   },
   get parts() {
     return parts;

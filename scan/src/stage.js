@@ -12,7 +12,7 @@
   player is playing, not an impression of it.
 */
 
-const BUILD = "2026-11-02a";
+const BUILD = "2026-11-08a";
 const $ = (id) => document.getElementById(id);
 
 /* ---- upstream's numbers, so the shape is the shape ---- */

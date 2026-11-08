@@ -121,6 +121,31 @@ cache-buster means a projector laptop quietly running last month's code;
 `stage.html` was left behind at `2026-09-20a` for several builds exactly that
 way. Date-based: `2026-10-18b`.
 
+## Two counts that are not the same count
+
+The desk's "N connected" and the wall's tiles answer different questions, and
+a gap between them is information, not a bug.
+
+| | fed by | sent | forgotten after |
+| --- | --- | --- | --- |
+| desk total | `/player/hello` | every 4s, from the open socket | 9s |
+| stage tiles | `/tract/frame` | 20/s, **only while `ready`** | 6s |
+
+`ready` needs a click, because browsers will not start audio without one. So a
+laptop on the open part-picker, or one opened with `?part=` (which skips the
+picker, and so skips the click), is counted and draws nothing. Measured: 7
+connected, 6 tiles — exactly the rehearsal report that found it.
+
+The hello also goes out in reply to `/cue/ping`, and a websocket handler is not
+timer-throttled where `setInterval` is, so a backgrounded tab can keep
+answering the desk after its frame feed has fallen below the wall's 6s. That
+part is read off the code, not measured — headless Chrome will not throttle.
+
+`partChosen` is why a page says nothing about its part until a person picks
+one: claiming the default part I also took a seat on part I, and `of` is what a
+phrase divides its pitches by, so an idle laptop moved other players' pitches.
+`test/part-claim.test.js` fails on the old behaviour with `of` reading 3.
+
 ## Flags worth knowing
 
 | | |

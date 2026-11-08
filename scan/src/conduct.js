@@ -30,7 +30,7 @@
   playheads along the bottom of the screen.
 */
 
-const BUILD = "2026-11-02a";
+const BUILD = "2026-11-08a";
 const $ = (id) => document.getElementById(id);
 
 let cues = [];
