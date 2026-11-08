@@ -13,3 +13,6 @@ yarn.lock
 # the room certificate: regenerated per network, and the key never travels
 scan/tract-cert.pem
 scan/tract-key.pem
+# performance recordings and offline renders: large audio/video that belongs
+# in Dropbox, not in git history. The folder keeps syncing; git just ignores it.
+renders/
