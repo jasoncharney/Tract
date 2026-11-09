@@ -110,6 +110,14 @@ const NOTE = {
   space: 9, fade: 10, stop: 11, J: 12, mouse: 13, whisper: 14, standby: 15,
   phrase1: 16,
 };
+/* Sweeps written longer than the slot they are given. A ramp that runs past
+ * the end of its segment is cut off mid-drag, so the player never reaches the
+ * position the sweep was aiming at — which matters most for exactly these
+ * gestures, the ones told to arrive somewhere and hold. Collected while
+ * rendering and reported once at the end, per cue and part rather than per
+ * player, since both seats hit it the same way. */
+const OVERRUNS = new Map();
+
 const CC_MOUSE = 1;
 const CC_PHRASE = 20;
 const CC_PITCH = 21;
@@ -424,7 +432,15 @@ function renderPlayer(player, timing, starts, total, spread, unison = new Set(),
         const lead = (e && e.lead) || 0;
         const stretch = (e && e.stretch) || 1;
         const start = t0 + lead;
-        let secs = random.pick(spec.secs, 4) * stretch;
+        const written = random.pick(spec.secs, 4);
+        let secs = written * stretch;
+        // the slot is measured without the jitter: this is a question about
+        // what timing.json asks for, not about what the scatter did to it
+        const slot = t1 - 0.03 - t0;
+        if (written > slot + 1e-6) {
+          const key = `${e && e.cue ? e.cue.id : "?"}|${player.part}`;
+          if (!OVERRUNS.has(key)) OVERRUNS.set(key, { written, slot });
+        }
         // A stretched sweep must still arrive: these are the ones told to
         // "hold on the last [n]", and a ramp cut off by the end of the block
         // never gets there. Only the jittered ones are clamped — a sweep
@@ -724,6 +740,13 @@ timing.cues.forEach((cue, i) => {
 if (score.length > timing.cues.length) console.log(`! cues.json has ${score.length - timing.cues.length} cue(s) timing.json does not`);
 
 const { all, singles, total } = build(timing);
+OVERRUNS.forEach(({ written, slot }, key) => {
+  const [cue, part] = key.split("|");
+  console.log(
+    `! cue ${cue}, part ${part}: a ${written}s sweep in a ${slot.toFixed(2)}s slot — ` +
+      `the drag is cut off ${(100 * (1 - slot / written)).toFixed(0)}% short of where it was aimed`
+  );
+});
 fs.mkdirSync(OUT, { recursive: true });
 fs.writeFileSync(path.join(OUT, "tract-all.mid"), all);
 singles.forEach((s) => fs.writeFileSync(path.join(OUT, `tract-${s.player.id}.mid`), s.buf));
