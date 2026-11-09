@@ -140,7 +140,25 @@ suite("the wall, sequenced from a MIDI track", async (t) => {
   t.check(s.wall === 0, "and takes the wall down", `wall opacity ${s.wall}`);
   t.check(s.title === "Tract", "with the title the markup carries", `"${s.title}"`);
 
-  t.section("10 — a performance is untouched by any of it");
+  t.section("10 — start and the first cue, in either order");
+  // A host that syncs puts Start and the tick-0 notes in the same buffer and
+  // nothing says which lands first. Measured on the old code: start-then-cue
+  // gave the opening, cue-then-start left the title card up for the whole
+  // run. Both orders have to end the same way.
+  for (const [label, order] of [
+    ["start, then cue 1", [[0xfa], [0x90 | (STAGE_CH - 1), NOTE_FROM, 100]]],
+    ["cue 1, then start", [[0x90 | (STAGE_CH - 1), NOTE_FROM, 100], [0xfa]]],
+  ]) {
+    const page = await t.stage({ query: `?midich=${STAGE_CH}` });
+    await page.waitForFunction(() => window.stage.midi && window.stage.midi.cues.length, null, { timeout: 20000 });
+    for (const message of order) await page.evaluate((m) => window.stage.midi.feed(m), message);
+    await t.sleep(FADE);
+    const card = await page.evaluate(() => Number(getComputedStyle(document.getElementById("titleCard")).opacity));
+    t.check(card === 0, `${label}: the title card fades out`, `card opacity ${card}`);
+    await page.close();
+  }
+
+  t.section("11 — a performance is untouched by any of it");
   const plain = await t.stage();
   const off = await plain.evaluate(() => window.stage.midi.mode);
   t.check(off === false, "no MIDI mode without the flag", `mode ${off}`);

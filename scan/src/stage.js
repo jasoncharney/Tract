@@ -12,7 +12,7 @@
   player is playing, not an impression of it.
 */
 
-const BUILD = "2026-11-09b";
+const BUILD = "2026-11-09c";
 const $ = (id) => document.getElementById(id);
 
 /* ---- upstream's numbers, so the shape is the shape ---- */
@@ -984,6 +984,15 @@ let openingTitle = null; // what the markup said, for a run from the top
  * it should survive F5 in this window and mean nothing to the next one. */
 const STANDING = "tract.stage.standing";
 let standing = {};
+/* The last cue this page was sent, and when. A host that syncs puts Start
+ * and the notes at tick 0 into the same buffer, and nothing says which lands
+ * first — measured both ways: Start then cue 1 gives the opening, cue 1 then
+ * Start leaves the title card up for the whole run, because Start put back
+ * the card that cue 1 had just taken away. So Start replays whatever arrived
+ * alongside it rather than talking over it. */
+let lastCue = null;
+let lastCueAt = -Infinity;
+const TOGETHER = 400; // ms: close enough to be the same moment
 
 function rememberStanding() {
   try {
@@ -1033,8 +1042,13 @@ function midiStage(data) {
      * drawings were never gone; they were behind the card again. */
     if (status === 0xfa && openingTitle) {
       standing = { title: openingTitle, tracts: false, text: "" };
-      rememberStanding();
       applyStage({ ...standing, fade: 0 });
+      // ...and if the first cue got here first, let it have its say again
+      if (lastCue && performance.now() - lastCueAt < TOGETHER) {
+        Object.assign(standing, lastCue);
+        applyStage(lastCue);
+      }
+      rememberStanding();
     }
     return;
   }
@@ -1042,8 +1056,14 @@ function midiStage(data) {
   if ((status & 0xf0) !== 0x90 || !d2) return; // note on only; the lengths are for the eye
   const block = cueStages[d1 - STAGE_NOTE_FROM];
   if (!block) return;
+  lastCue = block;
+  lastCueAt = performance.now();
   Object.assign(standing, block);
   rememberStanding();
+  // one line per cue, so "is anything reaching the wall at all?" is a
+  // question the console answers rather than one you have to infer from a
+  // projector that has not changed
+  console.log(`stage: cue ${d1 - STAGE_NOTE_FROM + 1} \u00b7 ${JSON.stringify(block)}`);
   // the fade written in cues.json is a rehearsal-room fade; keep it, since
   // this is here to show what the piece looks like
   applyStage(block);
