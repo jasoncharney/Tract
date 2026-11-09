@@ -15,7 +15,8 @@ choir painting text from Eliot's *Four Quartets*.
 That starts the bridge and opens the conductor and the projection in two Chrome
 windows; in rehearsal the projection shows the address for the room to join.
 `./tract --help` lists the flags, and `Tract.command` is the same thing to
-double-click in the Finder. By hand, it is:
+double-click in the Finder — double-click `set-icon.command` once to give both
+of them the tract icon in `art/`. By hand, it is:
 
 ```
 node scan/scan-bridge.js
