@@ -39,6 +39,7 @@ const arg = (name, fallback) => {
 };
 const PORT = Number(arg("port", 8080));
 const HEADLESS = argv.includes("--headless"); // for checking this script, not for playing
+const NO_STAGE = argv.includes("--no-stage"); // the eight players and nothing else
 const PROFILE = arg("profile", path.join(os.homedir(), "Library", "Application Support", "Tract testers"));
 const CHROME =
   process.env.CHROME ||
@@ -60,6 +61,14 @@ function players() {
     : [];
   if (found.length === 0) throw new Error("could not read PLAYERS out of make-midi.js");
   return found;
+}
+
+/** and which channel the wall is on, from that same file */
+function stageChannel() {
+  const src = fs.readFileSync(path.join(__dirname, "make-midi.js"), "utf8");
+  const found = src.match(/const STAGE = \{[^}]*channel:\s*(\d+)/);
+  if (!found) throw new Error("could not read STAGE's channel out of make-midi.js");
+  return Number(found[1]);
 }
 
 const listening = (port) =>
@@ -160,6 +169,17 @@ async function openWindows() {
     const { targetId } = await send("Target.createTarget", { url, newWindow: true });
     opened.push({ ...p, targetId, url });
   }
+
+  // The wall, on its own channel. Without it the run looks dead: every
+  // drawing is built and updating, but the stage keeps them at opacity 0
+  // behind the title card until a cue says "tracts": true, and in a
+  // simulation there is no conductor to say it. The stage track does.
+  let wall = null;
+  if (!NO_STAGE) {
+    const url = `${base}/scan/stage.html?midich=${stageChannel()}`;
+    const { targetId } = await send("Target.createTarget", { url, newWindow: true });
+    wall = { targetId, url, channel: stageChannel() };
+  }
   // the old eight go once the new ones exist, so Chrome never has no windows
   for (const t of old) await send("Target.closeTarget", { targetId: t.targetId }).catch(() => {});
 
@@ -172,18 +192,29 @@ async function openWindows() {
     "({ x: screen.availLeft || 0, y: screen.availTop || 0, w: screen.availWidth, h: screen.availHeight })"
   );
 
-  // four across, two down, in channel order: the top row is parts I and II
+  // four across, two down, in channel order: the top row is parts I and II.
+  // The wall gets a row of its own along the bottom, full width, because it
+  // is the one you are actually watching.
   const cols = 4;
-  const rows = Math.ceil(opened.length / cols);
+  const playerRows = Math.ceil(opened.length / cols);
+  const rows = playerRows + (wall ? 1 : 0);
   const w = Math.floor(screen.w / cols);
   const h = Math.floor(screen.h / rows);
-  for (const [i, p] of opened.entries()) {
-    const { windowId } = await send("Browser.getWindowForTarget", { targetId: p.targetId });
+  const place = async (targetId, bounds) => {
+    const { windowId } = await send("Browser.getWindowForTarget", { targetId });
     await send("Browser.setWindowBounds", { windowId, bounds: { windowState: "normal" } });
-    await send("Browser.setWindowBounds", {
-      windowId,
-      bounds: { left: screen.x + (i % cols) * w, top: screen.y + Math.floor(i / cols) * h, width: w, height: h },
+    await send("Browser.setWindowBounds", { windowId, bounds });
+  };
+  for (const [i, p] of opened.entries()) {
+    await place(p.targetId, {
+      left: screen.x + (i % cols) * w,
+      top: screen.y + Math.floor(i / cols) * h,
+      width: w,
+      height: h,
     });
+  }
+  if (wall) {
+    await place(wall.targetId, { left: screen.x, top: screen.y + playerRows * h, width: screen.w, height: h });
   }
 
   // Wake each one's audio, so the first note is heard rather than swallowed.
@@ -215,8 +246,28 @@ async function openWindows() {
       return { ...p, state, pill };
     })
   );
+  let wallState = null;
+  if (wall) {
+    const { sessionId } = await send("Target.attachToTarget", { targetId: wall.targetId, flatten: true });
+    let said = "did not load";
+    for (let i = 0; i < 150; i++) {
+      if (await evaluate(sessionId, "!!(window.stage && window.stage.midi)").catch(() => false)) {
+        const m = await evaluate(
+          sessionId,
+          "({ on: window.stage.midi.on, channel: window.stage.midi.channel, cues: window.stage.midi.cues.length })"
+        ).catch(() => null);
+        said = m
+          ? `${m.cues} cues · ${m.on ? "midi in" : "midi: not connected"}`
+          : "the stage did not answer";
+        break;
+      }
+      await sleep(200);
+    }
+    await send("Target.detachFromTarget", { sessionId }).catch(() => {});
+    wallState = { ...wall, said };
+  }
   cdp.close();
-  return { base, report, launched: cdp.launched };
+  return { base, report, wall: wallState, launched: cdp.launched };
 }
 
 (async () => {
@@ -247,6 +298,7 @@ async function openWindows() {
   result.report.forEach((r) =>
     console.log(`  ch ${String(r.channel).padStart(2)}  ${r.part.padEnd(3)} seat ${r.seat}   ${r.state.padEnd(10)} ${r.pill}`)
   );
+  if (result.wall) console.log(`  ch ${String(result.wall.channel).padStart(2)}  the wall        ${result.wall.said}`);
   const notConnected = result.report.some((r) => /not connected/.test(r.pill));
   if (notConnected) {
     console.log(

@@ -108,6 +108,21 @@ run prints where the time went:
 not survive a regeneration*. So make the big decisions in `timing.json` and
 save the DAW for the last ten per cent.
 
+The ninth track is the wall. Each cue in `cues.json` that carries a `stage`
+block gets one note on channel 9 — note 24 plus that cue's place in the list —
+held until the next one, and `scan/stage.html?midich=9` plays it: the title
+card, the tracts fading up, the words along the bottom. `node midi/testers.js`
+opens that window along with the eight players, in a row of its own across the
+bottom of the screen (`--no-stage` leaves it out).
+
+Without it a simulation looks dead. The drawings are built and updating from
+the moment a player feeds the stage, but `#wall` sits at opacity 0 behind the
+title card until a cue says `"tracts": true`, and the only thing that ever
+said it was the conductor's page. The notes are held rather than tapped so a
+host that chases notes retriggers the one you land inside: scrub the transport
+and the wall is in the state that moment of the piece is actually in. Pressing
+stop puts the title card back, ready for the next run from the top.
+
 Also in `timing.json`:
 
 - `spread` — seconds of scatter between the two players on a part, so they are

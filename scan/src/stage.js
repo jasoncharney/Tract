@@ -12,7 +12,7 @@
   player is playing, not an impression of it.
 */
 
-const BUILD = "2026-11-08a";
+const BUILD = "2026-11-09a";
 const $ = (id) => document.getElementById(id);
 
 /* ---- upstream's numbers, so the shape is the shape ---- */
@@ -937,9 +937,126 @@ function stirCursor() {
 document.addEventListener("mousemove", stirCursor);
 stirCursor();
 
+/* ================================================================ *
+ *  ?midich=N — the wall, sequenced
+ *
+ *  The simulation runs eight player windows off eight MIDI tracks, and until
+ *  now nothing drove the wall: the drawings were all there, built and
+ *  updating, but #wall sits at opacity 0 and the title card covers it until a
+ *  cue says "tracts": true — and only the conductor's page ever says that. So
+ *  a run with testers and a stage and no conductor looked like nothing had
+ *  connected, when in fact everything had.
+ *
+ *  This is the conductor's stage half, played from a track instead. One note
+ *  per cue that carries a "stage" block in cues.json, note 24 + the cue's
+ *  place in the list, held until the next one. Held, not tapped, for the same
+ *  reason the players' phrase lane is held: a host that chases notes
+ *  retriggers the one you land inside, so scrubbing the transport leaves the
+ *  wall in the state that moment of the piece is actually in.
+ *
+ *  It is off unless the URL asks for it, exactly like the players' MIDI mode,
+ *  so nothing about a performance changes.
+ * ================================================================ */
+
+const MIDI_MODE = (() => {
+  const q = new URLSearchParams(location.search);
+  return q.has("midi") || q.has("midich");
+})();
+const MIDI_CHANNEL = (() => {
+  const asked = Number(new URLSearchParams(location.search).get("midich"));
+  return asked >= 1 && asked <= 16 ? asked : null; // null: listen to all of them
+})();
+const STAGE_NOTE_FROM = 24; // note 24 is the first cue in the list
+
+let midiOn = false;
+let cueStages = []; // index -> that cue's stage block, or undefined
+let openingTitle = null; // what the markup said, for the transport going home
+
+async function loadCueStages() {
+  try {
+    const response = await fetch("/scan/cues.json", { cache: "no-cache" });
+    if (!response.ok) return;
+    const data = await response.json();
+    cueStages = (data.cues || []).map((cue) => (cue && typeof cue.stage === "object" ? cue.stage : undefined));
+  } catch (e) {
+    console.warn("stage: could not read cues.json —", e && e.message);
+  }
+}
+
+function midiStage(data) {
+  const [status, d1, d2] = data;
+  if (status >= 0xf0) {
+    // the host pressed stop: put the wall back where the piece starts, so the
+    // next run from the top begins on the title card rather than mid-piece
+    if (status === 0xfc && openingTitle) {
+      applyStage({ title: openingTitle, tracts: false, text: "", fade: 0 });
+    }
+    return;
+  }
+  if (MIDI_CHANNEL !== null && (status & 0x0f) + 1 !== MIDI_CHANNEL) return;
+  if ((status & 0xf0) !== 0x90 || !d2) return; // note on only; the lengths are for the eye
+  const block = cueStages[d1 - STAGE_NOTE_FROM];
+  if (!block) return;
+  // the fade written in cues.json is a rehearsal-room fade; keep it, since
+  // this is here to show what the piece looks like
+  applyStage(block);
+}
+
+async function connectMIDI() {
+  if (!MIDI_MODE) return "";
+  openingTitle = {
+    main: $("titleMain").textContent,
+    sub: $("titleSub").textContent,
+    by: $("titleBy").textContent,
+  };
+  await loadCueStages();
+  if (!navigator.requestMIDIAccess) return "stage: no Web MIDI in this browser";
+  let access;
+  try {
+    access = await navigator.requestMIDIAccess();
+  } catch (e) {
+    return `stage: MIDI not allowed in this window — ${e.message}`;
+  }
+  // rebound whenever a port comes or goes, so an IAC bus switched on after
+  // this window opened is heard without a reload
+  const bind = () => {
+    const names = [];
+    access.inputs.forEach((input) => {
+      names.push(input.name);
+      input.onmidimessage = ({ data }) => midiStage(data);
+    });
+    midiOn = names.length > 0;
+    return names;
+  };
+  access.onstatechange = () => bind();
+  const names = bind();
+  const where = MIDI_CHANNEL === null ? "all channels" : `channel ${MIDI_CHANNEL}`;
+  return names.length
+    ? `stage MIDI: ${names.join(", ")} · ${where} · ${cueStages.filter(Boolean).length} cues to show`
+    : `stage MIDI: no inputs yet · ${where}`;
+}
+
+if (MIDI_MODE) connectMIDI().then((said) => said && console.log(said));
+
 window.stage = {
   BUILD,
-  take, // the wire's entry point, so a test can fill the wall without 9 laptops
+  take,
+  /* the sequenced wall, for a test to drive and for the console to check */
+  midi: {
+    get on() {
+      return midiOn;
+    },
+    get mode() {
+      return MIDI_MODE;
+    },
+    get channel() {
+      return MIDI_CHANNEL;
+    },
+    get cues() {
+      return cueStages.map((block, i) => (block ? { note: STAGE_NOTE_FROM + i, block } : null)).filter(Boolean);
+    },
+    feed: midiStage,
+  }, // the wire's entry point, so a test can fill the wall without 9 laptops
   setLayout,
   drawTract, // so a test can measure where the type lands, in pixels
   placeRing,

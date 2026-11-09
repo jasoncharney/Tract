@@ -105,6 +105,15 @@ const PLAYERS = [
   { id: "IV-2", part: "4", seat: 2, channel: 8 },
 ];
 
+/* The wall is not a player — no pitches, no keyboard — but it is sequenced
+ * the same way, on the channel after the eight. One note per cue that carries
+ * a "stage" block in cues.json, note 24 + that cue's place in the list, held
+ * until the next one so a host that chases notes leaves the wall in the state
+ * the moment you land on is actually in. scan/src/stage.js reads it when the
+ * page is opened with ?midich=. */
+const STAGE = { id: "stage", part: "stage", seat: 0, channel: 9 };
+const STAGE_NOTE_FROM = 24;
+
 const NOTE = {
   A: 0, S: 1, D: 2, W: 3, E: 4, R: 5, Q: 6, T: 7, Z: 8,
   space: 9, fade: 10, stop: 11, J: 12, mouse: 13, whisper: 14, standby: 15,
@@ -699,9 +708,42 @@ function build(timing) {
     return { player, buf: track(events, `${player.id} (ch ${player.channel})`), count: events.length };
   });
 
+  /* ---- the stage's own track ----
+   *
+   * The drawings are built and updating on the wall from the moment a player
+   * feeds it, but #wall sits at opacity 0 behind the title card until a cue
+   * says "tracts": true — and in a simulation there is no conductor to say
+   * it. Without this track a run looks like nothing connected, when in fact
+   * everything did. */
+  const stageChannel = (STAGE.channel - 1) & 0x0f;
+  const stageBlocks = timing.cues
+    .map((cue, i) => ({ i, t: starts[i], block: ((score[i] || {}).stage) }))
+    .filter((x) => x.block && typeof x.block === "object");
+  const stageEvents = [];
+  stageBlocks.forEach((seg, k) => {
+    const to = k + 1 < stageBlocks.length ? stageBlocks[k + 1].t : total;
+    const note = STAGE_NOTE_FROM + seg.i;
+    stageEvents.push({ tick: secToTick(seg.t), order: 2, bytes: [0x90 | stageChannel, note, 100] });
+    stageEvents.push({
+      tick: secToTick(Math.max(seg.t + 0.2, to - 0.05)),
+      order: 0,
+      bytes: [0x80 | stageChannel, note, 0],
+    });
+  });
+  const stageTrack = {
+    player: STAGE,
+    count: stageEvents.length,
+    buf: track(stageEvents, `stage (ch ${STAGE.channel})`),
+  };
+
   const header = (n) => chunk("MThd", [0, 1, (n >> 8) & 255, n & 255, (PPQ >> 8) & 255, PPQ & 255]);
-  const all = Buffer.concat([header(tracks.length + 1), track(conductor, "conductor"), ...tracks.map((t) => t.buf)]);
-  const singles = tracks.map((t) => ({
+  const all = Buffer.concat([
+    header(tracks.length + 2),
+    track(conductor, "conductor"),
+    ...tracks.map((t) => t.buf),
+    stageTrack.buf,
+  ]);
+  const singles = [...tracks, stageTrack].map((t) => ({
     player: t.player,
     count: t.count,
     buf: Buffer.concat([header(2), track(conductor, "conductor"), t.buf]),
@@ -765,11 +807,12 @@ byPhrase.forEach((secs, phrase) => {
   run += secs;
   console.log(`    ${String(phrase).padStart(2)}     ${mmss(secs).padStart(5)}    ${mmss(run)}`);
 });
-console.log(`\n  out/tract-all.mid        ${(all.length / 1024).toFixed(0)} kB, ${PLAYERS.length} tracks + markers`);
+console.log(`\n  out/tract-all.mid        ${(all.length / 1024).toFixed(0)} kB, ${PLAYERS.length} tracks + stage + markers`);
 singles.forEach((s) =>
   console.log(`  out/tract-${s.player.id}.mid`.padEnd(27) + `${s.count} events, channel ${s.player.channel}`)
 );
-console.log("\nwindows: node midi/testers.js opens all eight, or by hand:");
+console.log("\nwindows: node midi/testers.js opens all eight and the wall, or by hand:");
 PLAYERS.forEach((p) =>
   console.log(`  ch ${String(p.channel).padStart(2)}  /scan/?part=${["", "I", "II", "III", "IV"][Number(p.part)]}&seat=${p.seat}&midich=${p.channel}`)
 );
+console.log(`  ch ${String(STAGE.channel).padStart(2)}  /scan/stage.html?midich=${STAGE.channel}`);
