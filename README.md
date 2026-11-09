@@ -9,6 +9,15 @@ that makes them intelligible at any speed. Built for a four-part laptop-ensemble
 choir painting text from Eliot's *Four Quartets*.
 
 ```
+./tract                 # asks rehearsal or performance, then brings it all up
+```
+
+That starts the bridge and opens the conductor and the projection in two Chrome
+windows; in rehearsal the projection shows the address for the room to join.
+`./tract --help` lists the flags, and `Tract.command` is the same thing to
+double-click in the Finder. By hand, it is:
+
+```
 node scan/scan-bridge.js
 open http://localhost:8080                 # a player — Chrome, then "enable audio"
 open http://localhost:8080/conduct.html    # the conductor

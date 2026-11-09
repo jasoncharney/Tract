@@ -1,0 +1,170 @@
+#!/usr/bin/env bash
+#
+# tract — start a rehearsal or a performance in one command.
+#
+#   ./tract                 asks which, then brings everything up
+#   ./tract --rehearsal     the wall shows the address to join
+#   ./tract --performance   the wall shows the title card
+#
+# It starts the bridge (scan/scan-bridge.js), waits for it to answer, and
+# opens two Chrome windows: the conductor's desk and the projection. The
+# bridge stays in the foreground, so ctrl-C here stops the whole thing — that
+# is the one window to close at the end of the night.
+#
+# Players are not opened: they join from their own laptops, at the address
+# printed below and shown on the wall in rehearsal.
+#
+# Double-click Tract.command in the Finder to get the same thing.
+
+set -uo pipefail
+
+# the repo, however this script was reached: a symlink, a Finder double-click,
+# or an alias in a shell profile
+SELF="${BASH_SOURCE[0]}"
+while [ -L "$SELF" ]; do
+  LINK="$(readlink "$SELF")"
+  case "$LINK" in
+    /*) SELF="$LINK" ;;
+    *) SELF="$(dirname "$SELF")/$LINK" ;;
+  esac
+done
+ROOT="$(cd "$(dirname "$SELF")" && pwd)"
+cd "$ROOT"
+
+PORT=8080
+MODE=""
+NETWORK=""
+EXTRA=()
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -r|--rehearsal) MODE="rehearsal"; shift ;;
+    -p|--performance) MODE="performance"; shift ;;
+    --port) PORT="${2:?--port needs a number}"; shift 2 ;;
+    --network|--wifi) NETWORK="${2:?--network needs a name}"; shift 2 ;;
+    --no-tls) EXTRA+=("--no-tls"); shift ;;
+    -v|--verbose) EXTRA+=("--verbose"); shift ;;
+    -h|--help)
+      sed -n '3,17p' "$SELF" | sed 's/^# \{0,1\}//'
+      echo
+      echo "  --port N            default 8080"
+      echo "  --network NAME      the wi-fi to name on the wall (default: hopkins)"
+      echo "  --no-tls            plain http; players fall back to the slower synth"
+      echo "  --verbose           the bridge logs every message"
+      exit 0
+      ;;
+    *) echo "tract: don't know the option '$1' — try --help" >&2; exit 2 ;;
+  esac
+done
+
+command -v node >/dev/null 2>&1 || { echo "tract: node is not on the PATH" >&2; exit 1; }
+[ -f scan/scan-bridge.js ] || { echo "tract: no scan/scan-bridge.js under $ROOT" >&2; exit 1; }
+
+# which wall, if the flags did not say
+if [ -z "$MODE" ]; then
+  if [ -t 0 ]; then
+    printf 'rehearsal (the wall shows the address to join) or performance (the title card)? [R/p] '
+    read -r answer
+    case "$answer" in
+      [Pp]*) MODE="performance" ;;
+      *) MODE="rehearsal" ;;
+    esac
+  else
+    MODE="rehearsal"
+    echo "tract: nothing to ask on, so: rehearsal"
+  fi
+fi
+
+# ---------------------------------------------------------------- the bridge
+
+BRIDGE=""
+if lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; then
+  if lsof -nP -iTCP:"$PORT" -sTCP:LISTEN -Fc 2>/dev/null | grep -qx "cnode"; then
+    echo "tract: a bridge is already on port $PORT — using that one"
+  else
+    echo "tract: something that is not node is already on port $PORT." >&2
+    echo "       Close it, or run with --port on another number." >&2
+    exit 1
+  fi
+else
+  node scan/scan-bridge.js --port "$PORT" ${EXTRA+"${EXTRA[@]}"} &
+  BRIDGE=$!
+fi
+
+stop() {
+  if [ -n "$BRIDGE" ] && kill -0 "$BRIDGE" 2>/dev/null; then
+    kill "$BRIDGE" 2>/dev/null
+    wait "$BRIDGE" 2>/dev/null
+  fi
+}
+trap 'echo; echo "tract: stopping"; stop; exit 0' INT TERM
+
+# ------------------------------------------- wait for it, and learn its scheme
+#
+# The bridge serves https when it has a certificate and plain http when it
+# cannot make one, and it decides that for itself. Rather than guess from the
+# .pem files on disk, ask the port which one answers.
+
+SCHEME=""
+for _ in $(seq 1 100); do
+  if curl -ks -o /dev/null --max-time 1 "https://127.0.0.1:$PORT/"; then SCHEME="https"; break; fi
+  if curl -s -o /dev/null --max-time 1 "http://127.0.0.1:$PORT/"; then SCHEME="http"; break; fi
+  if [ -n "$BRIDGE" ] && ! kill -0 "$BRIDGE" 2>/dev/null; then
+    echo "tract: the bridge stopped before it was listening — see its output above" >&2
+    exit 1
+  fi
+  sleep 0.2
+done
+if [ -z "$SCHEME" ]; then
+  echo "tract: the bridge never answered on port $PORT" >&2
+  stop
+  exit 1
+fi
+
+BASE="$SCHEME://localhost:$PORT"
+
+STAGE="$BASE/stage.html"
+if [ "$MODE" = "rehearsal" ]; then
+  STAGE="$STAGE?IP"
+  if [ -n "$NETWORK" ]; then
+    # a network name can have spaces in it, and "Fine Arts" is not a URL
+    STAGE="$STAGE&wifi=$(python3 -c 'import sys,urllib.parse;print(urllib.parse.quote(sys.argv[1]))' "$NETWORK")"
+  fi
+fi
+
+# ---------------------------------------------------------------- the windows
+
+open_window() {
+  if ! open -na "Google Chrome" --args --new-window "$1" 2>/dev/null; then
+    echo "tract: could not reach Google Chrome, so opening '$1' in the default browser"
+    open "$1"
+  fi
+}
+
+open_window "$BASE/conduct.html"
+sleep 1 # two `open -na` calls in the same instant can land as one window
+open_window "$STAGE"
+
+echo
+echo "  conductor   $BASE/conduct.html"
+echo "  projection  $STAGE"
+echo "  players     $BASE/   — on their own laptops, at the address below"
+if [ "$SCHEME" = "https" ]; then
+  echo "              (each laptop clicks through the certificate warning once)"
+else
+  echo "              (no certificate: other laptops get the slower main-thread"
+  echo "               synth — run ./make-cert.sh in scan/ for the good one)"
+fi
+for ip in $(ipconfig getifaddr en0 2>/dev/null) $(ipconfig getifaddr en1 2>/dev/null); do
+  echo "  on the wi-fi $SCHEME://$ip:$PORT"
+done
+echo
+echo "  ctrl-C stops the bridge. The Chrome windows stay until you close them."
+echo
+
+if [ -n "$BRIDGE" ]; then
+  wait "$BRIDGE"
+else
+  # somebody else's bridge is doing the serving; nothing to hold onto
+  echo "  (the bridge was already running, so this window is free to close)"
+fi
