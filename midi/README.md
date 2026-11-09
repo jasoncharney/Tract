@@ -113,6 +113,23 @@ Also in `timing.json`:
 - `spread` — seconds of scatter between the two players on a part, so they are
   not in robotic unison. `0` lines them up exactly. A block marked
   `"together": true` ignores it.
+- `sweepJitter` — seconds, for the moments where more than one part makes the
+  same one-shot sweep at once: cues 6, 13, 17, 18, 28 and 38. Each of the eight
+  players gets a lead of its own, drawn from its own seed, so the entry has a
+  soft edge instead of eight identical ticks, and a speed of its own within
+  ±4%, so the release is as ragged as the attack. At `0.08` the players land
+  within about ±80 ms of each other. `0` turns the whole thing off, speed
+  variation included, and the files come out exactly as they did before it
+  existed.
+
+  The lead runs from 0 to twice the number rather than either side of zero, so
+  they are spread by the full amount around each other while none of them
+  starts before its own cue — the previous gesture only lets go 30 ms ahead of
+  the block, and an early sweep would overlap the thing it replaces.
+
+  `loop` and `wander` sweeps are left alone. Cue 24 says "on your own, at your
+  own speed", and those modes already draw their own lengths; scattering them
+  further would be scattering something that is not in unison to begin with.
 - `tempo` — leave it at 60 unless you have a reason. At 60 bpm one beat is one
   second and one 4/4 bar is four, so the DAW's grid and the numbers in this
   file are the same ruler.

@@ -237,7 +237,7 @@ const wordModeOf = (phrase) => ((PRESETS[String(phrase - 1)] || {}).wordMode ===
  *  stopped by it.
  * ================================================================ */
 
-function renderPlayer(player, timing, starts, total, spread) {
+function renderPlayer(player, timing, starts, total, spread, unison = new Set(), jitter = 0) {
   const ch = (player.channel - 1) & 0x0f;
   const events = [];
   // order at a shared tick: note offs, then controllers, then note ons — so a
@@ -258,10 +258,31 @@ function renderPlayer(player, timing, starts, total, spread) {
     const t = starts[i] + Math.max(0, nudge);
     const moves = block.go !== undefined && block.goAt === undefined;
     const settles = moves || typeof block.whisper === "boolean";
+    /* A unison sweep is several people trying to move together, not one
+     * gesture played four times. Each player gets a lead of their own and a
+     * speed of their own, so the entry has a soft edge and the release is as
+     * ragged as the attack — which is what the cue sheet is actually asking
+     * for when it says "listen to the other players and stay together".
+     *
+     * The lead runs from 0 to 2*jitter rather than -jitter to +jitter, so the
+     * players are spread by the full ±jitter around each other while none of
+     * them starts before the cue. Starting early is not free here: the lane
+     * before this one lets go only 30 ms ahead of the block, so a sweep that
+     * began before its own cue would overlap the gesture it replaces.
+     *
+     * It draws from a seed of its own, not from b.random, so switching this
+     * on moves nothing else in the file. */
+    // one knob turns the whole thing off, speed variation included
+    const swept = jitter > 0 && unison.has(i);
+    const roll = rng(`sweep|${cue.id}|${player.id}`);
+    const lead = swept ? jitter * (1 + (2 * roll() - 1)) : 0;
+    const stretch = swept ? 1 + (2 * roll() - 1) * 0.04 : 1;
     blocks.push({
       cue,
       block,
       t,
+      lead,
+      stretch,
       random: rng(`${cue.id}|${player.id}`),
       goAt: t + (block.goAt !== undefined ? Number(block.goAt) : 0.1),
       whisperAt: t + (moves ? 0.2 : 0),
@@ -314,11 +335,11 @@ function renderPlayer(player, timing, starts, total, spread) {
       const t0 = e.at + offset(seg);
       const next = segments[k + 1];
       const t1 = next ? e.at + offset(next) : e.until;
-      sound(seg, t0, t1, phraseAt(t0), e.random);
+      sound(seg, t0, t1, phraseAt(t0), e.random, e);
     });
   });
 
-  function sound(spec, t0, t1, phrase, random) {
+  function sound(spec, t0, t1, phrase, random, e) {
     const end = t1 - 0.03; // anything held lets go just before the next thing
     if (spec === null || spec === undefined || end <= t0) return;
     if (spec === "stop") return tap(t0, NOTE.stop);
@@ -399,9 +420,20 @@ function renderPlayer(player, timing, starts, total, spread) {
       };
       const mode = spec.mode || "once";
       if (mode === "once") {
-        cc(t0, CC_MOUSE, a * 127);
-        on(t0, NOTE.mouse);
-        const done = ramp(a, b, t0, random.pick(spec.secs, 4));
+        // in unison, this player's own moment and own speed; alone, zero and one
+        const lead = (e && e.lead) || 0;
+        const stretch = (e && e.stretch) || 1;
+        const start = t0 + lead;
+        let secs = random.pick(spec.secs, 4) * stretch;
+        // A stretched sweep must still arrive: these are the ones told to
+        // "hold on the last [n]", and a ramp cut off by the end of the block
+        // never gets there. Only the jittered ones are clamped — a sweep
+        // written longer than its own block is a timing.json question, and
+        // silently shortening it here would hide it.
+        if (lead || stretch !== 1) secs = Math.min(secs, Math.max(0.2, end - start - 0.05));
+        cc(start, CC_MOUSE, a * 127);
+        on(start, NOTE.mouse);
+        const done = ramp(a, b, start, secs);
         off(spec.then === "hold" ? end : Math.min(end, done + 0.3), NOTE.mouse);
       } else if (mode === "loop") {
         // again and again, lifting the mouse to go back to the start
@@ -533,7 +565,9 @@ function renderPlayer(player, timing, starts, total, spread) {
   blocks
     .filter((b) => b.block.pedal)
     .forEach((b) => {
-      const t = b.t + Number(b.block.pedalAt || 0);
+      // the hold at the end of a sweep is part of that sweep: if the player
+      // was late starting, they are late reaching the last phoneme too
+      const t = b.t + Number(b.block.pedalAt || 0) + (b.lead || 0);
       if (b.block.pedal === "down" && !pedal) on(t, NOTE.space);
       if (b.block.pedal === "up" && pedal) off(t, NOTE.space);
       pedal = b.block.pedal === "down";
@@ -595,6 +629,25 @@ function build(timing) {
   const bpm = Number(timing.tempo) || 60;
   const secToTick = (s) => Math.round((s * bpm * PPQ) / 60);
   const spread = Number(timing.spread) || 0;
+  // how far apart a unison sweep's players land, in seconds: see renderPlayer
+  const jitter = timing.sweepJitter === undefined ? 0.08 : Number(timing.sweepJitter) || 0;
+
+  /* Which cues are a unison sweep: more than one part making the same
+   * one-shot sweep at the same moment. "loop" and "wander" sweeps are the
+   * score telling players to go their own way — cue 24 says "on your own, at
+   * your own speed" — and they already draw their own lengths, so they are
+   * left alone. */
+  const oneShotSweep = (block) => {
+    const spec = block && block.sound;
+    const segments = Array.isArray(spec) ? spec : [spec];
+    return segments.some(
+      (seg) => seg && typeof seg === "object" && seg.sweep && (seg.mode || "once") === "once"
+    );
+  };
+  const unison = new Set();
+  timing.cues.forEach((cue, i) => {
+    if (Object.values(cue.parts || {}).filter(oneShotSweep).length > 1) unison.add(i);
+  });
 
   /* where every cue starts, and the markers that say so */
   const starts = [];
@@ -616,7 +669,7 @@ function build(timing) {
   });
 
   const tracks = PLAYERS.map((player) => {
-    const rendered = renderPlayer(player, timing, starts, total, spread);
+    const rendered = renderPlayer(player, timing, starts, total, spread, unison, jitter);
     // One NaN time breaks the sort, and a track out of order is not a
     // malformed file — it parses, every delta clamped at zero, and the piece
     // quietly runs twice as long with half of it in the wrong place.

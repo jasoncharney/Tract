@@ -1,6 +1,7 @@
 {
   "_": "One reading of the score. Each part does what its block says until a later cue speaks to that part again — a gesture keeps going through other parts' cues. 'seconds' is how long until the next cue. See midi/README.md for the fields. Then: node midi/make-midi.js",
   "tempo": 60,
+  "sweepJitter": 0.08,
   "spread": 0.15,
   "_spread": "seconds of scatter between the two players on a part, so they are not in robotic unison. 0 lines them up. Blocks marked 'together' ignore it.",
   "cues": [
