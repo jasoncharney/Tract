@@ -34,7 +34,6 @@
     "wordChoices": [0, 0],
     "gain": 0.4,
     "wordMode": "next",
-    "whisper": false,
     "vibrato": {
       "rate": 1.8,
       "depth": 0.003,
@@ -77,7 +76,6 @@
     "wordChoices": [0],
     "gain": 0.4,
     "wordMode": "next",
-    "whisper": false,
     "vibrato": {
       "rate": 8.4,
       "depth": 0.027,
@@ -120,11 +118,10 @@
     "wordChoices": [0, 0, 0, 0, 0, 0],
     "gain": 0.4,
     "wordMode": "next",
-    "whisper": false,
     "vibrato": {
       "rate": 6,
       "depth": 0.001,
-      "wobble": 0.1
+      "wobble": 0.01
     },
     "tractLength": 44
   },
@@ -166,7 +163,7 @@
     "vibrato": {
       "rate": 4,
       "depth": 0.007,
-      "wobble": 0.05
+      "wobble": 0.005
     },
     "tractLength": 44
   },
@@ -205,11 +202,10 @@
     "wordChoices": [0, 0, 0],
     "gain": 0.4,
     "wordMode": "random",
-    "whisper": false,
     "vibrato": {
       "rate": 6,
       "depth": 0.005,
-      "wobble": 0.19
+      "wobble": 0.019
     },
     "tractLength": 44
   },
@@ -251,7 +247,7 @@
     "vibrato": {
       "rate": 2.2,
       "depth": 0.005,
-      "wobble": 0.22
+      "wobble": 0.022
     },
     "tractLength": 44
   },
@@ -290,11 +286,10 @@
     "wordChoices": [0, 0, 0, 1, 0],
     "gain": 0.4,
     "wordMode": "next",
-    "whisper": false,
     "vibrato": {
       "rate": 6,
       "depth": 0.006,
-      "wobble": 0.15
+      "wobble": 0.0015
     },
     "tractLength": 44
   },
@@ -336,7 +331,7 @@
     "vibrato": {
       "rate": 6,
       "depth": 0.005,
-      "wobble": 0.07
+      "wobble": 0.007
     },
     "tractLength": 44
   }
