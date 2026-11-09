@@ -120,8 +120,15 @@ the moment a player feeds the stage, but `#wall` sits at opacity 0 behind the
 title card until a cue says `"tracts": true`, and the only thing that ever
 said it was the conductor's page. The notes are held rather than tapped so a
 host that chases notes retriggers the one you land inside: scrub the transport
-and the wall is in the state that moment of the piece is actually in. Pressing
-stop puts the title card back, ready for the next run from the top.
+and the wall is in the state that moment of the piece is actually in.
+
+Transport **start** — play from the top — puts the title card back, so a run
+begins where an audience would come in. **Stop** and **continue** leave the
+wall exactly as it is: stopping to talk to the room should not take the
+projection down. And the page remembers where the wall had got to, so
+refreshing it mid-run picks up rather than starting over — a cue's block is a
+change, not a picture, and without that a reloaded page would have nothing to
+show until the next stage cue came round.
 
 Also in `timing.json`:
 

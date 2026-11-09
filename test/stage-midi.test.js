@@ -99,15 +99,48 @@ suite("the wall, sequenced from a MIDI track", async (t) => {
   s = await look();
   t.check(s.words === before, "a note on a player's channel is ignored", `still "${s.words}"`);
 
-  t.section("6 — the host presses stop");
+  t.section("6 — the host presses stop, and the wall stays where it is");
+  // Stop used to put the title card back, which took the whole wall down
+  // every time the transport stopped to talk to the room, with nothing to
+  // bring it back until the next stage cue. Stop is not "go home".
+  const lit = await look();
   await stage.evaluate(() => window.stage.midi.feed([0xfc]));
+  await t.sleep(1500);
+  s = await look();
+  t.check(s.wall === 1, "stop leaves the wall lit", `opacity ${s.wall}`);
+  t.check(s.card === 0, "and the title card down", `card opacity ${s.card}`);
+  t.check(s.words === lit.words, "and the words where they were", `"${s.words}"`);
+
+  t.section("7 — continue is not a reset either");
+  await stage.evaluate(() => window.stage.midi.feed([0xfb]));
+  await t.sleep(1000);
+  s = await look();
+  t.check(s.wall === 1, "continue changes nothing", `opacity ${s.wall}`);
+
+  t.section("8 — refreshing the page picks up where the wall was");
+  // A cue's block is a change, not a picture — cue 8 is only its text — so a
+  // reloaded page has to restore the accumulated state, the way the
+  // conductor's heartbeat does for a projector that reloads mid-run.
+  const standing = await stage.evaluate(() => window.stage.midi.standing);
+  t.check(standing.tracts === true, "the page is holding a standing state", JSON.stringify(standing));
+  await stage.reload({ waitUntil: "load" });
+  await stage.waitForFunction(() => window.stage && window.stage.midi, null, { timeout: 20000 });
+  await t.sleep(3000);
+  s = await look();
+  t.check(s.wall === 1, "after a refresh the wall is still lit", `opacity ${s.wall}`);
+  t.check(s.card === 0, "the title card is still down", `card opacity ${s.card}`);
+  t.check(s.words === lit.words, "the words are still there", `"${s.words}"`);
+  t.check(s.tiles === 3, "and the players are drawn again", `${s.tiles} tiles`);
+
+  t.section("9 — start, and only start, goes back to the top");
+  await stage.evaluate(() => window.stage.midi.feed([0xfa]));
   await t.sleep(1200);
   s = await look();
-  t.check(s.card === 1, "the title card comes back for the next run", `card opacity ${s.card}`);
-  t.check(s.wall === 0, "and the wall goes dark", `wall opacity ${s.wall}`);
+  t.check(s.card === 1, "start puts the title card back", `card opacity ${s.card}`);
+  t.check(s.wall === 0, "and takes the wall down", `wall opacity ${s.wall}`);
   t.check(s.title === "Tract", "with the title the markup carries", `"${s.title}"`);
 
-  t.section("7 — a performance is untouched by any of it");
+  t.section("10 — a performance is untouched by any of it");
   const plain = await t.stage();
   const off = await plain.evaluate(() => window.stage.midi.mode);
   t.check(off === false, "no MIDI mode without the flag", `mode ${off}`);

@@ -12,7 +12,7 @@
   player is playing, not an impression of it.
 */
 
-const BUILD = "2026-11-09a";
+const BUILD = "2026-11-09b";
 const $ = (id) => document.getElementById(id);
 
 /* ---- upstream's numbers, so the shape is the shape ---- */
@@ -970,7 +970,44 @@ const STAGE_NOTE_FROM = 24; // note 24 is the first cue in the list
 
 let midiOn = false;
 let cueStages = []; // index -> that cue's stage block, or undefined
-let openingTitle = null; // what the markup said, for the transport going home
+let openingTitle = null; // what the markup said, for a run from the top
+
+/* What the wall is currently supposed to look like.
+ *
+ * A cue's stage block is a change, not a picture: cue 8 is only {"text":
+ * "CRACK"}, and applying it to a fresh page would write the word over a dark
+ * wall. The conductor's page handles this by keeping a standing state and
+ * re-sending it on every heartbeat, so a projector that reloads mid-run
+ * catches up within a second. A track has no heartbeat — one note, one
+ * change, and nothing afterwards — so the page has to keep the standing
+ * state itself, and remember it across a refresh. sessionStorage, not local:
+ * it should survive F5 in this window and mean nothing to the next one. */
+const STANDING = "tract.stage.standing";
+let standing = {};
+
+function rememberStanding() {
+  try {
+    sessionStorage.setItem(STANDING, JSON.stringify(standing));
+  } catch (e) {
+    /* a private window, or storage turned off: the wall still works, it just
+       will not survive a refresh */
+  }
+}
+
+function recallStanding() {
+  try {
+    const kept = sessionStorage.getItem(STANDING);
+    if (!kept) return false;
+    standing = JSON.parse(kept) || {};
+    if (!Object.keys(standing).length) return false;
+    // fade 0: this is a page catching up with where the piece already is,
+    // not the piece arriving somewhere
+    applyStage({ ...standing, fade: 0 });
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
 
 async function loadCueStages() {
   try {
@@ -986,10 +1023,18 @@ async function loadCueStages() {
 function midiStage(data) {
   const [status, d1, d2] = data;
   if (status >= 0xf0) {
-    // the host pressed stop: put the wall back where the piece starts, so the
-    // next run from the top begins on the title card rather than mid-piece
-    if (status === 0xfc && openingTitle) {
-      applyStage({ title: openingTitle, tracts: false, text: "", fade: 0 });
+    /* Start (0xFA) means "from the top" and Continue (0xFB) means "from where
+     * we were", which is exactly the distinction the wall needs: only the
+     * first one should put the title card back.
+     *
+     * Stop used to do it, and that was wrong. Stopping the transport to talk
+     * to the room took the whole wall down, and nothing brought it back until
+     * the next stage cue in the track — which can be a minute away. The
+     * drawings were never gone; they were behind the card again. */
+    if (status === 0xfa && openingTitle) {
+      standing = { title: openingTitle, tracts: false, text: "" };
+      rememberStanding();
+      applyStage({ ...standing, fade: 0 });
     }
     return;
   }
@@ -997,6 +1042,8 @@ function midiStage(data) {
   if ((status & 0xf0) !== 0x90 || !d2) return; // note on only; the lengths are for the eye
   const block = cueStages[d1 - STAGE_NOTE_FROM];
   if (!block) return;
+  Object.assign(standing, block);
+  rememberStanding();
   // the fade written in cues.json is a rehearsal-room fade; keep it, since
   // this is here to show what the piece looks like
   applyStage(block);
@@ -1010,7 +1057,9 @@ async function connectMIDI() {
     by: $("titleBy").textContent,
   };
   await loadCueStages();
-  if (!navigator.requestMIDIAccess) return "stage: no Web MIDI in this browser";
+  const caught = recallStanding(); // a refresh mid-run, rather than a fresh start
+  if (!navigator.requestMIDIAccess)
+    return `stage: no Web MIDI in this browser${caught ? " (the wall is where it was)" : ""}`;
   let access;
   try {
     access = await navigator.requestMIDIAccess();
@@ -1031,9 +1080,10 @@ async function connectMIDI() {
   access.onstatechange = () => bind();
   const names = bind();
   const where = MIDI_CHANNEL === null ? "all channels" : `channel ${MIDI_CHANNEL}`;
+  const back = caught ? " · picked up where the wall was" : "";
   return names.length
-    ? `stage MIDI: ${names.join(", ")} · ${where} · ${cueStages.filter(Boolean).length} cues to show`
-    : `stage MIDI: no inputs yet · ${where}`;
+    ? `stage MIDI: ${names.join(", ")} · ${where} · ${cueStages.filter(Boolean).length} cues to show${back}`
+    : `stage MIDI: no inputs yet · ${where}${back}`;
 }
 
 if (MIDI_MODE) connectMIDI().then((said) => said && console.log(said));
@@ -1054,6 +1104,9 @@ window.stage = {
     },
     get cues() {
       return cueStages.map((block, i) => (block ? { note: STAGE_NOTE_FROM + i, block } : null)).filter(Boolean);
+    },
+    get standing() {
+      return { ...standing };
     },
     feed: midiStage,
   }, // the wire's entry point, so a test can fill the wall without 9 laptops
