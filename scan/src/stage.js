@@ -12,7 +12,7 @@
   player is playing, not an impression of it.
 */
 
-const BUILD = "2026-11-09d";
+const BUILD = "2026-11-09e";
 const $ = (id) => document.getElementById(id);
 
 /* ---- upstream's numbers, so the shape is the shape ---- */
@@ -389,12 +389,53 @@ function applyStage(block) {
     else light();
   }
 
-  if (textChanged) {
+  /* The end of the piece is the wall fading out over eight seconds, and the
+   * words were not part of it: the same cue clears the text, which takes the
+   * strip of wall back and re-lays every tract a size larger halfway through
+   * the diminuendo, while the caption itself blinks out on its own half
+   * second. So when a cue takes the tracts down, the words go with them, on
+   * the wall's clock, and the strip is not reclaimed until the wall is
+   * already dark. */
+  const ending = tractsChanged && wantTracts === false;
+  if (ending) {
+    current.text = "";
+    fadeSubtitleWithWall(seconds);
+  } else if (textChanged) {
     current.text = wantText;
     setSubtitle(wantText);
   }
   layout(); // the hint follows whether the card is up
 }
+
+/**
+ * The caption leaving with the wall rather than before it.
+ *
+ * Two things the ordinary path does are wrong here. It fades the words on
+ * their own half-second while the wall takes eight, so the room reads the
+ * last line gone and the drawings still going; and it gives the strip back
+ * at once, which re-lays the wall — every tract jumps a size bigger in the
+ * middle of the diminuendo. So: the words fade on the wall's clock, and the
+ * strip comes back only once the wall is at nothing, where a resize is
+ * something nobody can see.
+ */
+function fadeSubtitleWithWall(seconds) {
+  const el = $("subtitle");
+  if (!el || !SUBTITLES || !showing) return;
+  showing = "";
+  el.style.transition = `opacity ${seconds}s ease-in-out`;
+  el.classList.add("gone");
+  clearTimeout(subtitleAfter);
+  subtitleAfter = setTimeout(
+    () => {
+      el.textContent = "";
+      el.style.transition = ""; // back to the stylesheet's own half second
+      document.documentElement.style.setProperty("--subs", "0px");
+      layout();
+    },
+    Math.max(200, seconds * 1000) + 120
+  );
+}
+let subtitleAfter = 0;
 
 /** the words along the bottom, and the strip of wall they cost */
 function setSubtitle(text) {
@@ -410,7 +451,8 @@ function setSubtitle(text) {
   layout();
   // out, swap, in — so the words change with a breath rather than a jump cut
   el.classList.add("gone");
-  setTimeout(
+  clearTimeout(subtitleAfter); // a cue arriving during an ending wins
+  subtitleAfter = setTimeout(
     () => {
       el.textContent = next;
       el.classList.toggle("gone", !next);
