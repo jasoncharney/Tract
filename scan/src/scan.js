@@ -9,7 +9,7 @@ import { loadPatchedPinkTrombone } from "./patched-pink-trombone.js";
 
 /** bump alongside the ?v= in index.html; printed on load so there is never a
  *  question about which build a browser is actually running */
-const BUILD = "2026-11-09c";
+const BUILD = "2026-11-09d";
 
 const $ = (id) => document.getElementById(id);
 const strip = $("strip");
@@ -1148,12 +1148,40 @@ function step() {
  * not throttled like the page's own, so it ticks the sound whenever frames
  * have stopped arriving; when they are arriving it does nothing.
  */
+/* The same throttling reaches the heartbeats, and that is worse than a
+ * stuttering drawing: the stage forgets a player after six quiet seconds and
+ * the desk after nine. A window behind another therefore disappears off the
+ * wall and out of the roster while it is still running perfectly well — which
+ * is why this is never seen with real players, one window each, every one of
+ * them in front. Chrome clamps a hidden window's timers to one a second, and
+ * after five minutes of it to one a MINUTE, and a tester window whose part is
+ * resting makes no sound, so it is not exempt as an audible tab would be.
+ *
+ * Each sender registers what it owes and when it last managed it; the beat
+ * runs one only when the page's own timer has plainly stopped bringing it
+ * round. When nothing is throttled this does nothing at all. */
+const starving = [];
+function ifStarved(now) {
+  for (const job of starving) {
+    if (now - job.at > job.every * 3) {
+      job.at = now;
+      try {
+        job.run();
+      } catch (e) {
+        /* one bad heartbeat must not stop the others */
+      }
+    }
+  }
+}
+
 try {
   const beat = new Worker(
     URL.createObjectURL(new Blob(["setInterval(() => postMessage(0), 20)"], { type: "text/javascript" }))
   );
   beat.onmessage = () => {
-    if (performance.now() - lastStep > 40) step();
+    const now = performance.now();
+    if (now - lastStep > 40) step();
+    ifStarved(now);
   };
 } catch (e) {
   console.warn(`Tract: no heartbeat worker (${e.message}) — a window behind another will not scan`);
@@ -1682,6 +1710,8 @@ function midiAllOff() {
   applyRemote("/scan/gate", [0]);
 }
 
+const strayNotes = new Set(); // (channel, note) pairs already complained about
+
 /** one message off the wire. Exposed, so a test can play this page a part. */
 function handleMIDI(data) {
   const [status, d1, d2] = data;
@@ -1702,6 +1732,25 @@ function handleMIDI(data) {
     return;
   }
   if (down) {
+    /* A note this high opens the gate and holds a tone, which is right for a
+     * keyboard plugged in by hand and wrong for a sequenced window: make-midi
+     * never writes a player a note above 23 — its keys are 0-15, its phrase
+     * lane 16-23, and pitch goes as CC21. So in MIDI mode a note of 24 or
+     * more on this window's channel came from somewhere else, and the only
+     * thing it can do is make this part speak when it should be silent. Said
+     * once per channel and note, because the usual cause is one track in the
+     * DAW pointed at the wrong channel and repeating it would bury the rest. */
+    if (MIDI_MODE) {
+      const where = `${(status & 0x0f) + 1}:${d1}`;
+      if (!strayNotes.has(where)) {
+        strayNotes.add(where);
+        console.warn(
+          `Tract: channel ${(status & 0x0f) + 1} sent note ${d1} — opening the gate and holding a tone. ` +
+            `A sequenced player is only ever sent notes 0–23; the stage track's notes are 24 and up. ` +
+            `Check which channel that track goes out on in the DAW.`
+        );
+      }
+    }
     applyRemote("/scan/note", [d1]);
     applyRemote("/scan/gate", [1]);
   } else if (up) {
@@ -3421,11 +3470,23 @@ function tendTractFeed() {
 }
 
 clearInterval(feedTimer);
-feedTimer = setInterval(() => {
+const FEED_EVERY = Math.max(20, Math.round(1000 / STAGE_FPS));
+const feedTick = () => {
+  feedJob.at = performance.now();
   tendTractFeed();
   sendTractFrame();
-}, Math.max(20, Math.round(1000 / STAGE_FPS)));
-setInterval(sendPhraseState, 2000);
+};
+const feedJob = { at: 0, every: FEED_EVERY, run: feedTick };
+starving.push(feedJob);
+feedTimer = setInterval(feedTick, FEED_EVERY);
+
+const phraseTick = () => {
+  phraseJob.at = performance.now();
+  sendPhraseState();
+};
+const phraseJob = { at: 0, every: 2000, run: phraseTick };
+starving.push(phraseJob);
+setInterval(phraseTick, 2000);
 
 /**
  * Tell the conductor this part is here, so the roster lights up. The machine id
@@ -3523,10 +3584,22 @@ function sendPlayhead() {
     ready && voice && voice.gate > 0 ? 1 : 0,
   ]);
 }
-setInterval(sendPlayhead, Math.round(1000 / DESK_FPS));
-setInterval(() => {
+const DESK_EVERY = Math.round(1000 / DESK_FPS);
+const playheadTick = () => {
+  playheadJob.at = performance.now();
+  sendPlayhead();
+};
+const playheadJob = { at: 0, every: DESK_EVERY, run: playheadTick };
+starving.push(playheadJob);
+setInterval(playheadTick, DESK_EVERY);
+
+const helloTick = () => {
+  helloJob.at = performance.now();
   if (ws && ws.readyState === 1) sayHello();
-}, 4000);
+};
+const helloJob = { at: 0, every: 4000, run: helloTick };
+starving.push(helloJob);
+setInterval(helloTick, 4000);
 
 function saveInstruction(text) {
   const p = part();
