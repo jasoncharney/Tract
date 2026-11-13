@@ -98,7 +98,56 @@ suite("the projector's blank", async (t) => {
   d = await readout();
   t.check(d.on === true, "and the desk still says so", `blanked ${d.on}`);
 
-  t.section("6 — no cue in the sheet ever sets it");
+  t.section("6 — firing cue 1 takes the blank off by itself");
+  // The save: a screen still blanked when the piece starts was forgotten, and
+  // everything after it would play to a dark room. Cue 1 is the only cue that
+  // puts the title card away, which is what makes it the right hook.
+  await desk.evaluate(() => window.conduct.goTo(0));
+  await t.sleep(400);
+  let d6 = await readout();
+  t.check(d6.on === true, "still blanked, with the card primed", `blanked ${d6.on}`);
+  const firstCue = await desk.evaluate(() => {
+    const c = window.conduct.cues[0];
+    return { id: c.id, stage: c.stage };
+  });
+  t.check(
+    firstCue.stage && firstCue.stage.title === false,
+    "cue 1 is the one that puts the card away",
+    `cue ${firstCue.id}: ${JSON.stringify(firstCue.stage)}`
+  );
+  await desk.evaluate(() => window.conduct.prep());
+  await t.sleep(300);
+  await desk.evaluate(() => window.conduct.go());
+  await t.sleep(1600);
+  d6 = await readout();
+  const s6 = await look();
+  t.check(d6.on === false, "the desk has taken the blank off", `blanked ${d6.on}`);
+  t.check(d6.label === "blank", "and the button says so", `"${d6.label}"`);
+  t.check(s6.sheet === 0, "the projection is live", `sheet opacity ${s6.sheet}`);
+
+  t.section("7 — but a later cue does not touch it");
+  // blanking mid-rehearsal is a deliberate thing; only the top of the piece
+  // overrides it
+  await desk.click("#blankBtn");
+  await t.sleep(1200);
+  const later = await desk.evaluate(() => {
+    const i = window.conduct.cues.findIndex((c) => c.stage && c.stage.text && !("title" in c.stage));
+    window.conduct.goTo(i);
+    return { i, stage: window.conduct.cues[i].stage };
+  });
+  await t.sleep(300);
+  await desk.evaluate(() => window.conduct.prep());
+  await t.sleep(300);
+  await desk.evaluate(() => window.conduct.go());
+  await t.sleep(1600);
+  const d7 = await readout();
+  const s7 = await look();
+  t.check(d7.on === true, "a subtitle cue leaves the blank on", `blanked ${d7.on} (cue index ${later.i})`);
+  t.check(s7.sheet === 1, "the sheet is still over the projection", `opacity ${s7.sheet}`);
+  await desk.click("#blankBtn"); // tidy up for the last section
+  await t.sleep(1000);
+
+  t.section("8 — no cue in the sheet ever sets it");
   const fromCues = await desk.evaluate(() =>
     window.conduct.cues.filter((c) => c.stage && "blank" in c.stage).length
   );

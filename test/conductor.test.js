@@ -190,6 +190,15 @@ suite("conductor", async (t) => {
   t.check(beforePrep.lamp === "idle", "with the light still dark", beforePrep.lamp);
   t.check(beforePrep.armed === "0", "and marked as not yet armed");
 
+  /* Count-in is on by default now, and a prep with a count-in showing counts
+   * rather than sitting amber — which is correct, and is what this used to
+   * assert the other way round. Switched off here so the check is about what
+   * prep does to the light; the counting case is checked straight after. */
+  await desk.evaluate(() => {
+    const box = document.getElementById("useCount");
+    box.checked = false;
+    box.dispatchEvent(new Event("change", { bubbles: true }));
+  });
   await desk.evaluate(() => window.conduct.prep());
   await t.sleep(400);
   const onPrep = await players[0].evaluate(() => ({
@@ -200,6 +209,23 @@ suite("conductor", async (t) => {
   t.check(onPrep.lamp === "prep", "PREP lights the lamp amber", onPrep.lamp);
   t.check(onPrep.next === beforePrep.next, "and does not change a word of the text");
   t.check(onPrep.armed === "1", "the only visible change is that it is now armed");
+
+  // and with the count-in on, which is how the desk ships, the lamp counts
+  await desk.evaluate(() => window.conduct.cancel());
+  await t.sleep(300);
+  await desk.evaluate(() => {
+    const box = document.getElementById("useCount");
+    box.checked = true;
+    box.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await desk.evaluate(() => window.conduct.prep());
+  await t.sleep(400);
+  const counting = await players[0].evaluate(() => ({
+    lamp: document.getElementById("cueLight").dataset.state,
+    armed: document.getElementById("oncoming").dataset.armed,
+  }));
+  t.check(counting.lamp === "count", "with a count-in, prep counts instead", counting.lamp);
+  t.check(counting.armed === "1", "and is armed just the same", `armed ${counting.armed}`);
 
   await desk.evaluate(() => window.conduct.go());
   await t.sleep(700);
@@ -230,7 +256,17 @@ suite("conductor", async (t) => {
   t.check(sent.num !== sent.stand, "and is not the cue on the stand", `sent ${sent.num}, standing on ${sent.stand}`);
   t.check(sent.rows > 0 && /\d:\d\d/.test(sent.ago), "with its parts and how long ago", `${sent.rows} rows, ${sent.ago}`);
 
-  t.section("5 — a laptop that joins late is told what is coming");
+  t.section("5 — the count-in's own defaults");
+  const countIn = await desk.evaluate(() => ({
+    on: document.getElementById("useCount").checked,
+    beats: Number(document.getElementById("countBeats").value),
+    bpm: Number(document.getElementById("countBpm").value),
+  }));
+  t.check(countIn.on === true, "count-in starts switched on", `checked ${countIn.on}`);
+  t.check(countIn.beats === 4, "four beats", `${countIn.beats} beats`);
+  t.check(countIn.bpm === 120, "at 120", `${countIn.bpm} bpm`);
+
+  t.section("6 — a laptop that joins late is told what is coming");
   const late = await t.player({ part: "I" });
   await t.sleep(3400); // one desk heartbeat
   const lateSees = await late.evaluate(() => ({

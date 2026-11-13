@@ -30,7 +30,7 @@
   playheads along the bottom of the screen.
 */
 
-const BUILD = "2026-11-12b";
+const BUILD = "2026-11-13a";
 const $ = (id) => document.getElementById(id);
 
 let cues = [];
@@ -698,7 +698,9 @@ function prep() {
 
 function startCount() {
   const beats = Math.max(1, Math.min(8, Number($("countBeats").value) || 4));
-  const bpm = Math.max(20, Math.min(240, Number($("countBpm").value) || 60));
+  // the fallback matches the field's own default, so clearing the box and
+  // pressing prep counts at the tempo the desk says it will
+  const bpm = Math.max(20, Math.min(240, Number($("countBpm").value) || 120));
   const interval = 60000 / bpm;
   let beat = beats;
   const speaking = speaksTo(at);
@@ -784,6 +786,16 @@ function sendStage(c) {
   Object.assign(standingStage, c.stage);
   stageEverSet = true;
   send("/stage/set", [JSON.stringify(c.stage)]);
+  /* The piece beginning takes the blank with it.
+   *
+   * Cue 1 is the only cue in the sheet that puts the title card away, which
+   * is exactly the moment the piece starts — and a screen still blanked at
+   * that point was forgotten, not intended: everything after it would play to
+   * a dark room. Quickly rather than on the cue's own three seconds, because
+   * this is a save, not an effect: the point is that the screen is live
+   * before the tracts arrive.
+   */
+  if (blanked && c.stage.title === false) setBlank(false, 0.4);
   paintBlank(); // a cue has changed what is waiting behind the blank
 }
 

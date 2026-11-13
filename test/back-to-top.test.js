@@ -43,8 +43,16 @@ suite("back to the top", async (t) => {
       args: [JSON.stringify({ title: false, tracts: true, text: "will not stay still", fade: 0 })],
     })
   );
-  // the desk owns the length of the diminuendo; make it short
-  for (const p of [one, two]) await p.evaluate(() => window.scan.applyRemote("/cue/fade", [1]));
+  // Set it on the DESK, not on the players: the desk re-sends its own number
+  // on every heartbeat, so a length pushed straight at a player is overwritten
+  // a second or two later. That is what made the first version of this read a
+  // gain of 0.275 after what it thought was a finished one-second fade.
+  await desk.evaluate(() => {
+    const el = document.getElementById("fadeSecs");
+    el.value = "1";
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await t.sleep(300);
   // move the pointer somewhere late, as a finished run leaves it
   await desk.evaluate(() => window.conduct.goTo(30));
   await t.sleep(600);
@@ -73,7 +81,7 @@ suite("back to the top", async (t) => {
 
   t.section("2 — one press of back to top");
   await desk.click("#resetBtn");
-  await t.sleep(1500);
+  await t.sleep(2600); // showTitleCard fades over 1.5s; do not read its last hundredth
 
   g = await gains();
   t.check(
@@ -85,8 +93,8 @@ suite("back to the top", async (t) => {
   t.check(after.every((h) => !h.gate), "nothing is sounding", `gates ${after.map((h) => h.gate).join(", ")}`);
 
   const w = await wall();
-  t.check(w.card === 1, "the title card is up", `card opacity ${w.card}`);
-  t.check(w.tracts === 0, "over a dark wall", `wall opacity ${w.tracts}`);
+  t.check(w.card > 0.99, "the title card is up", `card opacity ${w.card}`);
+  t.check(w.tracts < 0.01, "over a dark wall", `wall opacity ${w.tracts}`);
 
   const back = await desk.evaluate(() => ({ at: window.conduct.at, armed: window.conduct.armed, landed: window.conduct.landed }));
   t.check(back.at === 0, "the pointer is on cue 1", `cue index ${back.at}`);
@@ -111,6 +119,6 @@ suite("back to the top", async (t) => {
   await t.sleep(1200);
   const twice = await wall();
   const deskTwice = await desk.evaluate(() => window.conduct.at);
-  t.check(twice.card === 1 && twice.tracts === 0, "the wall is where it was", `card ${twice.card}, wall ${twice.tracts}`);
+  t.check(twice.card > 0.99 && twice.tracts < 0.01, "the wall is where it was", `card ${twice.card}, wall ${twice.tracts}`);
   t.check(deskTwice === 0, "the pointer is still on cue 1", `cue index ${deskTwice}`);
 });
