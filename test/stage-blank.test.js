@@ -118,12 +118,60 @@ suite("the projector's blank", async (t) => {
   await desk.evaluate(() => window.conduct.prep());
   await t.sleep(300);
   await desk.evaluate(() => window.conduct.go());
-  await t.sleep(1600);
+
+  // the card gets its own two seconds before the cue goes out
+  await t.sleep(900);
+  const holding = await desk.evaluate(() => ({
+    revealing: window.conduct.revealing,
+    landed: window.conduct.landed,
+    armed: window.conduct.armed,
+    line: document.getElementById("blankLine").hidden
+      ? ""
+      : document.getElementById("blankLine").textContent,
+  }));
+  const mid = await look();
+  t.check(mid.sheet === 0, "the blank comes off first", `sheet opacity ${mid.sheet}`);
+  t.check(mid.card > 0.99, "with the title card on screen", `card opacity ${mid.card}`);
+  t.check(holding.revealing === true, "and the desk is holding it", `revealing ${holding.revealing}`);
+  t.check(holding.landed === null, "the cue has NOT gone out yet", `landed ${holding.landed}`);
+  t.check(holding.armed !== null, "it is still armed, waiting", `armed ${holding.armed}`);
+  t.check(
+    holding.line.includes("title card showing"),
+    "and says so, so the press does not look swallowed",
+    `"${holding.line}"`
+  );
+
+  // pressing GO again while it waits must not fire twice
+  await desk.evaluate(() => window.conduct.go());
+  await t.sleep(200);
+  const twicePressed = await desk.evaluate(() => window.conduct.landed);
+  t.check(twicePressed === null, "a second press changes nothing", `landed ${twicePressed}`);
+
+  await t.sleep(2200); // past the hold
   d6 = await readout();
   const s6 = await look();
+  const fired = await desk.evaluate(() => ({ landed: window.conduct.landed, revealing: window.conduct.revealing }));
+  t.check(fired.landed === 0, "then cue 1 goes", `landed ${fired.landed}`);
+  t.check(fired.revealing === false, "and the hold is over", `revealing ${fired.revealing}`);
   t.check(d6.on === false, "the desk has taken the blank off", `blanked ${d6.on}`);
   t.check(d6.label === "blank", "and the button says so", `"${d6.label}"`);
   t.check(s6.sheet === 0, "the projection is live", `sheet opacity ${s6.sheet}`);
+
+  t.section("6b — with the card already showing, GO is immediate");
+  // it has had its moment; there is nothing to reveal.
+  // back to top first, which clears `landed` — without that this would read a
+  // cue index left over from the section above and pass whatever happened.
+  await desk.click("#resetBtn");
+  await t.sleep(2600);
+  const before6b = await desk.evaluate(() => window.conduct.landed);
+  t.check(before6b === null, "nothing is marked as sent to begin with", `landed ${before6b}`);
+  await desk.evaluate(() => window.conduct.prep());
+  await t.sleep(300);
+  await desk.evaluate(() => window.conduct.go());
+  await t.sleep(400); // far less than the two-second hold
+  const now6b = await desk.evaluate(() => ({ landed: window.conduct.landed, revealing: window.conduct.revealing }));
+  t.check(now6b.revealing === false, "nothing is held", `revealing ${now6b.revealing}`);
+  t.check(now6b.landed === 0, "cue 1 went straight out", `landed ${now6b.landed}, 400ms after GO`);
 
   t.section("7 — but a later cue does not touch it");
   // blanking mid-rehearsal is a deliberate thing; only the top of the piece

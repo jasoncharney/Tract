@@ -30,7 +30,7 @@
   playheads along the bottom of the screen.
 */
 
-const BUILD = "2026-11-13a";
+const BUILD = "2026-11-13b";
 const $ = (id) => document.getElementById(id);
 
 let cues = [];
@@ -728,6 +728,32 @@ function stopCount() {
 
 function go() {
   if (armed === null) return;
+  if (revealing !== null) return; // already holding the card; one press is enough
+
+  /* The title card's own two seconds.
+   *
+   * Taking the blank off and firing cue 1 in the same instant gives the room
+   * a title card that is already dissolving. If the screen is blanked when
+   * the piece starts, show the card first, let it sit, and fire afterwards —
+   * so the audience reads it, and the piece begins from a held image rather
+   * than from a crossfade of two things at once.
+   *
+   * Only when it is blanked. If the card is already up and showing, it has
+   * had its moment and this skips straight through.
+   */
+  const first = cue(armed);
+  if (blanked && first && first.stage && first.stage.title === false) {
+    stopCount();
+    setBlank(false, 0.4);
+    revealing = setTimeout(() => {
+      revealing = null;
+      paintBlank();
+      go(); // and now it goes, with the blank already off
+    }, TITLE_HOLD * 1000);
+    paintBlank();
+    return;
+  }
+
   stopCount();
   const index = armed;
   const c = cue(index);
@@ -749,6 +775,13 @@ function go() {
 }
 
 function cancel() {
+  if (revealing !== null) {
+    // the card stays where it is — it is on screen now and that is no longer
+    // a surprise to anyone — but the cue it was waiting for does not go
+    clearTimeout(revealing);
+    revealing = null;
+    paintBlank();
+  }
   if (armed === null) return;
   stopCount();
   speaksTo(armed).forEach((row) => send("/cue/clear", [row.id]));
@@ -822,6 +855,12 @@ function showTitleCard() {
  */
 let blanked = false;
 
+/* How long the title card gets to itself when the blank comes off at the top
+ * of the piece. Long enough to read "Tract" and land on an audience; short
+ * enough that nobody at the desk thinks the GO did not take. One number. */
+const TITLE_HOLD = 2;
+let revealing = null; // the timer between showing the card and firing cue 1
+
 /** what the room would see if the blank came off right now */
 function standingReads() {
   const bits = [];
@@ -847,6 +886,13 @@ function paintBlank() {
   }
   const line = $("blankLine");
   if (line) {
+    if (revealing !== null) {
+      // the GO has been pressed and is being held: say so, or the desk looks
+      // like it swallowed the press
+      line.hidden = false;
+      line.textContent = `title card showing — cue 1 goes in ${TITLE_HOLD}s`;
+      return;
+    }
     line.hidden = !blanked;
     line.textContent = blanked ? `stage dark — ${standingReads()} waiting behind it` : "";
   }
@@ -1053,6 +1099,10 @@ window.conduct = {
   get blanked() {
     return blanked;
   },
+  get revealing() {
+    return revealing !== null;
+  },
+  TITLE_HOLD,
   moved,
 };
 
