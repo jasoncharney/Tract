@@ -30,7 +30,7 @@
   playheads along the bottom of the screen.
 */
 
-const BUILD = "2026-11-09e";
+const BUILD = "2026-11-12a";
 const $ = (id) => document.getElementById(id);
 
 let cues = [];
@@ -798,6 +798,28 @@ function showTitleCard() {
   send("/stage/set", [JSON.stringify(block)]);
 }
 
+/**
+ * Back to the top, in one press.
+ *
+ * After a run everybody is faded to nothing, the wall is dark and the pointer
+ * is at the end of the list — three things to undo before the next take, and
+ * the first of them was eight separate things: every player pressing escape on
+ * their own laptop to come back up.
+ *
+ * So: the players' levels come back and anything held is let go; the
+ * projection goes to what the room sees before the piece, the title card over
+ * a dark wall; and the pointer lands on cue 1, whose own stage block takes
+ * that card away again when you fire it. One press to be at the top, one GO
+ * to begin.
+ */
+function backToTop() {
+  send("/cue/reset", []);
+  showTitleCard();
+  landed = null; // nothing has been sent in this run yet
+  goTo(0); // which drops an armed prep, repaints and tells everyone what is next
+  paintStand();
+}
+
 /** does this cue say anything to the stage? */
 function speaksToStage(index) {
   const c = cue(index);
@@ -905,6 +927,7 @@ function resetClocks() {
  * ================================================================ */
 
 $("titleCardBtn").addEventListener("click", showTitleCard);
+$("resetBtn").addEventListener("click", backToTop);
 $("fadeSecs").addEventListener("change", sendFade);
 $("resetClocks").addEventListener("click", resetClocks);
 paintClocks();
@@ -968,6 +991,7 @@ window.conduct = {
   },
   speaksTo,
   sendNext,
+  backToTop,
   moved,
 };
 

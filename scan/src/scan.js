@@ -9,7 +9,7 @@ import { loadPatchedPinkTrombone } from "./patched-pink-trombone.js";
 
 /** bump alongside the ?v= in index.html; printed on load so there is never a
  *  question about which build a browser is actually running */
-const BUILD = "2026-11-09e";
+const BUILD = "2026-11-12a";
 
 const $ = (id) => document.getElementById(id);
 const strip = $("strip");
@@ -1393,6 +1393,9 @@ export function applyRemote(address, args = []) {
     case "/cue/clear":
       cueClear(args[0]);
       break;
+    case "/cue/reset": // the desk going back to the top
+      resetForTop();
+      break;
     case "/cue/state":
       cueState(a0, args[1], String(args[2] ?? ""), args[3]);
       break;
@@ -2509,8 +2512,19 @@ function startFade() {
 }
 
 /** ↑ — for the rehearsal where someone hits ↓ in the middle of phrase three */
-function cancelFade() {
-  if (!ready || !fadeNode || !fading) return;
+/**
+ * Back up to full, whatever the fade is doing.
+ *
+ * `fading` means "a diminuendo has been asked for", not "a curve is still
+ * running" — it stays true after the curve lands, which is how the tag knows
+ * to read "silent" rather than disappear. So cancelFade does work at the end
+ * of a run, and a player who has faded out can come back up by pressing
+ * escape on their own laptop. What there was no way to do was bring the room
+ * back up from the desk, which is what this is for: unconditional, because it
+ * is addressing eight laptops at once and some of them may not have faded.
+ */
+function liftFade() {
+  if (!ready || !fadeNode) return;
   const now = ctx.currentTime;
   releaseFadeAutomation(now);
   fadeNode.gain.setValueAtTime(fadeNode.gain.value, now);
@@ -2518,6 +2532,11 @@ function cancelFade() {
   fading = false;
   fadeEndsAt = 0;
   paintFade();
+}
+
+function cancelFade() {
+  if (!fading) return; // "cancel" means a fade in progress; the rest is a lift
+  liftFade();
 }
 
 /** the length the conductor has set, shown where the player can see it */
@@ -3152,6 +3171,33 @@ function cueGo(cue, partId, instruction, whisper) {
   cueLight("go", `cue ${cue}`);
   clearTimeout(goFlashTimer);
   goFlashTimer = setTimeout(() => cueLight("idle", `cue ${cue}`), 900);
+}
+
+/**
+ * Back to the top, at the conductor's word.
+ *
+ * The thing this exists for is the diminuendo: after a run every laptop is
+ * sitting at zero, and the only way up was for each player to press escape
+ * themselves, one at a time, which is not a thing to be doing between takes.
+ * It also lets go of whatever is still held — a key a stopped sequencer left
+ * down, the pedal, a scan still running — so the next run starts from silence
+ * rather than from the middle of the last one.
+ *
+ * The phrase is deliberately not touched. Cue 1 sends every part to phrase 1
+ * when it fires, and moving it here would only fight that.
+ */
+function resetForTop() {
+  liftFade();
+  stopTransport();
+  heldShot = null;
+  liftPedal();
+  explicitGate = null;
+  applyRemote("/scan/gate", [0]);
+  cued.armed = false;
+  showOncoming(cued.oncoming);
+  cueLight("idle", cued.cue === null ? "\u2014" : `cue ${cued.cue}`);
+  lastGesture = "back to the top";
+  lastGestureAt = performance.now();
 }
 
 function cueClear(partId) {
