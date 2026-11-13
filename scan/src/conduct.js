@@ -30,7 +30,7 @@
   playheads along the bottom of the screen.
 */
 
-const BUILD = "2026-11-12a";
+const BUILD = "2026-11-12b";
 const $ = (id) => document.getElementById(id);
 
 let cues = [];
@@ -784,6 +784,7 @@ function sendStage(c) {
   Object.assign(standingStage, c.stage);
   stageEverSet = true;
   send("/stage/set", [JSON.stringify(c.stage)]);
+  paintBlank(); // a cue has changed what is waiting behind the blank
 }
 
 /**
@@ -796,6 +797,47 @@ function showTitleCard() {
   Object.assign(standingStage, block);
   stageEverSet = true;
   send("/stage/set", [JSON.stringify(block)]);
+  paintBlank(); // what is waiting behind the blank has changed
+}
+
+/* ---- the projector's blank ----
+ *
+ * A toggle, not a cue: the piece never reaches this state on its own. It is
+ * for putting the title card up and leaving it waiting behind a dark screen,
+ * so the room is given it at the moment you choose rather than at the moment
+ * you set it up. Nothing underneath is disturbed, and the desk says what is
+ * waiting there, because a blanked projector looks exactly like a broken one.
+ */
+let blanked = false;
+
+/** what the room would see if the blank came off right now */
+function standingReads() {
+  const bits = [];
+  if (standingStage.title) bits.push("title card");
+  if (standingStage.tracts) bits.push("the tracts");
+  if (standingStage.text) bits.push(`"${standingStage.text}"`);
+  return bits.length ? bits.join(" + ") : "nothing";
+}
+
+function setBlank(on, seconds = 0.8) {
+  blanked = !!on;
+  Object.assign(standingStage, { blank: blanked });
+  stageEverSet = true;
+  send("/stage/set", [JSON.stringify({ blank: blanked, fade: seconds })]);
+  paintBlank();
+}
+
+function paintBlank() {
+  const button = $("blankBtn");
+  if (button) {
+    button.classList.toggle("on", blanked);
+    button.textContent = blanked ? "blanked" : "blank";
+  }
+  const line = $("blankLine");
+  if (line) {
+    line.hidden = !blanked;
+    line.textContent = blanked ? `stage dark — ${standingReads()} waiting behind it` : "";
+  }
 }
 
 /**
@@ -814,7 +856,9 @@ function showTitleCard() {
  */
 function backToTop() {
   send("/cue/reset", []);
-  showTitleCard();
+  showTitleCard(); // which repaints what is waiting behind the blank
+  // the blank is left exactly as it is: priming the card behind a dark screen
+  // is the whole point of it, and going back to the top is when you do that
   landed = null; // nothing has been sent in this run yet
   goTo(0); // which drops an armed prep, repaints and tells everyone what is next
   paintStand();
@@ -928,6 +972,7 @@ function resetClocks() {
 
 $("titleCardBtn").addEventListener("click", showTitleCard);
 $("resetBtn").addEventListener("click", backToTop);
+$("blankBtn").addEventListener("click", () => setBlank(!blanked));
 $("fadeSecs").addEventListener("change", sendFade);
 $("resetClocks").addEventListener("click", resetClocks);
 paintClocks();
@@ -992,6 +1037,10 @@ window.conduct = {
   speaksTo,
   sendNext,
   backToTop,
+  setBlank,
+  get blanked() {
+    return blanked;
+  },
   moved,
 };
 

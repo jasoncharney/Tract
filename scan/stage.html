@@ -203,6 +203,20 @@
       }
       #subtitle.gone { opacity: 0; }
 
+      /* the desk's blank: a sheet of the page's own background over the lot,
+         so the room sees nothing while the card behind it is being set up.
+         Above everything, including the title card and the words. */
+      #blankout {
+        position: fixed;
+        inset: 0;
+        background: var(--bg);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity var(--blank-fade, 0.8s) ease-in-out;
+        z-index: 50;
+      }
+      #blankout.on { opacity: 1; }
+
       /* ?debug=1 while setting the room up: who is actually feeding this wall */
       #who {
         position: absolute;
@@ -234,6 +248,7 @@
       waiting for the conductor…<br />
       click for full screen
     </div> -->
-    <script type="module" src="/scan/src/stage.js?v=2026-11-12a"></script>
+    <div id="blankout"></div>
+    <script type="module" src="/scan/src/stage.js?v=2026-11-12b"></script>
   </body>
 </html>

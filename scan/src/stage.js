@@ -12,7 +12,7 @@
   player is playing, not an impression of it.
 */
 
-const BUILD = "2026-11-12a";
+const BUILD = "2026-11-12b";
 const $ = (id) => document.getElementById(id);
 
 /* ---- upstream's numbers, so the shape is the shape ---- */
@@ -147,7 +147,7 @@ let showing = "";
  * the fades. So each key is compared against what is already showing, and only
  * the ones that differ are touched.
  */
-const current = { title: undefined, tracts: undefined, text: undefined };
+const current = { title: undefined, tracts: undefined, text: undefined, blank: undefined };
 
 /** the three lines of the card, from a string or an object.
  *  `true` means "show it exactly as it is" — the conductor's button sends that,
@@ -358,15 +358,32 @@ function applyStage(block) {
       : undefined;
   const wantTracts = "tracts" in block ? !!block.tracts : undefined;
   const wantText = "text" in block ? String(block.text ?? "") : undefined;
+  /* The projector's own blank, over the top of everything. It is deliberately
+   * not a state the piece can reach: no cue carries it, only the desk's
+   * toggle, so that the title card can be put up and waited on behind a dark
+   * screen. Nothing underneath is disturbed — the card, the wall and the
+   * words go on being whatever they were, and taking the blank off shows
+   * them where they stand. */
+  const wantBlank = "blank" in block ? !!block.blank : undefined;
 
   const titleChanged =
     wantTitle !== undefined && JSON.stringify(wantTitle) !== JSON.stringify(current.title);
   const tractsChanged = wantTracts !== undefined && wantTracts !== current.tracts;
   const textChanged = wantText !== undefined && wantText !== current.text;
-  if (!titleChanged && !tractsChanged && !textChanged) return;
+  const blankChanged = wantBlank !== undefined && wantBlank !== current.blank;
+  if (!titleChanged && !tractsChanged && !textChanged && !blankChanged) return;
 
   document.documentElement.style.setProperty("--card-fade", `${seconds}s`);
   document.documentElement.style.setProperty("--wall-fade", `${seconds}s`);
+
+  if (blankChanged) {
+    current.blank = wantBlank;
+    const sheet = $("blankout");
+    if (sheet) {
+      document.documentElement.style.setProperty("--blank-fade", `${seconds}s`);
+      sheet.classList.toggle("on", wantBlank);
+    }
+  }
 
   let hidingCard = false;
   if (titleChanged) {
@@ -1153,6 +1170,9 @@ if (MIDI_MODE) connectMIDI().then((said) => said && console.log(said));
 window.stage = {
   BUILD,
   take,
+  get blanked() {
+    return !!current.blank;
+  },
   /* the sequenced wall, for a test to drive and for the console to check */
   midi: {
     get on() {

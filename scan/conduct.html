@@ -102,6 +102,13 @@
         cursor: pointer;
       }
       button:hover:not(:disabled) { border-color: var(--hot); }
+      /* a toggle that is ON has to read as on from across a desk */
+      button.on {
+        background: var(--hot);
+        border-color: var(--hot);
+        color: #fff;
+        font-weight: 700;
+      }
       button:disabled { opacity: 0.4; cursor: default; }
 
       /* ---- who is out there ---- */
@@ -609,6 +616,7 @@
           </div>
           <div class="cuenote" id="cueNote" hidden></div>
           <div class="stageline" id="stageLine" hidden></div>
+          <div class="stageline" id="blankLine" hidden></div>
           <div class="coverage" id="coverage" hidden></div>
           <div class="goes" id="goes"></div>
           <div class="silent" id="silent"></div>
@@ -627,6 +635,7 @@
           <label>beats <input type="number" id="countBeats" min="1" max="8" value="4" /></label>
           <label>bpm <input type="number" id="countBpm" min="20" max="240" value="90" /></label>
           <button id="titleCardBtn" title="Put the title card back up on the projection — before a run, or between takes. Cue 1 takes it away again.">title card</button>
+          <button id="blankBtn" title="Blank the projection: a sheet of black over everything, so the title card can be put up and left waiting where the room cannot see it yet. Press again to show what is behind it. No cue ever sets this — only this button.">blank</button>
           <button id="resetBtn" title="Back to the top, between takes: brings every player's level back up after a diminuendo, lets go of anything still held, puts the title card back over a dark wall, and moves the pointer to cue 1. Nobody's phrase is touched — cue 1 does that when you fire it.">back to top</button>
           <label title="How long the players' diminuendo takes when they press the down arrow at the end. Everyone gets this number, including anyone who joins late.">
             diminuendo <input type="number" id="fadeSecs" min="1" max="300" value="5" /> s
@@ -662,6 +671,6 @@
     <!-- one per laptop, filled in from /player/at -->
     <div class="strips" id="strips"></div>
 
-    <script type="module" src="/scan/src/conduct.js?v=2026-11-12a"></script>
+    <script type="module" src="/scan/src/conduct.js?v=2026-11-12b"></script>
   </body>
 </html>
