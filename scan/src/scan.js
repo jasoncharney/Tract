@@ -9,7 +9,7 @@ import { loadPatchedPinkTrombone } from "./patched-pink-trombone.js";
 
 /** bump alongside the ?v= in index.html; printed on load so there is never a
  *  question about which build a browser is actually running */
-const BUILD = "2026-11-14c";
+const BUILD = "2026-11-14d";
 
 const $ = (id) => document.getElementById(id);
 const strip = $("strip");
@@ -2130,87 +2130,6 @@ function syncControl(key, value) {
 }
 
 /* ================================================================ *
- *  recording — taps the master output and writes a .wav
- * ================================================================ */
-
-let recorder = null;
-
-function startRecording() {
-  if (!ready || recorder) return false;
-  const node = ctx.createScriptProcessor(4096, 1, 1);
-  const chunks = [];
-  node.onaudioprocess = (event) => {
-    chunks.push(new Float32Array(event.inputBuffer.getChannelData(0)));
-    event.outputBuffer.getChannelData(0).fill(0);
-  };
-  limiterNode.connect(node);
-  node.connect(ctx.destination);
-  recorder = { node, chunks, sampleRate: ctx.sampleRate };
-  $("record").textContent = "stop recording";
-  $("record").classList.add("primary");
-  return true;
-}
-
-function collectRecording() {
-  if (!recorder) return null;
-  const { chunks, sampleRate, node } = recorder;
-  try {
-    limiterNode.disconnect(node);
-  } catch (e) {}
-  node.disconnect();
-  node.onaudioprocess = null;
-  recorder = null;
-  $("record").textContent = "record";
-  $("record").classList.remove("primary");
-
-  const total = chunks.reduce((n, c) => n + c.length, 0);
-  const samples = new Float32Array(total);
-  let offset = 0;
-  for (const chunk of chunks) {
-    samples.set(chunk, offset);
-    offset += chunk.length;
-  }
-  return { samples, sampleRate };
-}
-
-function encodeWav(samples, sampleRate) {
-  const buffer = new ArrayBuffer(44 + samples.length * 2);
-  const view = new DataView(buffer);
-  const ascii = (offset, text) => {
-    for (let i = 0; i < text.length; i++) view.setUint8(offset + i, text.charCodeAt(i));
-  };
-  ascii(0, "RIFF");
-  view.setUint32(4, 36 + samples.length * 2, true);
-  ascii(8, "WAVE");
-  ascii(12, "fmt ");
-  view.setUint32(16, 16, true);
-  view.setUint16(20, 1, true);
-  view.setUint16(22, 1, true);
-  view.setUint32(24, sampleRate, true);
-  view.setUint32(28, sampleRate * 2, true);
-  view.setUint16(32, 2, true);
-  view.setUint16(34, 16, true);
-  ascii(36, "data");
-  view.setUint32(40, samples.length * 2, true);
-  for (let i = 0; i < samples.length; i++) {
-    const s = Math.max(-1, Math.min(1, samples[i]));
-    view.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true);
-  }
-  return new Blob([buffer], { type: "audio/wav" });
-}
-
-function stopRecordingAndDownload() {
-  const take = collectRecording();
-  if (!take) return;
-  const url = URL.createObjectURL(encodeWav(take.samples, take.sampleRate));
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = `scan-${new Date().toISOString().replace(/[:.]/g, "-")}.wav`;
-  link.click();
-  setTimeout(() => URL.revokeObjectURL(url), 5000);
-}
-
-/* ================================================================ *
  *  keyboard transport
  *
  *  A S D are held: the position advances by itself at slow / mid / fast,
@@ -3979,9 +3898,6 @@ window.scan = {
   selftest,
   BUILD,
   cfg,
-  startRecording,
-  collectRecording,
-  stopRecordingAndDownload,
   connectMIDI,
   handleMIDI,
   MIDI_KEYS,
@@ -4174,10 +4090,6 @@ function toggleTheme() {
 }
 
 $("startAudio").addEventListener("click", () => enableAudio());
-$("record").addEventListener("click", () => {
-  if (recorder) stopRecordingAndDownload();
-  else if (!startRecording()) enableAudio();
-});
 $("masterGain").addEventListener("input", (event) =>
   setMasterGain(Number(event.target.value), { fromSlider: true })
 );

@@ -855,7 +855,7 @@ sub-panels, keeping the tract itself.
 
 ## Output, and watching it
 
-The fader is at the top of the page, under *record*, with a meter beside it —
+The fader is at the top of the page, with a meter beside it —
 where a player can find it in a hurry without opening a panel. The meter taps the
 very end of the chain, after the fader and after the limiter, so it shows what is
 actually leaving that laptop rather than what the synth would like to be sending:
@@ -1190,11 +1190,6 @@ sample-level impulse and no compressor attack is fast enough for it. At the
 default output of 0.4 a phrase peaks around −3 dBFS with the soft-clip never
 engaging. (If you saved presets before this change, their stored output level
 will be far too hot — re-save them.)
-
-## Recording
-
-`record` taps the master output and writes a `.wav` when you stop. Useful for
-keeping a take of a scan you liked.
 
 ---
 

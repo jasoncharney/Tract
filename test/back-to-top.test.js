@@ -84,6 +84,20 @@ suite("back to the top", async (t) => {
   const at = await desk.evaluate(() => window.conduct.at);
   t.check(at === 30, "the pointer is where the run left it", `cue index ${at}`);
 
+  // and the clocks running, as a run leaves them
+  await desk.evaluate(() => {
+    const i = window.conduct.cues.findIndex((c) => String(c.id) === "2");
+    window.conduct.goTo(i);
+    window.conduct.prep();
+    window.conduct.go();
+  });
+  await t.sleep(600);
+  const clocks = () =>
+    desk.evaluate(() => ["clockPiece", "clockCue", "clockPhrase"].map((id) => document.getElementById(id).textContent));
+  const running = await clocks();
+  t.check(running.every((c) => c !== "—"), "the clocks are running", running.join("  "));
+  await desk.evaluate(() => window.conduct.goTo(30));
+
   t.section("2 — one press of back to top");
   await desk.click("#resetBtn");
   await t.sleep(2600); // showTitleCard fades over 1.5s; do not read its last hundredth
@@ -105,6 +119,14 @@ suite("back to the top", async (t) => {
   t.check(back.at === 0, "the pointer is on cue 1", `cue index ${back.at}`);
   t.check(back.armed === null, "with nothing armed", `armed ${back.armed}`);
   t.check(back.landed === null, "and nothing sent yet this run", `landed ${back.landed}`);
+  const stopped = await clocks();
+  await t.sleep(400);
+  const later = await clocks();
+  t.check(
+    stopped.every((c) => c === "—") && later.join() === stopped.join(),
+    "the clocks are cleared and stay stopped",
+    `${stopped.join("  ")} → ${later.join("  ")}`
+  );
 
   t.section("3 — and it is ready to play again");
   const phrase = await one.evaluate(() => window.scan.phrase);

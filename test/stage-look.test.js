@@ -110,8 +110,21 @@ suite("the look, moved to the desk", async (t) => {
 
   t.section("4 — shuffle, and the next phrase taking it back");
   const before = (await wall()).aims;
+  // watch one camera from just before the press: where it is drawn from, not
+  // where it is aimed — the aim is meant to jump, the drawing is not
+  const watching = stage.evaluate(async () => {
+    const out = [];
+    const t0 = performance.now();
+    while (performance.now() - t0 < 2500) {
+      const f = window.stage.frames.find((x) => x.cam);
+      if (f) out.push(f.cam.yaw);
+      await new Promise((r) => requestAnimationFrame(r));
+    }
+    return out;
+  });
+  await t.sleep(200);
   await desk.click("#shuffleBtn");
-  await t.sleep(1200);
+  const path = await watching;
   const after = (await wall()).aims;
   const n = Object.keys(before).length;
   /*
@@ -126,6 +139,19 @@ suite("the look, moved to the desk", async (t) => {
     0
   );
   t.check(n > 0 && total > 0.2, "the cameras scattered", `${total.toFixed(2)} of yaw across ${n} of them`);
+  /*
+    Eased, not cut. Before the wall stopped resetting on every look, the
+    shuffle's own message threw each camera away and the next frame drew it
+    straight at the new angle: one frame carried the whole move.
+  */
+  let biggest = 0;
+  for (let i = 1; i < path.length; i++) biggest = Math.max(biggest, Math.abs(path[i] - path[i - 1]));
+  const travel = path.length ? Math.abs(path[path.length - 1] - path[0]) : 0;
+  t.check(
+    travel > 0.02 && biggest < travel * 0.15,
+    "and each one swings there rather than cutting",
+    `moved ${travel.toFixed(3)} over ${path.length} frames, largest single step ${biggest.toFixed(3)}`
+  );
   const seed = await stage.evaluate(() => window.stage.look.shuffle);
   t.check(seed !== 0, "the wall is holding a shuffle", `seed ${seed}`);
 

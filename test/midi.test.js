@@ -27,7 +27,9 @@ suite("midi", async (t) => {
 
   const all = parseSMF(fs.readFileSync(path.join(OUT, "tract-all.mid")));
   t.check(all.format === 1, "format 1, so a DAW sees separate tracks", `format ${all.format}`);
-  t.check(all.ntracks === 9, "nine tracks: eight players and a conductor", `${all.ntracks}`);
+  // the stage's own track came in at 3a80c26; this said nine for a week after,
+  // and counted the wall's cue notes (24 and up) as players straying out of lane
+  t.check(all.ntracks === 10, "ten tracks: a conductor, eight players and the wall", `${all.ntracks}`);
   t.check(all.tempo === 1000000, "60 bpm, so a beat is a second and the grid reads in seconds", `${(60000000 / all.tempo).toFixed(0)} bpm`);
 
   const timing = JSON.parse(fs.readFileSync(path.join(ROOT, "midi", "timing.json"), "utf8"));
@@ -41,7 +43,8 @@ suite("midi", async (t) => {
   });
   t.check(Math.max(...drift) < 0.01, "each one where timing.json puts that cue", `worst ${Math.max(...drift).toFixed(4)} s`);
 
-  const players = all.tracks.slice(1);
+  const players = all.tracks.slice(1, 9);
+  const wall = all.tracks[9];
   t.check(
     players.every((tr, i) => tr.events.every((e) => e.channel === i + 1)),
     "each player stays on its own channel"
@@ -65,6 +68,24 @@ suite("midi", async (t) => {
   const notes = new Set();
   players.forEach((tr) => tr.events.forEach((e) => (e.kind === 0x90 || e.kind === 0x80) && notes.add(e.d1)));
   t.check([...notes].every((n) => n < 24), "nothing strays into the pitch keyboard", `used ${[...notes].sort((a, b) => a - b).join(",")}`);
+
+  // the wall: one note per cue that says something to the stage, 24 + that
+  // cue's place in the list, on the channel after the eight
+  const cuesJson = JSON.parse(fs.readFileSync(path.join(ROOT, "scan", "cues.json"), "utf8")).cues;
+  const wantWall = cuesJson
+    .map((c, i) => (c.stage && typeof c.stage === "object" ? 24 + i : null))
+    .filter((n) => n !== null);
+  const wallOns = wall.events.filter((e) => e.kind === 0x90 && e.d2 > 0);
+  t.check(
+    wall.events.filter((e) => e.kind === 0x90 || e.kind === 0x80).every((e) => e.channel === 9),
+    "the wall has channel 9 to itself",
+    `${wallOns.length} notes`
+  );
+  t.check(
+    wallOns.map((e) => e.d1).join() === wantWall.join(),
+    "and one note per stage cue, numbered by its place in the list",
+    `notes ${wallOns.map((e) => e.d1).join(",")}`
+  );
 
   t.section("2 — the phrase lane");
   const lane = parseSMF(fs.readFileSync(path.join(OUT, "tract-I-1.mid"))).tracks[1];

@@ -12,7 +12,7 @@
   player is playing, not an impression of it.
 */
 
-const BUILD = "2026-11-14c";
+const BUILD = "2026-11-14d";
 const $ = (id) => document.getElementById(id);
 
 /* ---- upstream's numbers, so the shape is the shape ---- */
@@ -1094,7 +1094,7 @@ function paintWho() {
     count ? "" : " · nobody feeding this wall"
   }`;
   if (!DEBUG) {
-    el.textContent = `${head}\nL changes the layout`;
+    el.textContent = head;
     return;
   }
   const rows = order.map((machine) => {
@@ -1389,6 +1389,8 @@ window.stage = {
       phoneme: info.frame ? info.frame.p : undefined,
       // how present the 3D drawing's phoneme is, 0..1 — null when it has none
       glyph: info.ipa ? info.ipa.on : null,
+      // where the 3D camera actually is, as against where it is aimed
+      cam: info.cam ? { yaw: info.cam.yaw, pitch: info.cam.pitch } : null,
       widest: info.frame ? Math.max(...info.frame.d) : 0,
       middle: info.frame
         ? info.frame.d[Math.round((1 + Math.min(info.frame.d.length - 1, info.frame.lip || 39)) / 2)]

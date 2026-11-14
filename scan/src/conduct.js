@@ -30,7 +30,7 @@
   playheads along the bottom of the screen.
 */
 
-const BUILD = "2026-11-14c";
+const BUILD = "2026-11-14d";
 import { KNOBS, ANGLES, defaults as lookDefaults } from "./look.js";
 
 const $ = (id) => document.getElementById(id);
@@ -917,7 +917,8 @@ function paintBlank() {
  * projection goes to what the room sees before the piece, the title card over
  * a dark wall; and the pointer lands on cue 1, whose own stage block takes
  * that card away again when you fire it. One press to be at the top, one GO
- * to begin.
+ * to begin. The clocks stop and clear with it: the next take's are its own,
+ * and the piece clock starts again at cue 2 as it did the first time.
  */
 function backToTop() {
   send("/cue/reset", []);
@@ -926,6 +927,8 @@ function backToTop() {
   // is the whole point of it, and going back to the top is when you do that
   landed = null; // nothing has been sent in this run yet
   goTo(0); // which drops an armed prep, repaints and tells everyone what is next
+  stopCount(); // nothing armed means nothing to count in, but a count can outlive its prep
+  resetClocks();
   paintStand();
 }
 
