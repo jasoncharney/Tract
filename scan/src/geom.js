@@ -18,9 +18,11 @@ export function angleAt(index, lipStart) {
   return PT.angle.offset + (index * PT.angle.scale * Math.PI) / (lipStart - 1);
 }
 
-/** upstream's wobble: the whole shape shivers with how loud the tract is */
-export function wobbleAt(index, length, amplitude, time) {
-  return (amplitude * 0.03 * Math.sin(2 * index - 50 * time) * index) / length;
+/** upstream's wobble: the whole shape shivers with how loud the tract is.
+ *  50 rad/s is upstream's own rate, about 8 Hz — near enough the 6 Hz vibrato
+ *  that on a held note it reads as the voice, not as the drawing. */
+export function wobbleAt(index, length, amplitude, time, rate = 50) {
+  return (amplitude * 0.03 * Math.sin(2 * index - rate * time) * index) / length;
 }
 
 /**

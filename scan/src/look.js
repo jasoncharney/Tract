@@ -29,6 +29,8 @@ export const KNOBS = [
   ["GAIN", 7, 1, 20, 0.5, "how little counts as movement"],
   ["GHOST", 0.3, 0, 0.8, 0.01, "what a still section is worth"],
   ["SHIMMER", 2.2, 0, 6, 0.1, "loudness as movement"],
+  ["WOBBLE", 1, 0, 2, 0.05, "how much the shape shivers with loudness (1 is upstream's)"],
+  ["WOBHZ", 8, 0.25, 12, 0.25, "and how fast the shiver runs along it"],
   ["RIBW", 1.4, 0.1, 12, 0.1, "line weight: the rings"],
   ["EDGEW", 1, 0.1, 12, 0.1, "line weight: the lines along its length"],
   ["GHOSTW", 1, 0.1, 12, 0.1, "line weight: the floor through the whole tract"],

@@ -12,7 +12,7 @@
   player is playing, not an impression of it.
 */
 
-const BUILD = "2026-11-14a";
+const BUILD = "2026-11-14c";
 const $ = (id) => document.getElementById(id);
 
 /* ---- upstream's numbers, so the shape is the shape ---- */
@@ -455,13 +455,14 @@ function fadeSubtitleWithWall(seconds) {
     () => {
       el.textContent = "";
       el.style.transition = ""; // back to the stylesheet's own half second
-      document.documentElement.style.setProperty("--subs", "0px");
+      wantStrip = false;
       layout();
     },
     Math.max(200, seconds * 1000) + 120
   );
 }
 let subtitleAfter = 0;
+let wantStrip = false;
 
 /** the words along the bottom, and the strip of wall they cost */
 function setSubtitle(text) {
@@ -471,9 +472,8 @@ function setSubtitle(text) {
   if (next === showing) return;
   showing = next;
   // the wall gives up a strip for the words rather than drawing behind them
-  // 6vh of type on 1.2 lines, plus the 2.6vh it sits off the floor and a
-  // little air above: enough that a second line has somewhere to go
-  document.documentElement.style.setProperty("--subs", next ? "15vh" : "0px");
+  // (layout() decides how much, and whether a ring needs one at all)
+  wantStrip = !!next;
   layout();
   // out, swap, in — so the words change with a breath rather than a jump cut
   el.classList.add("gone");
@@ -481,6 +481,7 @@ function setSubtitle(text) {
   subtitleAfter = setTimeout(
     () => {
       el.textContent = next;
+      fitSubtitle();
       el.classList.toggle("gone", !next);
     },
     next ? 260 : 0
@@ -664,7 +665,15 @@ function layout() {
   // once there is something to look at
   const cardUp = !$("titleCard").classList.contains("gone");
   if (hint) hint.classList.toggle("gone", order.length > 0 || cardUp);
-  if (!order.length) return;
+  // 6vh of type on 1.2 lines, plus the 2.6vh it sits off the floor and a
+  // little air above: enough that a second line has somewhere to go. A ring
+  // keeps its words in its own middle and needs none of it.
+  const inRing = layoutMode === "ring" && order.length >= RING_HOLE_FROM;
+  document.documentElement.style.setProperty("--subs", wantStrip && !inRing ? "15vh" : "0px");
+  if (!order.length) {
+    placeSubtitle(null);
+    return;
+  }
 
   const width = wall.clientWidth;
   const height = wall.clientHeight;
@@ -693,7 +702,78 @@ function layout() {
     info.canvas.width = Math.round(spot.w * dpr);
     info.canvas.height = Math.round(spot.h * dpr);
   });
+  placeSubtitle(inRing ? ringHole(spots, width, height) : null);
   paintWho();
+}
+
+/* ================================================================ *
+ *  the words in the middle of a ring
+ *
+ *  A ring is a frame with nothing in it, and the bottom strip was costing
+ *  every tract on it 15vh to put the words somewhere else. So in a ring
+ *  they go in the hole, and the wall keeps its full height. Under three
+ *  players there is no hole — one sits in the middle, two stack — so the
+ *  words stay along the bottom.
+ * ================================================================ */
+const RING_HOLE_FROM = 3;
+
+/**
+ * The biggest rectangle centred on the wall that no tile touches. Tried at
+ * forty heights: at each, the tiles level with that band are the ones that
+ * limit its width, and the widest-by-area wins. Centred because a ring is
+ * symmetric and the words should read as being in it, not merely beside it.
+ */
+function ringHole(spots, width, height) {
+  const cx = width / 2;
+  const cy = height / 2;
+  let best = null;
+  for (let k = 1; k <= 40; k++) {
+    const hh = (k / 40) * (height / 2);
+    let hw = width / 2;
+    for (const s of spots) {
+      if (s.y < cy + hh && s.y + s.h > cy - hh) {
+        const gap = s.x + s.w <= cx ? cx - (s.x + s.w) : s.x >= cx ? s.x - cx : 0;
+        hw = Math.min(hw, gap);
+      }
+    }
+    if (hw <= 0) continue;
+    if (!best || hw * hh > best.hw * best.hh) best = { hw, hh };
+  }
+  if (!best) return null;
+  // air, so a letter is never against a tile's edge
+  const hw = best.hw * 0.9;
+  const hh = best.hh * 0.9;
+  return { x: cx - hw, y: cy - hh, w: 2 * hw, h: 2 * hh };
+}
+
+let hole = null;
+function placeSubtitle(rect) {
+  const el = $("subtitle");
+  if (!el) return;
+  hole = rect;
+  el.classList.toggle("inring", !!rect);
+  for (const k of ["left", "top", "width", "height", "fontSize"]) el.style[k] = "";
+  if (!rect) return;
+  el.style.left = `${Math.round(rect.x)}px`;
+  el.style.top = `${Math.round(rect.y)}px`;
+  el.style.width = `${Math.round(rect.w)}px`;
+  el.style.height = `${Math.round(rect.h)}px`;
+  fitSubtitle();
+}
+
+/**
+ * The stylesheet's size, given up a pixel at a time until the phrase fits
+ * the hole. Only in a ring: along the bottom the strip was sized to the type.
+ */
+function fitSubtitle() {
+  const el = $("subtitle");
+  if (!el || !hole) return;
+  el.style.fontSize = "";
+  let size = parseFloat(getComputedStyle(el).fontSize) || 48;
+  while (size > 18 && (el.scrollHeight > el.clientHeight + 1 || el.scrollWidth > el.clientWidth + 1)) {
+    size -= 2;
+    el.style.fontSize = `${size}px`;
+  }
 }
 
 window.addEventListener("resize", layout);
@@ -743,6 +823,7 @@ try {
 
 function applyLook(block) {
   if (!block || typeof block !== "object") return;
+  const was = look.renderer;
   if (block.look) look = Object.assign(look, block.look);
   if (block.angles) angles = block.angles;
   if (block.spread) spread = block.spread;
@@ -750,8 +831,11 @@ function applyLook(block) {
   if (block.look && block.look.layout) setLayout(block.look.layout);
   /* a change of drawing has to let go of what the other one was holding:
      the eased shape, the heat, the camera, the fitted box. Otherwise the
-     first frame after a switch is drawn against somebody else's state. */
-  if (block.look && block.look.renderer) {
+     first frame after a switch is drawn against somebody else's state.
+     A CHANGE, not a mention: the desk repeats the whole look every 2.5s on
+     its heartbeat, and clearing on every one restarted each phoneme from
+     nothing — a held /ɚ/ faded into itself every two and a half seconds. */
+  if (look.renderer !== was) {
     players.forEach((info) => {
       info.shown = null;
       info.heat = null;
@@ -1282,6 +1366,7 @@ window.stage = {
     feed: midiStage,
   }, // the wire's entry point, so a test can fill the wall without 9 laptops
   setLayout,
+  ringHole,
   drawTract, // so a test can measure where the type lands, in pixels
   placeRing,
   placeGrid,
@@ -1302,6 +1387,8 @@ window.stage = {
       machine,
       part: info.part,
       phoneme: info.frame ? info.frame.p : undefined,
+      // how present the 3D drawing's phoneme is, 0..1 — null when it has none
+      glyph: info.ipa ? info.ipa.on : null,
       widest: info.frame ? Math.max(...info.frame.d) : 0,
       middle: info.frame
         ? info.frame.d[Math.round((1 + Math.min(info.frame.d.length - 1, info.frame.lip || 39)) / 2)]

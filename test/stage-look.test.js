@@ -52,6 +52,39 @@ suite("the look, moved to the desk", async (t) => {
   });
   t.check(ink > 200, "and is drawing something", `${ink} lit pixels`);
 
+  /*
+    The desk repeats the whole look on its 2.5s heartbeat. A wall that took
+    every repeat for a change of drawing cleared its phoneme state each time,
+    and a held /ɚ/ faded out and back into itself every two and a half
+    seconds. Fed by hand so the phoneme cannot change underneath the check.
+  */
+  const presence = await stage.evaluate(async () => {
+    const d = [];
+    for (let i = 0; i < 44; i++) d.push(1 + Math.sin(i / 5) * 0.6);
+    const send = () =>
+      window.stage.take({
+        address: "/tract/frame",
+        args: ["3", "held", JSON.stringify({ d, lip: 39, a: 0.2, i: 1, v: 1, p: "ɚ" })],
+      });
+    send();
+    const feed = setInterval(send, 50);
+    await new Promise((r) => setTimeout(r, 1500));
+    const seen = [];
+    const t0 = performance.now();
+    while (performance.now() - t0 < 6000) {
+      const me = window.stage.frames.find((f) => f.machine === "held");
+      seen.push(me ? me.glyph : -1);
+      await new Promise((r) => setTimeout(r, 40));
+    }
+    clearInterval(feed);
+    return { min: Math.min(...seen), n: seen.length };
+  });
+  t.check(
+    presence.min > 0.9,
+    "a held phoneme stays put through the desk's heartbeats",
+    `presence never below ${presence.min.toFixed(3)} over ${presence.n} samples, 6s`
+  );
+
   t.section("3 — angles are per part, seats are not identical");
   await desk.evaluate(() => {
     window.conduct.setAngle(2, "YAW", 0.9);

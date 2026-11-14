@@ -109,6 +109,8 @@ suite("stage layout", async (t) => {
       const sub = document.getElementById("subtitle");
       const sr = sub.getBoundingClientRect();
       return {
+        sub: { x: sr.left, y: sr.top, w: sr.width, h: sr.height },
+        subs: getComputedStyle(document.documentElement).getPropertyValue("--subs").trim(),
         tiles: [...wall.querySelectorAll(".tile")].map((el) => {
           const r = el.getBoundingClientRect();
           return { x: r.left, y: r.top, w: r.width, h: r.height };
@@ -116,7 +118,7 @@ suite("stage layout", async (t) => {
         wall: { x: wr.left, y: wr.top, w: wr.width, h: wr.height },
         subTop: sr.top,
         subSize: parseFloat(getComputedStyle(sub).fontSize),
-        subOverflow: Math.max(0, sub.scrollWidth - sub.clientWidth),
+        subOverflow: Math.max(0, sub.scrollWidth - sub.clientWidth, sub.scrollHeight - sub.clientHeight),
       };
     });
 
@@ -147,13 +149,29 @@ suite("stage layout", async (t) => {
       }
     }
     t.check(clash === 0, `${mode}: none overlaps another`, `${clash} pairs`);
-    t.check(
-      Math.max(...m.tiles.map((x) => x.y + x.h)) <= m.subTop + 1,
-      `${mode}: the drawings clear the subtitle`
-    );
+    if (mode === "grid") {
+      t.check(
+        Math.max(...m.tiles.map((x) => x.y + x.h)) <= m.subTop + 1,
+        `${mode}: the drawings clear the subtitle`,
+        `lowest tile ends at ${Math.round(Math.max(...m.tiles.map((x) => x.y + x.h)))}px, words at ${Math.round(m.subTop)}px`
+      );
+      continue;
+    }
+    // a ring keeps its words in its own middle, and needs no strip for them
+    const s = m.sub;
+    const onTile = m.tiles.filter(
+      (x) => Math.min(x.x + x.w, s.x + s.w) - Math.max(x.x, s.x) > 1 && Math.min(x.y + x.h, s.y + s.h) - Math.max(x.y, s.y) > 1
+    ).length;
+    const mid = { x: s.x + s.w / 2 - (m.wall.x + m.wall.w / 2), y: s.y + s.h / 2 - (m.wall.y + m.wall.h / 2) };
+    t.check(onTile === 0 && s.w > 0, "ring: the words sit in the hole, on no tile", `${Math.round(s.w)}x${Math.round(s.h)} box, ${onTile} tiles touched`);
+    t.check(Math.hypot(mid.x, mid.y) < 2, "ring: in the middle of it", `${mid.x.toFixed(1)}, ${mid.y.toFixed(1)}px off centre`);
+    t.check(m.subs === "0px", "ring: and the wall keeps its full height", `--subs ${m.subs}`);
+    t.check(m.subOverflow === 0 && m.subSize >= 30, "ring: the longest phrase fits the hole, still readable", `${m.subSize}px type, ${m.subOverflow}px over`);
   }
 
   t.section("3 — the subtitle");
+  await stage.evaluate(() => window.stage.setLayout("grid"));
+  await t.sleep(400);
   const sub = await measure();
   t.check(sub.subSize >= 45, "big enough to read from the back of a room", `${sub.subSize.toFixed(0)}px on a 900px wall`);
   t.check(sub.subOverflow === 0, "the longest phrase fits", `${sub.subOverflow}px over`);

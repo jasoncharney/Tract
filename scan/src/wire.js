@@ -166,7 +166,14 @@ function dAt(frame, x) {
 /* a point on either surface: u runs -1..1 across the width */
 function surf(i, frame, time, floor, u, dr, dz) {
   const len = frame.d.length;
-  const w = wobbleAt(i, len, frame.a || 0, time);
+  /* Upstream's shiver is a couple of units in a 600-unit drawing, but this
+     one is fitted to the mouth alone, so it lands as a wave rolling down the
+     tongue eight times a second — on a held note, the shape re-forming into
+     itself. Measured on a held /ɚ/ at a 1200px tile: 14,300 pixels changing
+     every frame with the loudness held steady, none with it at zero. The
+     heat reads loudness on its own, so taking this down does not darken a
+     held note. */
+  const w = wobbleAt(i, len, (frame.a || 0) * look.WOBBLE, time, look.WOBHZ * 2 * Math.PI);
   const a = angleAt(i, frame.lip || len - 5) + w;
   // the roof is where upstream puts the outer wall and never moves; the
   // floor is as far below it as the bore is wide

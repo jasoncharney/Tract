@@ -202,6 +202,17 @@
         pointer-events: none;
       }
       #subtitle.gone { opacity: 0; }
+      /* in a ring the words sit in its middle: stage.js sets the box to the
+         hole and shrinks the type until the phrase fits it */
+      #subtitle.inring {
+        bottom: auto;
+        right: auto;
+        padding: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+      }
 
       /* the desk's blank: a sheet of the page's own background over the lot,
          so the room sees nothing while the card behind it is being set up.
@@ -249,6 +260,6 @@
       click for full screen
     </div> -->
     <div id="blankout"></div>
-    <script type="module" src="/scan/src/stage.js?v=2026-11-14a"></script>
+    <script type="module" src="/scan/src/stage.js?v=2026-11-14c"></script>
   </body>
 </html>
