@@ -114,8 +114,8 @@
       "glide": 0.05,
       "gateRelease": 0.12
     },
-    "pronunciation": "word",
-    "wordChoices": [0, 0, 0, 0, 0, 0],
+    "pronunciation": "fixed",
+    "wordChoices": [1, 1, 0, 0, 0, 0],
     "gain": 0.4,
     "wordMode": "next",
     "vibrato": {
@@ -156,8 +156,8 @@
       "glide": 0.05,
       "gateRelease": 0.12
     },
-    "pronunciation": "word",
-    "wordChoices": [0, 1, 0],
+    "pronunciation": "fixed",
+    "wordChoices": [0, 0, 0],
     "gain": 0.4,
     "wordMode": "next",
     "vibrato": {
@@ -198,7 +198,7 @@
       "glide": 0.65,
       "gateRelease": 0.63
     },
-    "pronunciation": "word",
+    "pronunciation": "fixed",
     "wordChoices": [0, 0, 0],
     "gain": 0.4,
     "wordMode": "random",
@@ -241,7 +241,7 @@
       "gateRelease": 0.12
     },
     "pronunciation": "word",
-    "wordChoices": [1, 3, 0],
+    "wordChoices": [0, 0, 0],
     "gain": 0.4,
     "wordMode": "next",
     "vibrato": {
@@ -282,8 +282,8 @@
       "glide": 0.05,
       "gateRelease": 0.44
     },
-    "pronunciation": "word",
-    "wordChoices": [0, 0, 0, 1, 0],
+    "pronunciation": "fixed",
+    "wordChoices": [1, 0, 0, 0, 0],
     "gain": 0.4,
     "wordMode": "next",
     "vibrato": {
@@ -324,8 +324,8 @@
       "glide": 0.05,
       "gateRelease": 1.19
     },
-    "pronunciation": "word",
-    "wordChoices": [0, 0, 0, 0],
+    "pronunciation": "fixed",
+    "wordChoices": [1, 0, 0, 0],
     "gain": 0.4,
     "wordMode": "next",
     "vibrato": {

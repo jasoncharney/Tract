@@ -9,7 +9,7 @@ import { loadPatchedPinkTrombone } from "./patched-pink-trombone.js";
 
 /** bump alongside the ?v= in index.html; printed on load so there is never a
  *  question about which build a browser is actually running */
-const BUILD = "2026-11-14d";
+const BUILD = "2026-11-14e";
 
 const $ = (id) => document.getElementById(id);
 const strip = $("strip");
@@ -48,9 +48,13 @@ const PHRASES = [
   "will not stay still",
 ];
 
-// not in the CMU dictionary; built from its own "precision" (pɹisɪˈʒʌn)
+// Words whose reading is decided here rather than by the dictionary.
 const WORD_IPA = {
+  // not in the CMU dictionary; built from its own "precision" (pɹisɪˈʒʌn)
   imprecision: "ɪmpɹisɪˈʒʌn",
+  // the dictionary also offers dɪkej. Pinned to the open vowel so phrase 6
+  // can re-roll "with" between voiced and voiceless without decay going too
+  decay: "dʌkejˈ",
 };
 
 let phraseIndex = 0;
