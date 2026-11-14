@@ -23,8 +23,12 @@ Then `https://localhost:8080/` (player), `/conduct.html` (desk),
 | `scan/src/engine.js` | the voice: gating, pitch, the plosive burst timing |
 | `scan/src/conduct.js` | the conductor's desk — cue transport, roster, playhead strips |
 | `scan/src/stage.js` | the projection — the wall of tracts, subtitles, title card |
+| `scan/src/geom.js` | upstream's arc and wobble, shared by both drawings |
+| `scan/src/wire.js` | the second drawing: the tract in space, drawn from the same feed |
+| `scan/src/look.js` | the knobs the wall is made of, read by the desk and the wall alike |
 | `scan/scan-bridge.js` | static HTTPS + WebSocket relay + OSC bridge, dependency-free |
 | `scan/cues.json` `parts.json` `presets.json` | the score, written by the pages themselves |
+| `scan/look.json` | how the wall draws, and the camera per part per phrase — written by the desk |
 | `midi/make-midi.js` | the piece as 8 MIDI tracks, for working out timing, from `midi/timing.json` (a hand-written reading of every cue) |
 | `score/make-score.js` | the printed guide, player cards and cue sheet |
 
@@ -46,7 +50,7 @@ Then `https://localhost:8080/` (player), `/conduct.html` (desk),
 
   ```
   cd test && npm run setup     # once
-  node test/run-all.js         # ~110s, 164 checks, 6 suites
+  node test/run-all.js         # ~280s, 318 checks, 15 suites
   node test/play-midi.js       # ~6 min, after touching midi/: the file played into pages
   node test/run-all.js stage   # just the matching ones
   ```

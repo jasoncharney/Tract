@@ -12,17 +12,13 @@
   player is playing, not an impression of it.
 */
 
-const BUILD = "2026-11-13b";
+const BUILD = "2026-11-14a";
 const $ = (id) => document.getElementById(id);
 
 /* ---- upstream's numbers, so the shape is the shape ---- */
-const PT = {
-  origin: { x: 340, y: 460 },
-  radius: 298,
-  scale: 60,
-  angle: { scale: 0.64, offset: -0.25 },
-  box: { w: 600, h: 500 },
-};
+import { PT, angleAt, wobbleAt, easeBox } from "./geom.js";
+import { defaults as lookDefaults, seatOffset, shuffleOffset } from "./look.js";
+import { drawWire, easeFrame } from "./wire.js";
 
 const GONE_AFTER = 6000; // a player that has said nothing for this long leaves
 const players = new Map(); // machine -> { part, at, frame, canvas, tile }
@@ -75,6 +71,19 @@ function take(message) {
       return;
     }
     applyStage(block); // repeating a state it is already in is a no-op
+    return;
+  }
+  /* how it is drawn, as against what is on it: the desk sends this whenever
+     it changes and again on its heartbeat, so a projector that reloads
+     mid-piece is right again within a second or two */
+  if (message.address === "/stage/look") {
+    let block;
+    try {
+      block = JSON.parse(String((message.args || [])[0]));
+    } catch (e) {
+      return;
+    }
+    applyLook(block);
     return;
   }
   // players still announce their phrase; the wall no longer reads anything
@@ -639,14 +648,9 @@ function setLayout(mode) {
   paintWho();
 }
 
-/* L cycles it, so the shape can be settled in the room with the real number of
- * players on the wall rather than guessed at beforehand. */
-document.addEventListener("keydown", (event) => {
-  if (event.key === "l" || event.key === "L") {
-    setLayout(LAYOUTS[(LAYOUTS.indexOf(layoutMode) + 1) % LAYOUTS.length]);
-    stirCursor();
-  }
-});
+/* The layout used to be cycled from here with L. It is set from the desk now,
+ * with everything else: this page is a projector, and the only thing anyone
+ * should be doing to a projector mid-performance is pointing it. */
 
 function layout() {
   const wall = $("wall");
@@ -700,13 +704,89 @@ window.addEventListener("resize", layout);
 
 const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
-function angleAt(index, lipStart) {
-  return PT.angle.offset + (index * PT.angle.scale * Math.PI) / (lipStart - 1);
+/* ================================================================ *
+ *  the look
+ *
+ *  Everything about how the wall draws now comes from the desk. This page
+ *  decides nothing: it holds the last look it was told, repeats it to itself
+ *  across a reload, and draws.
+ *
+ *  Why a reload has to work: the projector is the one machine in the room
+ *  nobody can get to once the audience is in. A look that only existed in
+ *  memory would mean a pulled cable or a browser crash leaves the wall
+ *  looking like the defaults for the rest of the piece, and nothing short of
+ *  the conductor pressing something would put it back. So every look that
+ *  arrives is kept, and the desk repeats the standing one on its heartbeat
+ *  anyway — belt and braces, for the one screen that cannot be nursed.
+ * ================================================================ */
+
+const LOOK_KEY = "tract.stage.look";
+let look = lookDefaults();
+let angles = {};          // part number -> { yaw, pitch, perspective }
+let spread = { yaw: 0.22, pitch: 0.1 };
+let shuffle = 0;          // a seed, not a list: see look.js
+
+try {
+  const kept = sessionStorage.getItem(LOOK_KEY);
+  if (kept) {
+    const was = JSON.parse(kept);
+    if (was && was.look) {
+      look = Object.assign(lookDefaults(), was.look);
+      angles = was.angles || {};
+      spread = was.spread || spread;
+      shuffle = was.shuffle || 0;
+    }
+  }
+} catch (e) {
+  /* a projector with no storage still has to draw */
 }
 
-/** upstream's wobble: the whole shape shivers with how loud the tract is */
-function wobbleAt(index, length, amplitude, time) {
-  return (amplitude * 0.03 * Math.sin(2 * index - 50 * time) * index) / length;
+function applyLook(block) {
+  if (!block || typeof block !== "object") return;
+  if (block.look) look = Object.assign(look, block.look);
+  if (block.angles) angles = block.angles;
+  if (block.spread) spread = block.spread;
+  if (block.shuffle !== undefined) shuffle = Number(block.shuffle) || 0;
+  if (block.look && block.look.layout) setLayout(block.look.layout);
+  /* a change of drawing has to let go of what the other one was holding:
+     the eased shape, the heat, the camera, the fitted box. Otherwise the
+     first frame after a switch is drawn against somebody else's state. */
+  if (block.look && block.look.renderer) {
+    players.forEach((info) => {
+      info.shown = null;
+      info.heat = null;
+      info.drawn = null;
+      info.cam = null;
+      info.box = null;
+      info.gl = null;
+      info.ipa = null;
+      info.buf = null;
+      info.bufRect = null;
+    });
+  }
+  try {
+    sessionStorage.setItem(LOOK_KEY, JSON.stringify({ look, angles, spread, shuffle }));
+  } catch (e) {
+    /* as above */
+  }
+}
+
+/**
+ * Where one player's camera is pointed: the angle saved for their part, the
+ * fixed nudge that keeps two players on one part from being identical, and
+ * the shuffle on top of both. The shuffle is the only part of this that is
+ * not written down, and it lasts exactly until the next phrase's angles
+ * arrive — which is what makes it safe to press mid-piece.
+ */
+function aimFor(info) {
+  const saved = angles[String(info.part)] || {};
+  const seat = seatOffset(info.machine || info.part, spread);
+  const stir = shuffleOffset(info.machine || info.part, shuffle);
+  return {
+    yaw: (saved.yaw === undefined ? look.YAW : saved.yaw) + seat.yaw + stir.yaw,
+    pitch: (saved.pitch === undefined ? look.PITCH : saved.pitch) + seat.pitch + stir.pitch,
+    perspective: saved.perspective === undefined ? look.PERSPECTIVE : saved.perspective,
+  };
 }
 
 function pointAt(index, diameter, frame, time) {
@@ -745,19 +825,6 @@ function boundsOf(frame, mouth) {
     }
   }
   return { x: minX, y: minY, w: Math.max(1, maxX - minX), h: Math.max(1, maxY - minY) };
-}
-
-function easeBox(info, box) {
-  if (!info.box) {
-    info.box = Object.assign({}, box);
-    return info.box;
-  }
-  const k = 0.08;
-  info.box.x += (box.x - info.box.x) * k;
-  info.box.y += (box.y - info.box.y) * k;
-  info.box.w += (box.w - info.box.w) * k;
-  info.box.h += (box.h - info.box.h) * k;
-  return info.box;
 }
 
 function drawTract(ctx, canvas, info, time) {
@@ -954,9 +1021,15 @@ function paintWho() {
 }
 setInterval(paintWho, 500);
 
+let lastDraw = 0;
 function frame() {
   requestAnimationFrame(frame);
   const time = Date.now() / 1000;
+  /* real elapsed seconds: the wireframe's fades are durations, not counts of
+     frames, so a slower wall holds its light for the same length of time */
+  const now = performance.now();
+  const dt = Math.min(0.1, lastDraw ? (now - lastDraw) / 1000 : 1 / 60);
+  lastDraw = now;
   // if the tiles and the players ever disagree — a layout missed, a tile
   // removed by hand — put it right rather than drawing into the wrong boxes
   if (document.querySelectorAll(".tile").length !== order.length) layout();
@@ -964,7 +1037,13 @@ function frame() {
     const info = players.get(machine);
     if (!info || !info.canvas || !info.frame) return;
     const ctx = info.canvas.getContext("2d");
-    drawTract(ctx, info.canvas, info, time);
+    if (look.renderer === "wire") {
+      info.machine = machine;
+      easeFrame(info, info.frame, look);
+      drawWire(ctx, info.canvas, info, time, dt, look, aimFor(info));
+    } else {
+      drawTract(ctx, info.canvas, info, time);
+    }
   });
 }
 requestAnimationFrame(frame);
@@ -977,10 +1056,8 @@ document.addEventListener("click", () => {
   if (!document.fullscreenElement) document.documentElement.requestFullscreen?.();
   else document.exitFullscreen?.();
 });
-document.addEventListener("keydown", (event) => {
-  if (event.key === "f") document.documentElement.requestFullscreen?.();
-  if (event.key === "Escape" && document.fullscreenElement) document.exitFullscreen?.();
-});
+/* Click is the whole interface. Escape is the browser's own way out of
+ * fullscreen and is left alone; F is gone, with the rest of the keys. */
 
 // the cursor goes away on its own, and comes back if you move it
 let hush = null;
@@ -1170,6 +1247,18 @@ if (MIDI_MODE) connectMIDI().then((said) => said && console.log(said));
 window.stage = {
   BUILD,
   take,
+  /* how it is drawing, and where each player's camera is pointed — for the
+     console during a rehearsal, and for a test to check against */
+  get look() {
+    return { ...look, shuffle };
+  },
+  aims() {
+    const out = {};
+    players.forEach((info, machine) => {
+      out[machine] = { part: String(info.part), ...aimFor({ ...info, machine }) };
+    });
+    return out;
+  },
   get blanked() {
     return !!current.blank;
   },

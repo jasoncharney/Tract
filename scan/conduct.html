@@ -574,6 +574,31 @@
         border-radius: 5px;
         padding: 1px 5px;
       }
+      .lookpanel {
+        border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px;
+        margin: 8px 0 4px; background: rgba(0, 0, 0, 0.18);
+      }
+      .lookhead {
+        display: flex; justify-content: space-between; align-items: center;
+        gap: 8px; margin-bottom: 8px; font-size: 13px;
+      }
+      .lookhead select { font: inherit; }
+      .angles {
+        display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+        gap: 6px 14px; margin-bottom: 10px;
+      }
+      .angles .part { border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; }
+      .angles .partname { font-size: 12px; opacity: 0.75; margin-bottom: 2px; }
+      .angles .partname b { opacity: 1; }
+      .angles .saved { color: var(--hot); }
+      .knobs {
+        display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+        gap: 2px 14px;
+      }
+      .knob { display: grid; grid-template-columns: 92px 1fr 46px; gap: 6px; align-items: center; font-size: 11px; }
+      .knob input[type="range"] { width: 100%; }
+      .knob .v { text-align: right; opacity: 0.8; font-variant-numeric: tabular-nums; }
+      .knob.changed label { color: var(--hot); }
     </style>
   </head>
 
@@ -647,6 +672,51 @@
           </span>
         </div>
 
+        <!--
+          The wall's own controls. They used to be keys on the projector,
+          which meant walking to the machine the audience is looking at.
+        -->
+        <div class="stagerow" id="lookRow">
+          <button id="lookOpen" title="How the wall draws: which visualiser, the angles each part is seen from, and every other setting for the three-dimensional one. Settled in rehearsal, saved per phrase, and left alone during a performance apart from the angles.">the look…</button>
+          <button id="shuffleBtn" title="Scatter every player's camera to a new angle, easing rather than cutting. It lasts until the next phrase's saved angles arrive, so it is safe to press mid-piece — the piece puts itself back.">shuffle angles</button>
+          <span class="stageline" id="lookLine"></span>
+        </div>
+
+        <div class="lookpanel" id="lookPanel" hidden>
+          <div class="lookhead">
+            <span>the look</span>
+            <span>
+              <label title="Which drawing the wall makes. The ribbon is what it has always done.">
+                <select id="lookRenderer">
+                  <option value="ribbon">the ribbon (as before)</option>
+                  <option value="wire">the tract in space</option>
+                </select>
+              </label>
+              <label title="How the three-dimensional drawing is made: lines across the tongue, the tongue as a solid, or floor and roof stitched into one wireframe skin.">
+                <select id="lookSurface">
+                  <option value="lines">lines</option>
+                  <option value="filled">filled</option>
+                  <option value="closed">closed</option>
+                </select>
+              </label>
+              <label title="How the tiles are arranged on the wall. This used to be the L key on the projector itself.">
+                <select id="lookLayout">
+                  <option value="grid">grid</option>
+                  <option value="ring">ring</option>
+                </select>
+              </label>
+              <button class="mini" id="lookSave" title="Write the whole look — every setting below — into scan/look.json as the standing look for the piece. The angles are saved per phrase, separately, with the button beside each part.">save the look</button>
+              <button class="mini" id="lookClose">close</button>
+            </span>
+          </div>
+
+          <!-- the three that move during a performance -->
+          <div class="angles" id="lookAngles"></div>
+
+          <!-- and everything else, which does not -->
+          <div class="knobs" id="lookKnobs"></div>
+        </div>
+
         <div class="lastsent" id="lastSent" hidden>
           <h2>
             <span>last sent</span>
@@ -671,6 +741,6 @@
     <!-- one per laptop, filled in from /player/at -->
     <div class="strips" id="strips"></div>
 
-    <script type="module" src="/scan/src/conduct.js?v=2026-11-13b"></script>
+    <script type="module" src="/scan/src/conduct.js?v=2026-11-14a"></script>
   </body>
 </html>

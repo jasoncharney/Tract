@@ -341,7 +341,12 @@ const MIME = {
  * repo instead of dropping a copy in ~/Downloads to be moved by hand. Only the
  * two data files, only from this machine, and only JSON: the bridge is a
  * development tool and should not become a way to write anything anywhere. */
-const WRITABLE = new Set(["/scan/presets.json", "/scan/parts.json", "/scan/cues.json"]);
+const WRITABLE = new Set([
+  "/scan/presets.json",
+  "/scan/parts.json",
+  "/scan/cues.json",
+  "/scan/look.json", // how the wall draws: written by the conductor
+]);
 
 function handleWrite(request, response, url) {
   const local =

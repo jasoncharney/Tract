@@ -50,7 +50,12 @@ suite("back to the top", async (t) => {
   await desk.evaluate(() => {
     const el = document.getElementById("fadeSecs");
     el.value = "1";
-    el.dispatchEvent(new Event("input", { bubbles: true }));
+    // "change", not "input": that is what the desk listens for, which is what
+    // a person typing a number and tabbing away produces. Firing "input"
+    // left the number on screen but never sent it, so the players kept the
+    // old five seconds and this read 0.277 — a fifth of the way through the
+    // wrong fade — and looked like the reset had failed.
+    el.dispatchEvent(new Event("change", { bubbles: true }));
   });
   await t.sleep(300);
   // move the pointer somewhere late, as a finished run leaves it

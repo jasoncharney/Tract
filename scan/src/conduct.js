@@ -30,7 +30,9 @@
   playheads along the bottom of the screen.
 */
 
-const BUILD = "2026-11-13b";
+const BUILD = "2026-11-14a";
+import { KNOBS, ANGLES, defaults as lookDefaults } from "./look.js";
+
 const $ = (id) => document.getElementById(id);
 
 let cues = [];
@@ -384,6 +386,8 @@ setInterval(paintStrips, 60);
  * ================================================================ */
 
 async function loadAll() {
+  await loadLook();
+  buildLookPanel();
   try {
     const response = await fetch("/scan/parts.json", { cache: "no-store" });
     if (response.ok) {
@@ -761,6 +765,9 @@ function go() {
     send("/cue/go", [c.id || index + 1, row.id, row.instruction, row.whisper || ""])
   );
   sendStage(c);
+  // the angles saved for the new phrase take over here, and a shuffle is let
+  // go of — the piece putting itself back is the whole point of the button
+  if (c.phrase) lookAtPhrase(c.phrase);
   markCue(index);
   landed = index;
   armed = null;
@@ -951,6 +958,7 @@ setInterval(() => {
   // the heartbeat catches a projector up with no fade — it should arrive at
   // the state the piece is in, not fade into it from the title card
   if (stageEverSet) send("/stage/set", [JSON.stringify({ ...standingStage, fade: 0 })]);
+  sendLook();   // and how it draws, for a projector that reloaded
   if (landed === null) return;
   const c = cue(landed);
   if (!c) return;
@@ -1071,6 +1079,19 @@ document.addEventListener("keydown", (event) => {
 window.conduct = {
   BUILD,
   prep,
+  /* the wall's look, for a test and for the console */
+  lookAtPhrase,
+  shuffleAngles,
+  setAngle(part, knob, value) {
+    const where = lookPhrases[String(lookPhrase)] || (lookPhrases[String(lookPhrase)] = {});
+    const mine = where[String(part)] || (where[String(part)] = {});
+    mine[angleKey(knob)] = Number(value);
+    paintLook();
+    sendLook();
+  },
+  get look() {
+    return { ...look, phrase: lookPhrase, phrases: lookPhrases };
+  },
   go,
   cancel,
   goTo,
@@ -1107,4 +1128,288 @@ window.conduct = {
 };
 
 connectWS();
+wireLookPanel();
 loadAll();
+
+
+/* ================================================================ *
+ *  the look of the wall
+ *
+ *  The projector decides nothing. Everything about how it draws is settled
+ *  here and sent to it — which visualiser, how the tiles are arranged, and
+ *  the two dozen numbers the three-dimensional drawing is made of.
+ *
+ *  Two kinds of setting, and the difference is what a performance needs:
+ *
+ *    the look    every knob. Settled in rehearsal, written to look.json,
+ *                and not touched again once the audience is in.
+ *    the angles  yaw, pitch and perspective, per part, per phrase. The
+ *                three worth moving while the piece runs, saved the way the
+ *                players' presets are: per phrase, written to the same file.
+ *
+ *  Angles are per PART because nine players share four parts; each seat is
+ *  nudged off its part's angle by a fixed amount of its own, worked out on
+ *  the wall from the machine's name, so two players on one part are never
+ *  identical and never change places between nights.
+ * ================================================================ */
+
+const PART_NAMES = ["I", "II", "III", "IV"];
+/* look.json is written in lower case, because it is a file a person opens:
+   "yaw", not "YAW". The knob tables are upper case because they name the
+   look's own fields. This is the one place the two meet. */
+const angleKey = (knob) => knob.toLowerCase();
+let look = lookDefaults();
+let lookPhrases = {};          // phrase -> part -> { yaw, pitch, perspective }
+let lookSpread = { yaw: 0.22, pitch: 0.1 };
+let shuffleSeed = 0;
+let lookPhrase = 1;            // the phrase the angles on screen belong to
+
+async function loadLook() {
+  try {
+    const response = await fetch("/scan/look.json", { cache: "no-cache" });
+    if (!response.ok) return;
+    const saved = await response.json();
+    if (saved && saved.look) look = Object.assign(lookDefaults(), saved.look);
+    if (saved && saved.phrases) lookPhrases = saved.phrases;
+    if (saved && saved.spread) lookSpread = saved.spread;
+  } catch (e) {
+    /* no file yet: the defaults are a perfectly good look */
+  }
+}
+
+/** the angles for a phrase, as saved — or nothing, meaning use the look's own */
+function anglesFor(phrase) {
+  const saved = lookPhrases[String(phrase)] || {};
+  const out = {};
+  for (let i = 0; i < PART_NAMES.length; i++) {
+    const part = String(i + 1);
+    if (saved[part]) out[part] = saved[part];
+  }
+  return out;
+}
+
+/**
+ * Everything the wall needs, in one message. Sent when anything changes and
+ * again on the desk's heartbeat, so a projector that reloads mid-piece comes
+ * back to the right look within a second or two rather than sitting on the
+ * defaults for the rest of the performance.
+ */
+function sendLook(extra) {
+  send("/stage/look", [
+    JSON.stringify(
+      Object.assign(
+        { look, angles: anglesFor(lookPhrase), spread: lookSpread, shuffle: shuffleSeed },
+        extra || {}
+      )
+    ),
+  ]);
+}
+
+/**
+ * The phrase changed under the pointer, so the angles saved for it take over
+ * — and a shuffle, which is a thing the conductor asked for a moment ago
+ * rather than a thing the piece says, is let go of. That is what makes the
+ * shuffle button safe to press mid-piece: the next phrase puts it right.
+ */
+function lookAtPhrase(phrase) {
+  const n = Number(phrase) || 0;
+  if (!n || n === lookPhrase) return;
+  lookPhrase = n;
+  shuffleSeed = 0;
+  paintLook();
+  sendLook();
+}
+
+function shuffleAngles() {
+  shuffleSeed = (Math.random() * 0xffffffff) >>> 0;
+  sendLook();
+  paintLook();
+}
+
+/* ---------------- the panel ---------------- */
+
+const lookFmt = (v, step) => (step < 0.01 ? v.toFixed(3) : step < 1 ? v.toFixed(2) : String(v));
+
+function buildLookPanel() {
+  const angles = $("lookAngles");
+  const knobs = $("lookKnobs");
+  if (!angles || !knobs) return;
+  angles.textContent = "";
+  knobs.textContent = "";
+
+  PART_NAMES.forEach((name, i) => {
+    const part = String(i + 1);
+    const box = document.createElement("div");
+    box.className = "part";
+    box.innerHTML = '<div class="partname">part <b>' + name + "</b> <span class=\"saved\"></span></div>";
+    for (const knob of ANGLES) {
+      const spec = KNOBS.find((k) => k[0] === knob);
+      const row = document.createElement("div");
+      row.className = "knob";
+      row.innerHTML =
+        "<label>" + knob.toLowerCase() + "</label>" +
+        '<input type="range" min="' + spec[2] + '" max="' + spec[3] + '" step="' + spec[4] + '" />' +
+        '<span class="v"></span>';
+      const input = row.querySelector("input");
+      input.addEventListener("input", () => {
+        const where = lookPhrases[String(lookPhrase)] || (lookPhrases[String(lookPhrase)] = {});
+        const mine = where[part] || (where[part] = {});
+        mine[angleKey(knob)] = Number(input.value);
+        paintLook();
+        sendLook();
+      });
+      row.__knob = knob;
+      row.__part = part;
+      box.appendChild(row);
+    }
+    const clear = document.createElement("button");
+    clear.className = "mini";
+    clear.textContent = "clear";
+    clear.title = "Forget this part's angles for this phrase: it goes back to the look's own camera.";
+    clear.addEventListener("click", () => {
+      const where = lookPhrases[String(lookPhrase)];
+      if (where) delete where[part];
+      paintLook();
+      sendLook();
+    });
+    box.appendChild(clear);
+    angles.appendChild(box);
+  });
+
+  for (const [name, value, min, max, step, note] of KNOBS) {
+    if (ANGLES.includes(name)) continue; // those live above, per part
+    const row = document.createElement("div");
+    row.className = "knob";
+    row.innerHTML =
+      '<label title="' + note + '">' + name.toLowerCase() + "</label>" +
+      '<input type="range" min="' + min + '" max="' + max + '" step="' + step + '" />' +
+      '<span class="v"></span>';
+    const input = row.querySelector("input");
+    input.addEventListener("input", () => {
+      look[name] = Number(input.value);
+      paintLook();
+      sendLook();
+    });
+    row.__look = name;
+    row.__was = value;
+    knobs.appendChild(row);
+  }
+  paintLook();
+}
+
+function paintLook() {
+  const saved = lookPhrases[String(lookPhrase)] || {};
+  const angles = $("lookAngles");
+  if (angles) {
+    [...angles.children].forEach((box) => {
+      [...box.querySelectorAll(".knob")].forEach((row) => {
+        const mine = saved[row.__part] || {};
+        const has = mine[angleKey(row.__knob)] !== undefined;
+        const value = has ? mine[angleKey(row.__knob)] : look[row.__knob];
+        const spec = KNOBS.find((k) => k[0] === row.__knob);
+        const input = row.querySelector("input");
+        if (document.activeElement !== input) input.value = String(value);
+        row.querySelector(".v").textContent = lookFmt(Number(value), spec[4]);
+        row.classList.toggle("changed", has);
+      });
+      const mark = box.querySelector(".saved");
+      const part = box.querySelector(".knob").__part;
+      mark.textContent = saved[part] ? "saved" : "";
+    });
+  }
+  const knobs = $("lookKnobs");
+  if (knobs) {
+    [...knobs.children].forEach((row) => {
+      const spec = KNOBS.find((k) => k[0] === row.__look);
+      const input = row.querySelector("input");
+      if (document.activeElement !== input) input.value = String(look[row.__look]);
+      row.querySelector(".v").textContent = lookFmt(Number(look[row.__look]), spec[4]);
+      row.classList.toggle("changed", look[row.__look] !== row.__was);
+    });
+  }
+  const sel = $("lookRenderer");
+  if (sel) sel.value = look.renderer;
+  const surf = $("lookSurface");
+  if (surf) surf.value = look.surface;
+  const lay = $("lookLayout");
+  if (lay) lay.value = look.layout || "grid";
+  const line = $("lookLine");
+  if (line) {
+    const bits = [look.renderer === "wire" ? "the tract in space, " + look.surface : "the ribbon"];
+    bits.push("phrase " + lookPhrase);
+    const n = Object.keys(saved).length;
+    bits.push(n ? n + (n === 1 ? " part angled" : " parts angled") : "no angles saved");
+    if (shuffleSeed) bits.push("shuffled");
+    line.textContent = bits.join(" · ");
+  }
+}
+
+function wireLookPanel() {
+  const open = $("lookOpen");
+  const panel = $("lookPanel");
+  if (!open || !panel) return;
+  open.addEventListener("click", () => {
+    panel.hidden = !panel.hidden;
+    if (!panel.hidden) paintLook();
+  });
+  $("lookClose").addEventListener("click", () => (panel.hidden = true));
+  $("shuffleBtn").addEventListener("click", shuffleAngles);
+  for (const [id, key] of [["lookRenderer", "renderer"], ["lookSurface", "surface"], ["lookLayout", "layout"]]) {
+    $(id).addEventListener("change", (event) => {
+      look[key] = event.target.value;
+      paintLook();
+      sendLook();
+    });
+  }
+  $("lookSave").addEventListener("click", async () => {
+    const wrote = await writeJSON("/scan/look.json", {
+      _comment:
+        "How the wall draws. 'look' is settled in rehearsal; 'phrases' holds yaw, pitch and perspective per part per phrase, which are the only things worth moving during a performance. Written by the conductor's page.",
+      look,
+      spread: lookSpread,
+      phrases: lookPhrases,
+    });
+    const line = $("lookLine");
+    if (line) line.textContent = wrote ? "wrote scan/look.json" : "could not write look.json — see the console";
+    setTimeout(paintLook, 2500);
+  });
+}
+
+function prettyJSON(data) {
+  return JSON.stringify(data, null, 2).replace(
+    /\[\s*\n\s*((?:"[^"\n]*"|-?[\d.]+)(?:,\s*\n\s*(?:"[^"\n]*"|-?[\d.]+))*)\s*\n\s*\]/g,
+    (whole, inner) => "[" + inner.replace(/\s*\n\s*/g, " ") + "]"
+  );
+}
+
+/**
+ * Save a file back into the repo through the bridge, the same way the
+ * players' presets are saved.
+ *
+ * The bridge's own acknowledgement is what counts, not a 200: an older build
+ * has no PUT handler at all and answers by serving the file back, which is
+ * valid JSON with an ok status and looks exactly like a successful write.
+ * That is why saving used to appear to do nothing.
+ */
+async function writeJSON(url, data) {
+  const text = prettyJSON(data);
+  try {
+    const response = await fetch(url, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: text,
+    });
+    let result = null;
+    try {
+      result = await response.json();
+    } catch (e) {
+      /* not our answer */
+    }
+    if (response.ok && result && result.ok === true) return true;
+  } catch (e) {
+    /* nothing is serving this page over HTTP */
+  }
+  // the desk is not the place for a download fallback: if the bridge will not
+  // take it, the conductor needs to know now, not find a file in Downloads
+  return false;
+}
