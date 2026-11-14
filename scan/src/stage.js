@@ -12,7 +12,7 @@
   player is playing, not an impression of it.
 */
 
-const BUILD = "2026-11-14e";
+const BUILD = "2026-11-14f";
 const $ = (id) => document.getElementById(id);
 
 /* ---- upstream's numbers, so the shape is the shape ---- */
@@ -481,6 +481,7 @@ function setSubtitle(text) {
   subtitleAfter = setTimeout(
     () => {
       el.textContent = next;
+      el.classList.toggle("lines", next.includes("\n"));
       fitSubtitle();
       el.classList.toggle("gone", !next);
     },

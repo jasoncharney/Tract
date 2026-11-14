@@ -198,10 +198,16 @@
         line-height: 1.2;
         letter-spacing: 0.01em;
         text-shadow: 0 2px 18px var(--bg);
+        /* a line break written into a cue's "text" is kept, so a phrase can be
+           set where it should break rather than wherever the width runs out */
+        white-space: pre-line;
         transition: opacity 500ms linear;
         pointer-events: none;
       }
       #subtitle.gone { opacity: 0; }
+      /* and a phrase with its breaks written in is never broken anywhere else:
+         in a ring the type shrinks to fit instead (fitSubtitle in stage.js) */
+      #subtitle.lines { white-space: pre; }
       /* in a ring the words sit in its middle: stage.js sets the box to the
          hole and shrinks the type until the phrase fits it */
       #subtitle.inring {
@@ -260,6 +266,6 @@
       click for full screen
     </div> -->
     <div id="blankout"></div>
-    <script type="module" src="/scan/src/stage.js?v=2026-11-14e"></script>
+    <script type="module" src="/scan/src/stage.js?v=2026-11-14f"></script>
   </body>
 </html>

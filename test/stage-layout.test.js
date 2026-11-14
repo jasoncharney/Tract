@@ -189,6 +189,56 @@ suite("stage layout", async (t) => {
     `${Math.round(cost)}px of ${Math.round(strip.without)}px`
   );
 
+  t.section("3b — phrase 3 breaks where it is written to, and only there");
+  // the text as the cue sheet has it, not a copy: the break lives in cues.json
+  const written = require("../scan/cues.json").cues.find((c) => c.stage && /burden/.test(c.stage.text || "")).stage.text;
+  t.check(written.includes("\n"), "the cue writes its break", JSON.stringify(written));
+  await fill(9);
+  for (const [w, h] of [[1600, 900], [1024, 768]]) {
+    await stage.setViewportSize({ width: w, height: h });
+    for (const mode of ["grid", "ring"]) {
+      const lines = await stage.evaluate(
+        async ([m, text]) => {
+          window.stage.setLayout(m);
+          window.stage.take({ address: "/stage/set", args: [JSON.stringify({ text: "", fade: 0 })] });
+          await new Promise((r) => setTimeout(r, 300));
+          window.stage.take({ address: "/stage/set", args: [JSON.stringify({ text, fade: 0 })] });
+          await new Promise((r) => setTimeout(r, 700));
+          // which rendered line each word landed on, by its top edge
+          const el = document.getElementById("subtitle");
+          const node = el.firstChild;
+          const tops = [];
+          const re = /\S+/g;
+          let match;
+          while ((match = re.exec(node.textContent))) {
+            const range = document.createRange();
+            range.setStart(node, match.index);
+            range.setEnd(node, match.index + match[0].length);
+            tops.push([match[0], Math.round(range.getBoundingClientRect().top)]);
+          }
+          const rows = [];
+          tops.forEach(([word, top]) => {
+            const row = rows.find((r) => Math.abs(r.top - top) < 4);
+            if (row) row.words.push(word);
+            else rows.push({ top, words: [word] });
+          });
+          return {
+            rows: rows.sort((a, b) => a.top - b.top).map((r) => r.words.join(" ")),
+            over: Math.max(0, el.scrollWidth - el.clientWidth),
+            size: parseFloat(getComputedStyle(el).fontSize),
+          };
+        },
+        [mode, written]
+      );
+      t.check(
+        lines.rows.join(" / ") === "and sometimes break / under the burden" && lines.over === 0,
+        `${w}x${h} ${mode}: two lines, broken after "break"`,
+        `${lines.rows.join(" / ")} at ${lines.size}px, ${lines.over}px over`
+      );
+    }
+  }
+  await stage.setViewportSize({ width: 1600, height: 900 });
+
   t.section("4 — who is on the wall");
   await fill(5);
   // Checked against what the stage believes rather than against the number
