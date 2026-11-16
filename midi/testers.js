@@ -289,7 +289,7 @@ async function openWindows() {
 }
 
 // midi/room.js opens a different set of windows with the same Chrome
-module.exports = { PORT, HEADLESS, CHROME, sleep, scheme, devtools, evaluateIn, wake, ensureBridge };
+module.exports = { PORT, HEADLESS, CHROME, sleep, scheme, devtools, evaluateIn, wake, ensureBridge, players };
 if (require.main !== module) return;
 
 (async () => {

@@ -52,7 +52,9 @@ For a rehearsal without a sequencer, `Testers.command` at the top of the repo
 (or `node midi/room.js`) uses the same Chrome to open nine players (three on
 I, two on each other part) and the conductor's desk, tiled five by two on the
 main display, with the wall fullscreen on the second display. The desk drives
-the cues and you play the players by hand.
+the cues, the wall included. The players are on the same MIDI channels as
+here — the third on I doubles channel 1 — so `tract-all.mid` plays all nine at
+once, or play them by hand.
 
 By hand, the generator prints the addresses at the end of every run:
 

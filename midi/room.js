@@ -13,19 +13,34 @@
   the projector will have it; with only one display it gets a plain window on
   top of the tiles instead.
 
-  Unlike midi/testers.js nothing here is sequenced: the desk drives the cues,
-  and the players are played by hand. Seats are not forced either — the nine
-  sort themselves out of the roster the way nine laptops would.
+  The desk drives the cues, and the players can be played by hand or by MIDI:
+  each one listens on the channel make-midi.js writes for its part, the same
+  channels midi/testers.js uses, so tract-all.mid into the IAC bus plays all
+  nine at once. Nine players on eight tracks: the third on I doubles channel 1.
+  The wall is not on MIDI here — the desk advances it. Seats are not forced
+  either — the nine sort themselves out of the roster the way nine laptops
+  would, so a doubled channel may land on a different seat than its track's.
 
   Same Chrome and profile as midi/testers.js (see the top of that file for
   why), so running either one replaces the other's windows.
 */
 
-const { PORT, HEADLESS, CHROME, sleep, scheme, devtools, evaluateIn, wake, ensureBridge } = require("./testers.js");
+const { PORT, HEADLESS, CHROME, sleep, scheme, devtools, evaluateIn, wake, ensureBridge, players } = require("./testers.js");
 
 // three on I, two on each of the others: one part with an odd count, so
 // "assign" phrases get a seat that wraps round the written pitches
 const PLAYERS = ["I", "I", "I", "II", "II", "III", "III", "IV", "IV"];
+
+/** each player's channel: the nth on a part takes that part's nth track, wrapping */
+function channels() {
+  const tracks = players();
+  const count = {};
+  return PLAYERS.map((part) => {
+    const mine = tracks.filter((t) => t.part === part);
+    const n = (count[part] = (count[part] || 0) + 1);
+    return { part, channel: mine[(n - 1) % mine.length].channel };
+  });
+}
 
 async function openWindows() {
   const base = `${await scheme()}://localhost:${PORT}`;
@@ -39,12 +54,16 @@ async function openWindows() {
   for (const name of ["window-management", "window-placement"]) {
     await send("Browser.setPermission", { permission: { name }, setting: "granted", origin: base }).catch(() => {});
   }
+  // MIDI without nine prompts
+  for (const name of ["midi", "midiSysex"]) {
+    await send("Browser.setPermission", { permission: { name }, setting: "granted", origin: base }).catch(() => {});
+  }
 
   const old = (await send("Target.getTargets")).targetInfos.filter((t) => t.type === "page");
   const open = async (url) => (await send("Target.createTarget", { url, newWindow: true })).targetId;
 
   const players = [];
-  for (const part of PLAYERS) players.push({ part, targetId: await open(`${base}/scan/?part=${part}`) });
+  for (const p of channels()) players.push({ ...p, targetId: await open(`${base}/scan/?part=${p.part}&midich=${p.channel}`) });
   const desk = await open(`${base}/scan/conduct.html`);
   const wall = await open(`${base}/scan/stage.html`);
   for (const t of old) await send("Target.closeTarget", { targetId: t.targetId }).catch(() => {});
@@ -122,13 +141,21 @@ async function openWindows() {
     process.exit(1);
   }
   console.log(`\n${result.report.length} players on ${result.base}`);
-  result.report.forEach((r, i) => console.log(`  ${String(i + 1).padStart(2)}  ${r.part.padEnd(3)}  ${r.state}`));
+  result.report.forEach((r) =>
+    console.log(`  ch ${String(r.channel).padStart(2)}  ${r.part.padEnd(3)}  ${r.state.padEnd(10)} ${r.pill}`)
+  );
   console.log(`  the desk    ${result.base}/scan/conduct.html`);
   console.log(
     result.second
       ? `  the wall    fullscreen on the second display`
       : `  the wall    in a window — there is no second display to put it on`
   );
+  if (result.report.some((r) => /not connected/.test(r.pill))) {
+    console.log(
+      "\nno MIDI input yet — switch on the IAC bus (Audio MIDI Setup → MIDI Studio →\n" +
+        "IAC Driver → Device is online). The windows will hear it the moment it appears."
+    );
+  }
 
   if (HEADLESS && result.launched) result.launched.kill();
   if (bridge) {
