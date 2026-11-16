@@ -21,7 +21,7 @@
   why), so running either one replaces the other's windows.
 */
 
-const { PORT, HEADLESS, CHROME, scheme, devtools, evaluateIn, wake, ensureBridge } = require("./testers.js");
+const { PORT, HEADLESS, CHROME, sleep, scheme, devtools, evaluateIn, wake, ensureBridge } = require("./testers.js");
 
 // three on I, two on each of the others: one part with an odd count, so
 // "assign" phrases get a seat that wraps round the written pitches
@@ -49,8 +49,15 @@ async function openWindows() {
   const wall = await open(`${base}/scan/stage.html`);
   for (const t of old) await send("Target.closeTarget", { targetId: t.targetId }).catch(() => {});
 
-  // the displays, asked of the desk, which has no reason to be busy yet
+  // the displays, asked of the desk, which has no reason to be busy yet — but
+  // only once it has loaded: straight after createTarget the window is still
+  // on its first about:blank, which is not the origin granted the permission,
+  // so getScreenDetails() throws and the second display is never found
   const { sessionId } = await send("Target.attachToTarget", { targetId: desk, flatten: true });
+  for (let i = 0; i < 100; i++) {
+    if ((await evaluate(sessionId, "location.origin").catch(() => "")) === new URL(base).origin) break;
+    await sleep(100);
+  }
   const screens = await evaluate(
     sessionId,
     `(async () => {
@@ -66,11 +73,20 @@ async function openWindows() {
   const main = screens.find((s) => s.primary) || screens[0];
   const second = screens.find((s) => s !== main) || null;
 
+  // Bounds must be whole pixels: CDP refuses 322.5 with a bare "Invalid
+  // parameters", and that refusal used to end the run before a single player
+  // was woken. A window that will not move is a cosmetic problem, so it is
+  // reported and the rest carry on.
   const place = async (targetId, bounds, state = "normal") => {
-    const { windowId } = await send("Browser.getWindowForTarget", { targetId });
-    await send("Browser.setWindowBounds", { windowId, bounds: { windowState: "normal" } });
-    await send("Browser.setWindowBounds", { windowId, bounds });
-    if (state !== "normal") await send("Browser.setWindowBounds", { windowId, bounds: { windowState: state } });
+    for (const k of Object.keys(bounds)) bounds[k] = Math.round(bounds[k]);
+    try {
+      const { windowId } = await send("Browser.getWindowForTarget", { targetId });
+      await send("Browser.setWindowBounds", { windowId, bounds: { windowState: "normal" } });
+      await send("Browser.setWindowBounds", { windowId, bounds });
+      if (state !== "normal") await send("Browser.setWindowBounds", { windowId, bounds: { windowState: state } });
+    } catch (e) {
+      console.log(`could not place a window (${JSON.stringify(bounds)}): ${e.message}`);
+    }
   };
 
   const tiles = [...players.map((p) => p.targetId), desk];
