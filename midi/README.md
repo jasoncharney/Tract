@@ -48,6 +48,12 @@ whether its audio and its MIDI came up. Run it again and it replaces the eight
 rather than adding eight more. If it started the bridge, the bridge stops when
 you close that terminal.
 
+For a rehearsal without a sequencer, `Testers.command` at the top of the repo
+(or `node midi/room.js`) uses the same Chrome to open nine players (three on
+I, two on each other part) and the conductor's desk, tiled five by two on the
+main display, with the wall fullscreen on the second display. The desk drives
+the cues and you play the players by hand.
+
 By hand, the generator prints the addresses at the end of every run:
 
 ```

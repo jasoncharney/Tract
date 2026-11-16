@@ -147,6 +147,48 @@ async function devtools() {
   return { send, close: () => ws.close(), launched };
 }
 
+const evaluateIn = (send) => async (sessionId, expression) =>
+  (await send("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true }, sessionId)).result.value;
+
+/** start a player's audio from outside, and say whether it came up */
+async function wake(send, targetId, attached = null) {
+  const evaluate = evaluateIn(send);
+  const { sessionId } = attached || (await send("Target.attachToTarget", { targetId, flatten: true }));
+  let state = "did not load";
+  for (let i = 0; i < 150; i++) {
+    if (await evaluate(sessionId, "!!(window.scan && window.scan.part)").catch(() => false)) {
+      state = await evaluate(
+        sessionId,
+        `window.scan.enableAudio().then(() => new Promise((r) => {
+           const t0 = performance.now();
+           (function wait() {
+             if (window.scan.isReady() || performance.now() - t0 > 15000) r(window.scan.isReady() ? "ready" : "audio did not start");
+             else setTimeout(wait, 100);
+           })();
+         }))`
+      ).catch((e) => e.message);
+      break;
+    }
+    await sleep(200);
+  }
+  const pill = await evaluate(sessionId, "document.getElementById('midiPill')?.textContent || ''").catch(() => "");
+  await send("Target.detachFromTarget", { sessionId }).catch(() => {});
+  return { state, pill };
+}
+
+/** the bridge, started here if nobody else has; null when somebody else has */
+async function ensureBridge() {
+  if (await listening(PORT)) return null;
+  console.log(`starting the bridge on ${PORT}`);
+  const bridge = spawn("node", ["scan/scan-bridge.js", "--port", String(PORT)], { cwd: ROOT, stdio: "inherit" });
+  for (let i = 0; i < 60 && !(await listening(PORT)); i++) await sleep(100);
+  if (!(await listening(PORT))) {
+    console.error("the bridge did not come up");
+    process.exit(1);
+  }
+  return bridge;
+}
+
 async function openWindows() {
   const base = `${await scheme()}://localhost:${PORT}`;
   const cdp = await devtools();
@@ -185,8 +227,7 @@ async function openWindows() {
 
   // where the screen is, asked of a page, since only a page knows
   const first = await send("Target.attachToTarget", { targetId: opened[0].targetId, flatten: true });
-  const evaluate = async (sessionId, expression) =>
-    (await send("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true }, sessionId)).result.value;
+  const evaluate = evaluateIn(send);
   const screen = await evaluate(
     first.sessionId,
     "({ x: screen.availLeft || 0, y: screen.availTop || 0, w: screen.availWidth, h: screen.availHeight })"
@@ -221,30 +262,7 @@ async function openWindows() {
   // All at once: a window that is not in front boots on throttled timers, and
   // one at a time that was twenty seconds a window.
   const report = await Promise.all(
-    opened.map(async (p) => {
-      const { sessionId } =
-        p === opened[0] ? first : await send("Target.attachToTarget", { targetId: p.targetId, flatten: true });
-      let state = "did not load";
-      for (let i = 0; i < 150; i++) {
-        if (await evaluate(sessionId, "!!(window.scan && window.scan.part)").catch(() => false)) {
-          state = await evaluate(
-            sessionId,
-            `window.scan.enableAudio().then(() => new Promise((r) => {
-               const t0 = performance.now();
-               (function wait() {
-                 if (window.scan.isReady() || performance.now() - t0 > 15000) r(window.scan.isReady() ? "ready" : "audio did not start");
-                 else setTimeout(wait, 100);
-               })();
-             }))`
-          ).catch((e) => e.message);
-          break;
-        }
-        await sleep(200);
-      }
-      const pill = await evaluate(sessionId, "document.getElementById('midiPill')?.textContent || ''").catch(() => "");
-      await send("Target.detachFromTarget", { sessionId }).catch(() => {});
-      return { ...p, state, pill };
-    })
+    opened.map(async (p) => ({ ...p, ...(await wake(send, p.targetId, p === opened[0] ? first : null)) }))
   );
   let wallState = null;
   if (wall) {
@@ -270,21 +288,16 @@ async function openWindows() {
   return { base, report, wall: wallState, launched: cdp.launched };
 }
 
+// midi/room.js opens a different set of windows with the same Chrome
+module.exports = { PORT, HEADLESS, CHROME, sleep, scheme, devtools, evaluateIn, wake, ensureBridge };
+if (require.main !== module) return;
+
 (async () => {
   if (!CHROME) {
     console.error("no Google Chrome in /Applications — set CHROME=/path/to/chrome");
     process.exit(1);
   }
-  let bridge = null;
-  if (!(await listening(PORT))) {
-    console.log(`starting the bridge on ${PORT}`);
-    bridge = spawn("node", ["scan/scan-bridge.js", "--port", String(PORT)], { cwd: ROOT, stdio: "inherit" });
-    for (let i = 0; i < 60 && !(await listening(PORT)); i++) await sleep(100);
-    if (!(await listening(PORT))) {
-      console.error("the bridge did not come up");
-      process.exit(1);
-    }
-  }
+  const bridge = await ensureBridge();
 
   let result;
   try {
