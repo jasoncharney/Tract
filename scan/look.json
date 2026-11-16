@@ -1,7 +1,7 @@
 {
-  "_comment": "How the wall draws. \"look\" is settled in rehearsal and left alone during a performance; \"phrases\" holds yaw, pitch and perspective per part per phrase, which are the only things worth moving while the piece runs. Angles are per part — each seat is nudged off its part by a fixed amount of its own, so two players on one part are never identical. Written by the conductor page; hand-editing works too.",
+  "_comment": "How the wall draws. 'look' is settled in rehearsal; 'phrases' holds yaw, pitch and perspective per part per phrase, which are the only things worth moving during a performance. Written by the conductor's page.",
   "look": {
-    "renderer": "ribbon",
+    "renderer": "wire",
     "surface": "lines",
     "SHEET": 42,
     "RIBS": 5,
@@ -10,6 +10,8 @@
     "GAIN": 7,
     "GHOST": 0.3,
     "SHIMMER": 2.2,
+    "WOBBLE": 1,
+    "WOBHZ": 8,
     "RIBW": 1.4,
     "EDGEW": 1,
     "GHOSTW": 1,
@@ -24,13 +26,28 @@
     "FILL": 1,
     "SMOOTH": 3,
     "THICK": 9,
-    "YAW": -0.52,
-    "PITCH": 0.3,
+    "YAW": -1.5,
+    "PITCH": 0,
     "PERSPECTIVE": 1500
   },
   "spread": {
     "yaw": 0.22,
     "pitch": 0.1
   },
-  "phrases": {}
+  "phrases": {
+    "1": {
+      "1": {
+        "yaw": -1.5
+      },
+      "2": {
+        "yaw": -1.5
+      },
+      "3": {
+        "yaw": -1.5
+      },
+      "4": {
+        "yaw": -1.5
+      }
+    }
+  }
 }

@@ -2,8 +2,7 @@
   The merge, end to end: a real bridge, a real desk, a real wall, real players.
 
   What has to be true:
-    1. Nothing changed by default — the wall still draws the ribbon until
-       somebody asks for otherwise.
+    1. By default the wall draws the tract in space, as look.json has it.
     2. The desk can switch it, and the wall actually draws something else.
     3. Angles saved per part per phrase reach the wall, and two players on one
        part do NOT end up identical.
@@ -29,19 +28,21 @@ suite("the look, moved to the desk", async (t) => {
       aims: window.stage.aims ? window.stage.aims() : null,
     }));
 
-  t.section("1 — by default the wall draws what it always drew");
+  t.section("1 — by default the wall draws the tract in space");
   let w = await wall();
-  t.check(w.renderer === "ribbon", "the ribbon, as before", `renderer ${w.renderer}`);
+  t.check(w.renderer === "wire", "the wire, as look.json has it", `renderer ${w.renderer}`);
 
   t.section("2 — the desk switches the drawing");
-  await desk.evaluate(() => {
-    const sel = document.getElementById("lookRenderer");
-    sel.value = "wire";
-    sel.dispatchEvent(new Event("change", { bubbles: true }));
-  });
+  const pick = (renderer) =>
+    desk.evaluate((r) => {
+      const sel = document.getElementById("lookRenderer");
+      sel.value = r;
+      sel.dispatchEvent(new Event("change", { bubbles: true }));
+    }, renderer);
+  await pick("ribbon");
   await t.sleep(1200);
   w = await wall();
-  t.check(w.renderer === "wire", "the wall is told", `renderer ${w.renderer}`);
+  t.check(w.renderer === "ribbon", "the wall is told", `renderer ${w.renderer}`);
   const ink = await stage.evaluate(() => {
     const c = document.querySelector("#wall canvas");
     if (!c) return -1;
@@ -51,6 +52,11 @@ suite("the look, moved to the desk", async (t) => {
     return n;
   });
   t.check(ink > 200, "and is drawing something", `${ink} lit pixels`);
+  // and back: everything below is about the wire's phoneme and cameras
+  await pick("wire");
+  await t.sleep(1200);
+  w = await wall();
+  t.check(w.renderer === "wire", "and back to the wire", `renderer ${w.renderer}`);
 
   /*
     The desk repeats the whole look on its 2.5s heartbeat. A wall that took
@@ -109,6 +115,17 @@ suite("the look, moved to the desk", async (t) => {
   }
 
   t.section("4 — shuffle, and the next phrase taking it back");
+  // let section 3's swing finish first: from phrase 1's yaw of -1.5 to 0.9 is
+  // further than CAMEASE covers in 1.5s, and a camera still on its way there
+  // when the shuffle lands is two motions, not one
+  await stage.waitForFunction(
+    () => {
+      const aims = window.stage.aims();
+      return window.stage.frames.every((f) => !f.cam || !aims[f.machine] || Math.abs(f.cam.yaw - aims[f.machine].yaw) < 0.01);
+    },
+    null,
+    { timeout: 20000 }
+  );
   const before = (await wall()).aims;
   // watch one camera from just before the press: where it is drawn from, not
   // where it is aimed — the aim is meant to jump, the drawing is not

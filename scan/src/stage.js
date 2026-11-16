@@ -12,12 +12,12 @@
   player is playing, not an impression of it.
 */
 
-const BUILD = "2026-11-16a";
+const BUILD = "2026-11-16b";
 const $ = (id) => document.getElementById(id);
 
 /* ---- upstream's numbers, so the shape is the shape ---- */
 import { PT, angleAt, wobbleAt, easeBox } from "./geom.js";
-import { defaults as lookDefaults, seatOffset, shuffleOffset } from "./look.js";
+import { defaults as lookDefaults, parallaxOffset, shuffleOffset } from "./look.js";
 import { drawWire, easeFrame } from "./wire.js";
 
 const GONE_AFTER = 6000; // a player that has said nothing for this long leaves
@@ -695,6 +695,11 @@ function layout() {
       info.canvas = canvas;
     }
     const spot = spots[index];
+    // where the tile sits, -1..1 across and down the wall, for the parallax
+    info.where = {
+      x: (spot.x + spot.w / 2 - width / 2) / (width / 2),
+      y: (spot.y + spot.h / 2 - height / 2) / (height / 2),
+    };
     info.tile.style.left = `${Math.round(spot.x)}px`;
     info.tile.style.top = `${Math.round(spot.y)}px`;
     info.tile.style.width = `${Math.round(spot.w)}px`;
@@ -858,14 +863,14 @@ function applyLook(block) {
 
 /**
  * Where one player's camera is pointed: the angle saved for their part, the
- * fixed nudge that keeps two players on one part from being identical, and
- * the shuffle on top of both. The shuffle is the only part of this that is
+ * parallax of where their tile sits on the wall, and the shuffle on top of
+ * both. The shuffle is the only part of this that is
  * not written down, and it lasts exactly until the next phrase's angles
  * arrive — which is what makes it safe to press mid-piece.
  */
 function aimFor(info) {
   const saved = angles[String(info.part)] || {};
-  const seat = seatOffset(info.machine || info.part, spread);
+  const seat = parallaxOffset(info.where, spread);
   const stir = shuffleOffset(info.machine || info.part, shuffle);
   return {
     yaw: (saved.yaw === undefined ? look.YAW : saved.yaw) + seat.yaw + stir.yaw,

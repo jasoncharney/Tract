@@ -14,10 +14,12 @@
 
   Angles are per PART, not per player. Nine players share four parts at the
   premiere, so a camera saved per part would put the two players on II in
-  lockstep — the one thing a room of laptops never looks like. Each seat is
-  therefore nudged off its part's angle by a fixed amount of its own, derived
-  from the machine's name so it is the same every night and survives a
-  reload, a re-seat and a reconnect.
+  lockstep — the one thing a room of laptops never looks like. Each tile is
+  therefore nudged off its part's angle by where it sits on the wall, as if
+  one eye in front of the middle were looking at all of them: the tile at the
+  top of the ring is seen straight on, and each one round from it a little
+  more from the side. It used to be a nudge hashed from the machine's name,
+  which made nine tracts look scattered rather than arranged in a space.
 */
 
 /** name, default, min, max, step, what it does */
@@ -45,40 +47,34 @@ export const KNOBS = [
   ["FILL", 1, 0, 1, 0.01, "how solid the filled surface is"],
   ["SMOOTH", 3, 1, 8, 1, "samples per section on the surface modes"],
   ["THICK", 9, 0, 30, 0.5, "how thick the tongue is (0 is a flat plane)"],
-  ["YAW", -0.52, -1.5, 1.5, 0.01, "how far round you stand"],
-  ["PITCH", 0.3, -0.8, 0.8, 0.01, "and how far above"],
+  ["YAW", -1.5, -1.5, 1.5, 0.01, "how far round you stand"],
+  ["PITCH", 0, -0.8, 0.8, 0.01, "and how far above"],
   ["PERSPECTIVE", 1500, 400, 6000, 50, "a little, not a lot"],
 ];
 
 /** the three that move during a performance, per part, per phrase */
 export const ANGLES = ["YAW", "PITCH", "PERSPECTIVE"];
 
-/** which drawing. "ribbon" is what the wall has always done. */
+/** which drawing. "ribbon" is what the wall first drew; the tract in space is the default now. */
 export const SURFACES = ["lines", "filled", "closed"];
 
 export function defaults() {
-  const look = { renderer: "ribbon", surface: "lines" };
+  const look = { renderer: "wire", surface: "lines" };
   for (const [name, value] of KNOBS) look[name] = value;
   return look;
 }
 
 /**
- * How far a seat sits off its part's angle. Derived from the machine's own
- * name, so it is the same tonight as it was in rehearsal — a shuffle is a
- * thing the conductor asks for, not a thing that happens because somebody
- * reconnected.
+ * How far a tile's camera sits off its part's angle, from where the tile is:
+ * `where` is its centre, -1..1 across and down the wall. A tile right of
+ * centre is seen from a little further left (yaw up), one below centre from a
+ * little further above (pitch up), and `spread` is how much at the edge.
  */
-export function seatOffset(machine, spread) {
-  let h = 2166136261;
-  for (let i = 0; i < String(machine).length; i++) {
-    h ^= String(machine).charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  const a = ((h >>> 0) % 2048) / 2048 - 0.5;
-  const b = (((h >>> 11) >>> 0) % 2048) / 2048 - 0.5;
+export function parallaxOffset(where, spread) {
+  if (!where) return { yaw: 0, pitch: 0 };
   return {
-    yaw: a * 2 * (spread && spread.yaw !== undefined ? spread.yaw : 0.22),
-    pitch: b * 2 * (spread && spread.pitch !== undefined ? spread.pitch : 0.1),
+    yaw: where.x * (spread && spread.yaw !== undefined ? spread.yaw : 0.22),
+    pitch: where.y * (spread && spread.pitch !== undefined ? spread.pitch : 0.1),
   };
 }
 
