@@ -111,6 +111,27 @@ suite("the wall, sequenced from a MIDI track", async (t) => {
   t.check(s.card === 0, "and the title card down", `card opacity ${s.card}`);
   t.check(s.words === lit.words, "and the words where they were", `"${s.words}"`);
 
+  t.section("6b — the players hear the stop too, and keep feeding the wall");
+  // Stop reaches every window on the bus, and a host that chases controllers
+  // re-sends CC20 = 0 as the playhead goes home — standby, which rebuilds the
+  // synth. The rebuilt element's tract view was never started, because the
+  // panel was already showing, so the page had nothing to mirror and every
+  // tile timed out: "nobody feeding this wall" a few seconds after stop.
+  for (const [i, page] of players.entries()) {
+    await page.evaluate((ch) => {
+      window.scan.handleMIDI([0xb0 | ch, 20, 1]); // phrase 1
+      window.scan.handleMIDI([0xfc]);
+      window.scan.handleMIDI([0xb0 | ch, 20, 0]); // and home to standby
+    }, i);
+  }
+  await t.sleep(8000); // past the wall's 6s
+  s = await look();
+  t.check(s.tiles === 3, "every player is still drawn after stop and standby", `${s.tiles} tiles`);
+  const mirrored = await Promise.all(
+    players.map((p) => p.evaluate(() => !!(window.scan.element.UI && window.scan.element.UI._tractUI)))
+  );
+  t.check(mirrored.every(Boolean), "each rebuilt synth has a tract view to mirror", mirrored.join(", "));
+
   t.section("7 — continue is not a reset either");
   await stage.evaluate(() => window.stage.midi.feed([0xfb]));
   await t.sleep(1000);

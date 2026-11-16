@@ -9,7 +9,7 @@ import { loadPatchedPinkTrombone } from "./patched-pink-trombone.js";
 
 /** bump alongside the ?v= in index.html; printed on load so there is never a
  *  question about which build a browser is actually running */
-const BUILD = "2026-11-16b";
+const BUILD = "2026-11-16c";
 
 const $ = (id) => document.getElementById(id);
 const strip = $("strip");
@@ -476,7 +476,12 @@ async function buildSynth() {
   master.gain.setValueAtTime(0, ctx.currentTime);
   master.gain.linearRampToValueAtTime(gain, ctx.currentTime + 0.08);
 
-  showTract(true);
+  // A rebuild arrives with the panel already showing, and showTract() then
+  // has nothing to toggle — so the new element's view was never started, the
+  // page had no tract to mirror, and the wall lost every player a few seconds
+  // after Live went home to standby. Start it on this element either way.
+  if ($("tractHost").classList.contains("on")) startTractView();
+  else showTract(true);
 
   ready = true;
   $("startAudio").textContent = "audio running";
@@ -4152,26 +4157,29 @@ function toggleTract() {
   if (!element) return;
   const host = $("tractHost");
   const showing = host.classList.toggle("on");
-  if (showing) {
-    element.enableUI();
-    element.startUI();
-    // the upstream UI lays out a 600x500 canvas plus glottis and button panels
-    // inside a grid that does not reserve room for it, so it spills out of the
-    // page. Keep the tract, drop the panels, and let the host clip.
-    const ui = element.UI;
-    if (ui && ui._container) {
-      ui._container.style.gridTemplateRows = "auto";
-      ui._container.style.gridTemplateColumns = "auto";
-      if (ui._buttonsUI && ui._buttonsUI._container)
-        ui._buttonsUI._container.style.display = "none";
-      if (ui._glottisUI && ui._glottisUI._container)
-        ui._glottisUI._container.style.display = "none";
-    }
-    $("toggleTract").textContent = "hide";
-  } else {
+  if (showing) startTractView();
+  else {
     element.stopUI();
     $("toggleTract").textContent = "show";
   }
+}
+
+function startTractView() {
+  element.enableUI();
+  element.startUI();
+  // the upstream UI lays out a 600x500 canvas plus glottis and button panels
+  // inside a grid that does not reserve room for it, so it spills out of the
+  // page. Keep the tract, drop the panels, and let the host clip.
+  const ui = element.UI;
+  if (ui && ui._container) {
+    ui._container.style.gridTemplateRows = "auto";
+    ui._container.style.gridTemplateColumns = "auto";
+    if (ui._buttonsUI && ui._buttonsUI._container)
+      ui._buttonsUI._container.style.display = "none";
+    if (ui._glottisUI && ui._glottisUI._container)
+      ui._glottisUI._container.style.display = "none";
+  }
+  $("toggleTract").textContent = "hide";
 }
 
 /**
