@@ -1022,6 +1022,11 @@ export class ScanVoice {
     if (this.cells.length === 0) return;
     if (now < this.lockUntil) return; // a ballistic gesture owns the tract
     this.refreshPitch(now);
+    // Shut means shut. Intensity is multiplied by the gate, but the burst
+    // pulse is not, and the tract kept following the pointer: hovering over
+    // phrase 1 with no button down measured -27.6 dB out of the page and
+    // moved the wall. setGate(true) re-enters the cell, so nothing is lost.
+    if (this.gate === 0) return;
 
     const i = this.cellAt(pos);
     if (i !== this.curCell) {

@@ -179,4 +179,57 @@ suite("player keys", async (t) => {
     });
   t.check((await z()) === true, "Z turns whisper on");
   t.check((await z()) === false, "and off again");
+
+  /* ---- the strip ---- */
+  t.section("5 — the strip sounds only while the button is down");
+  // A pointer passing over the strip used to articulate the words with the
+  // gate shut: the bursts are not multiplied by the gate, and the tract moved
+  // under the hover, so it reached the speakers and the wall. Measured on the
+  // page's output, with a real mouse, because that is where it was heard.
+  const strip = await t.browser.newPage({ viewport: { width: 1200, height: 800 } });
+  await strip.addInitScript(() => {
+    const make = AudioContext.prototype.createAnalyser;
+    AudioContext.prototype.createAnalyser = function () {
+      const a = make.call(this);
+      (window.__taps ||= []).push(a);
+      return a;
+    };
+  });
+  await strip.goto(`${t.base}/scan/?part=I&seat=1`, { waitUntil: "load" });
+  await strip.waitForFunction(() => window.scan && window.scan.part, null, { timeout: 30000 });
+  await strip.evaluate(() => window.scan.enableAudio());
+  await strip.waitForFunction(() => window.scan.isReady(), null, { timeout: 30000 });
+  await strip.evaluate(() => window.scan.applyRemote("/scan/phrase", [1]));
+  await t.sleep(500);
+  const loudest = (ms) =>
+    strip.evaluate(async (ms) => {
+      let m = 0;
+      const t0 = performance.now();
+      while (performance.now() - t0 < ms) {
+        for (const a of window.__taps) {
+          const b = new Float32Array(a.fftSize);
+          a.getFloatTimeDomainData(b);
+          for (const v of b) m = Math.max(m, Math.abs(v));
+        }
+        await new Promise((r) => setTimeout(r, 20));
+      }
+      return 20 * Math.log10(m || 1e-9);
+    }, ms);
+  const box = await strip.evaluate(() => {
+    const b = document.getElementById("strip").getBoundingClientRect();
+    return { x: b.left, y: b.top + b.height / 2, w: b.width };
+  });
+  const listening = loudest(900);
+  for (let i = 0; i <= 30; i++) {
+    await strip.mouse.move(box.x + 5 + (i * (box.w - 10)) / 30, box.y);
+    await t.sleep(20);
+  }
+  const hovered = await listening;
+  t.check(hovered < -90, "moving over the strip with no button down is silent", `${hovered.toFixed(1)} dB peak`);
+  await strip.mouse.move(box.x + box.w / 2, box.y);
+  await strip.mouse.down();
+  const pressedDb = await loudest(600);
+  await strip.mouse.up();
+  t.check(pressedDb > -40, "and pressing on it still sounds", `${pressedDb.toFixed(1)} dB peak`);
+  await strip.close();
 });
