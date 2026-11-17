@@ -12,7 +12,8 @@ node scan/scan-bridge.js          # serves the repo, WebSocket + OSC on one port
 ```
 
 Then `https://localhost:8080/` (player), `/conduct.html` (desk),
-`/stage.html` (projection). No build step, no install, no dependencies —
+`/stage.html` (projection), `/tune.html` (tuning
+`look.json` without playing the piece). No build step, no install, no dependencies —
 `node` and a browser are the whole toolchain. Node's own `--check` is the lint.
 
 ## The pieces
@@ -25,10 +26,12 @@ Then `https://localhost:8080/` (player), `/conduct.html` (desk),
 | `scan/src/stage.js` | the projection — the wall of tracts, subtitles, title card |
 | `scan/src/geom.js` | upstream's arc and wobble, shared by both drawings |
 | `scan/src/wire.js` | the second drawing: the tract in space, drawn from the same feed |
-| `scan/src/look.js` | the knobs the wall is made of, read by the desk and the wall alike |
+| `scan/src/look.js` | the knobs the wall is made of, and where each tile's camera points (`aimAt`) — read by the desk, the wall and the tuning page alike |
+| `scan/src/wall.js` | the grid, the ring and the hole the words sit in, shared by the stage and the tuning page |
+| `scan/tune.html`, `scan/src/tune.js` | tuning `look.json` against twelve recorded seconds, drawn by the stage's own modules; writes the look and one phrase |
 | `scan/scan-bridge.js` | static HTTPS + WebSocket relay + OSC bridge, dependency-free |
 | `scan/cues.json` `parts.json` `presets.json` | the score, written by the pages themselves |
-| `scan/look.json` | how the wall draws, and the camera per part per phrase — written by the desk |
+| `scan/look.json` | how the wall draws, and the camera per part per phrase — written by the desk or the tuning page |
 | `midi/make-midi.js` | the piece as 8 MIDI tracks, for working out timing, from `midi/timing.json` (a hand-written reading of every cue) |
 | `score/make-score.js` | the printed guide, player cards and cue sheet |
 
@@ -120,7 +123,7 @@ Then `https://localhost:8080/` (player), `/conduct.html` (desk),
 ## When you change a page
 
 `BUILD` in the `.js` and the `?v=` cache-buster in the `.html` that loads it
-must move together, and all three pages should carry the same stamp. A stale
+must move together, and all four pages should carry the same stamp. A stale
 cache-buster means a projector laptop quietly running last month's code;
 `stage.html` was left behind at `2026-09-20a` for several builds exactly that
 way. Date-based: `2026-10-18b`.

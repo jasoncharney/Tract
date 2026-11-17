@@ -684,6 +684,28 @@ deep plum in the light skin, so loudness is visible from the back of the hall.
 The cursor hides itself after a few seconds, and `?debug=1` puts a small list of
 who is feeding the wall in the corner while you set the room up.
 
+### Tuning the wall
+
+`scan/tune.html` (`/tune` on the bridge) tunes `look.json` without playing
+the piece. It draws with the stage's own modules — `wire.js` for the drawing,
+`look.js` for the knobs and the camera, `wall.js` for the grid and the ring —
+fed twelve recorded seconds of Part I (`tune-frames.json`), on nine seats
+seated as at the premiere. So what it shows is what the projector will show,
+not a model of it.
+
+Every knob, the surface, the piece's spread, and per phrase the angles of
+each part and the phrase's own spread. Each phrase shows its words from
+`cues.json`, where the stage puts them. A label goes pink where it differs
+from the file. **write look + phrase N** writes the look and the spread for
+the whole piece, and that one phrase's angles; every other phrase is kept as
+it is on disk, so a hand edit to another phrase survives. A desk open before
+the write still holds the old look, and its own Save would put it back:
+reload the desk after writing.
+
+The camera never gets behind the tongue: YAW stops at 0.3, PITCH at 0, and
+whatever the parallax and shuffle add, a tile's final aim stops at yaw 0.5,
+pitch −0.1 (`VIEW` in `look.js`).
+
 ## The phrases
 
 Eight fixed phrases, stepped with the `‹ ›` buttons, the dots, `↑`/`↓`, or the
@@ -1199,7 +1221,11 @@ will be far too hot — re-save them.)
 scan/index.html                     the player's page
 scan/conduct.html                   the conductor's page
 scan/stage.html                     the projection, for the audience
+scan/tune.html                      tuning look.json without playing the piece
 scan/src/stage.js                   the tract wall: one canvas per player
+scan/src/wall.js                    the grid, the ring, and the hole the words sit in
+scan/src/tune.js                    the tuning page
+scan/tune-frames.json               twelve recorded seconds of Part I, for it
 scan/cues.json                      the cues, and which part each one speaks to
 scan/src/conduct.js                 cue list, prep/downbeat, roster (no audio)
 scan/src/engine.js                  the articulation engine (no DOM, no audio API)

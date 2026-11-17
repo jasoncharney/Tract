@@ -140,3 +140,32 @@ export function shuffleOffset(who, seed) {
   const [, , lo, hi] = KNOBS.find((k) => k[0] === "YAW");
   return { yaw: a * 1.5, pitch: b * 0.7, anyYaw: lo + (a + 0.5) * (hi - lo) };
 }
+
+/**
+ * Where one player's camera is pointed: the angle saved for their part, the
+ * parallax of where their tile sits on the wall, and the shuffle on top of
+ * both. The shuffle is the only part of this that is
+ * not written down, and it lasts exactly until the next phrase's angles
+ * arrive — which is what makes it safe to press mid-piece.
+ *
+ * The shuffle is keyed by PART, not machine: every player on a part swings
+ * to the same new angle and only the parallax tells them apart, so the wall
+ * still reads as four parts rather than nine strangers. A part with no yaw
+ * saved has nothing to nudge, so the shuffle picks its yaw outright.
+ *
+ * `info` needs `part` and `where`; `angles` are this phrase's, by part, as the
+ * desk sends them, and `spread` the one that applies to this phrase.
+ */
+export function aimAt(info, { look, angles, spread, shuffle }) {
+  const saved = (angles || {})[String(info.part)] || {};
+  const seat = parallaxOffset(info.where, spread);
+  const stir = shuffleOffset("part " + info.part, shuffle);
+  // last, so neither a shuffle's nudge nor a wide spread can swing a tile
+  // round behind the tongue — see VIEW, above
+  return inView({
+    yaw:
+      (saved.yaw !== undefined ? saved.yaw + stir.yaw : shuffle ? stir.anyYaw : look.YAW) + seat.yaw,
+    pitch: (saved.pitch === undefined ? look.PITCH : saved.pitch) + seat.pitch + stir.pitch,
+    perspective: saved.perspective === undefined ? look.PERSPECTIVE : saved.perspective,
+  });
+}

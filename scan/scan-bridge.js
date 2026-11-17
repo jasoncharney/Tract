@@ -395,6 +395,8 @@ const SHORTCUTS = {
   "/conduct.html": "/scan/conduct.html",
   "/stage": "/scan/stage.html",
   "/stage.html": "/scan/stage.html",
+  "/tune": "/scan/tune.html",
+  "/tune.html": "/scan/tune.html",
 };
 
 const server = (TLS ? https.createServer.bind(null, TLS) : http.createServer)((request, response) => {

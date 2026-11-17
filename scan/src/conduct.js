@@ -30,7 +30,7 @@
   playheads along the bottom of the screen.
 */
 
-const BUILD = "2026-11-16i";
+const BUILD = "2026-11-16j";
 import { KNOBS, ANGLES, defaults as lookDefaults, spreadFor } from "./look.js";
 
 const $ = (id) => document.getElementById(id);

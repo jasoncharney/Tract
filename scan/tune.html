@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Tract — tune</title>
+    <script>
+      // the stage's own theme rule, read but never written: this page should
+      // look like whatever the projector was last set to
+      (function () {
+        var q = new URLSearchParams(location.search).get("theme");
+        var saved = null;
+        try { saved = localStorage.getItem("tract.theme"); } catch (e) {}
+        if ((q || saved || "dark") === "dark") document.documentElement.dataset.theme = "dark";
+      })();
+    </script>
+    <style>
+      /* the colours are stage.html's, because wire.js reads them off :root */
+      :root {
+        color-scheme: light;
+        --sans: Arial, "Helvetica Neue", Helvetica, sans-serif;
+        --mono: "Andale Mono", Consolas, "Courier New", monospace;
+        --bg: #ffeef5;
+        --tract: #ffc0cb;
+        --edge: #c070c6;
+        --bead: #4a1352;
+        --sub: #6b2b63;
+        --dim: #b98aa8;
+        --ipa: #4a1352;
+        --ipa-font: "Gentium Plus", "Charis SIL", "Doulos SIL", "Lucida Grande", "Segoe UI", serif;
+        --panel: #fff7fb;
+        --rule: #e7cfdc;
+        --around: #f3dce8;
+      }
+      html[data-theme="dark"] {
+        color-scheme: dark;
+        --bg: #101014;
+        --tract: #ff7ab6;
+        --edge: #ffd0e6;
+        --bead: #7ef7d8;
+        --sub: #efe6f2;
+        --dim: #6b6478;
+        --ipa: #ffe9f4;
+        --panel: #0b0a0f;
+        --rule: #241f2e;
+        --around: #050507;
+      }
+      * { box-sizing: border-box; }
+      [hidden] { display: none !important; }
+      /* body's face is the glyph's face: wire.js sets the phoneme in it */
+      html, body { margin: 0; height: 100%; overflow: hidden; background: var(--around); color: var(--sub); font: 14px/1.4 var(--sans); }
+      body { display: grid; grid-template-columns: 1fr 300px; grid-template-rows: 1fr auto; }
+      body.nopanel { grid-template-columns: 1fr 0; }
+      body.nopanel aside { display: none; }
+
+      main { position: relative; min-width: 0; min-height: 0; }
+      /* the wall is a projector's shape, fitted into whatever room is left —
+         the parallax and the ring both depend on where a tile sits on it */
+      #wall { position: absolute; background: var(--bg); overflow: hidden; }
+      .tile { position: absolute; }
+      .tile canvas { width: 100%; height: 100%; display: block; }
+      /* stage.html's #subtitle, in units of this wall rather than of the
+         window: the stage's 6vh on a projector is 6% of this box's height */
+      #subtitle {
+        position: absolute; left: 0; right: 0; text-align: center; padding: 0 4%;
+        color: var(--sub); line-height: 1.2; letter-spacing: 0.01em;
+        text-shadow: 0 2px 18px var(--bg); white-space: pre-line; pointer-events: none;
+        transition: opacity 500ms linear;
+      }
+      #subtitle.gone { opacity: 0; }
+      #subtitle.inring { padding: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+      .tile .who {
+        position: absolute; left: 6px; top: 4px; font: 10px var(--mono); color: var(--dim);
+        opacity: 0; transition: opacity 0.15s; pointer-events: none;
+      }
+      body.labels .tile .who { opacity: 0.8; }
+
+      .bar {
+        grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+        padding: 8px 14px; background: var(--panel); border-top: 1px solid var(--rule);
+        font: 12px var(--mono); color: var(--dim);
+      }
+      .bar input[type="range"] { flex: 1; min-width: 160px; accent-color: var(--tract); }
+      .bar b { color: var(--tract); font-weight: 400; }
+      .bar .wh { color: var(--bead); }
+
+      aside {
+        overflow-y: auto; background: var(--panel); border-left: 1px solid var(--rule);
+        padding: 10px 12px 24px; font: 11px var(--mono); color: var(--dim);
+      }
+      aside h2 {
+        margin: 14px 0 6px; font: 10px var(--mono); letter-spacing: 0.12em; text-transform: uppercase;
+        color: var(--dim); display: flex; justify-content: space-between; align-items: center;
+      }
+      aside h2:first-child { margin-top: 0; }
+      .note { margin: 0 0 6px; line-height: 1.35; }
+      .note.warn { color: var(--tract); }
+      .row { display: grid; grid-template-columns: 82px 1fr 52px 14px; gap: 6px; align-items: center; margin: 2px 0; }
+      .row label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: help; }
+      .row.changed label { color: var(--tract); }
+      .row.unset label, .row.unset input { opacity: 0.45; }
+      .row input[type="range"] { width: 100%; accent-color: var(--tract); margin: 0; }
+      .row input[type="number"] {
+        width: 52px; font: 10px var(--mono); background: transparent; color: var(--sub);
+        border: 1px solid var(--rule); border-radius: 3px; padding: 1px 2px;
+      }
+      .x { cursor: pointer; color: var(--dim); text-align: center; }
+      .x:hover { color: var(--tract); }
+      .part { border-top: 1px solid var(--rule); padding-top: 4px; margin-top: 4px; }
+      .part > span { color: var(--sub); }
+      button, select {
+        font: 11px var(--mono); background: transparent; color: var(--sub);
+        border: 1px solid var(--rule); border-radius: 5px; padding: 3px 8px; cursor: pointer;
+      }
+      button:hover, select:hover { border-color: var(--tract); }
+      button.on { color: var(--tract); border-color: var(--tract); }
+      .btns { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0; }
+      textarea {
+        width: 100%; height: 160px; font: 10px var(--mono); background: transparent; color: var(--sub);
+        border: 1px solid var(--rule); border-radius: 4px; resize: vertical;
+      }
+    </style>
+  </head>
+  <body>
+    <main><div id="wall"><div id="subtitle" class="gone"></div></div></main>
+    <aside id="panel">
+      <h2>look.json <span id="status"></span></h2>
+      <p class="note" id="source">loading…</p>
+      <div class="btns">
+        <button id="copy" title="the whole file, ready to paste over scan/look.json">copy look.json</button>
+        <button id="reload" title="read scan/look.json again, dropping everything changed here">reload</button>
+      </div>
+      <p class="note">Pink is different from the file. The write button below saves the look and spread for the whole piece, and this phrase's angles only.</p>
+
+      <h2>angles <span>
+        phrase <select id="phrase"></select>
+      </span></h2>
+      <p class="note" id="phraseNote"></p>
+      <div id="angles"></div>
+      <div class="btns">
+        <button id="shuffle" title="what the desk's shuffle does: a fresh seed, per part">shuffle</button>
+        <button id="unshuffle">no shuffle</button>
+      </div>
+      <div class="btns">
+        <button id="writePhrase" title="reads look.json from disk; replaces the look, the spread and this phrase's angles; keeps every other phrase as it is on disk">write look + phrase 1</button>
+      </div>
+      <p class="note" id="wrote"></p>
+
+      <h2>spread, for the piece</h2>
+      <p class="note">How far each seat's camera is pushed off its part's by where it sits on the wall. A phrase's own spread, above, wins over this.</p>
+      <div id="spread"></div>
+
+      <h2>look <span><select id="surface"></select></span></h2>
+      <div id="knobs"></div>
+
+      <h2>the file</h2>
+      <textarea id="out" readonly spellcheck="false"></textarea>
+    </aside>
+    <div class="bar">
+      <button id="play">pause</button>
+      <input id="scrub" type="range" min="0" max="1" step="0.0005" value="0" />
+      <span id="state"></span>
+      <select id="seats" title="how many players the wall is showing">
+        <option value="9">9 seats — I I I II II III III IV IV</option>
+        <option value="4">4 seats — one per part</option>
+        <option value="1">1 seat</option>
+      </select>
+      <select id="layout">
+        <option value="grid">grid</option>
+        <option value="ring">ring</option>
+      </select>
+      <button id="labels" title="which part each tile is">labels</button>
+      <button id="words" class="on" title="the phrase's subtitle, from cues.json">words</button>
+      <button id="theme">theme</button>
+      <button id="hide" title="the panel (h)">panel</button>
+    </div>
+
+    <script type="module" src="/scan/src/tune.js?v=2026-11-16j"></script>
+  </body>
+</html>

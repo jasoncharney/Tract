@@ -66,12 +66,15 @@ scan/                       the interface, and the one process behind it
   index.html                the player's page
   conduct.html              the conductor's desk
   stage.html                the projection, for the audience
+  tune.html                 tuning look.json without playing the piece
   scan-bridge.js            static server + WebSocket + OSC/UDP, no dependencies
   src/engine.js             articulation engine — no DOM, no Web Audio beyond AudioParams
   src/patched-pink-trombone.js   in-memory repair of the worklet's burst and pitch drift
   src/scan.js               audio setup, strip UI, keyboard transport
   src/conduct.js            cue list, prep/downbeat, roster
   src/stage.js              the tract wall: one canvas per player
+  src/wall.js               the grid, the ring, and where the words go in it
+  src/tune.js               the tuning page
   presets.json              per-phrase settings that ship with the piece
   parts.json                the four parts: offsets, pitch sets, how pitch is decided
   cues.json                 the cues, and which part each one speaks to

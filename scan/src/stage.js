@@ -12,12 +12,13 @@
   player is playing, not an impression of it.
 */
 
-const BUILD = "2026-11-16i";
+const BUILD = "2026-11-16j";
 const $ = (id) => document.getElementById(id);
 
 /* ---- upstream's numbers, so the shape is the shape ---- */
 import { PT, angleAt, wobbleAt, easeBox } from "./geom.js";
-import { defaults as lookDefaults, parallaxOffset, shuffleOffset, inView } from "./look.js";
+import { defaults as lookDefaults, aimAt } from "./look.js";
+import { placeGrid, placeRing, ringHole, RING_HOLE_FROM } from "./wall.js";
 import { drawWire, easeFrame } from "./wire.js";
 
 const GONE_AFTER = 6000; // a player that has said nothing for this long leaves
@@ -504,131 +505,6 @@ function reap() {
 }
 setInterval(reap, 1000);
 
-/* ================================================================ *
- *  filling the wall
- *
- *  Each tract wants a 600x500 box. Given N of them in a 16:9 screen, try every
- *  column count and keep whichever wastes the least: the one where the tile the
- *  grid allows is closest to the shape the drawing actually wants.
- * ================================================================ */
-
-function bestGrid(count, width, height) {
-  const want = PT.box.w / PT.box.h;
-  let best = { cols: 1, rows: count, area: 0 };
-  for (let cols = 1; cols <= count; cols++) {
-    const rows = Math.ceil(count / cols);
-    const w = width / cols;
-    const h = height / rows;
-    // the drawing keeps its proportions inside the cell, so the used area is
-    // whatever a 600x500 box can take of it
-    const drawW = Math.min(w, h * want);
-    const drawH = drawW / want;
-    const area = drawW * drawH * count;
-    if (area > best.area) best = { cols, rows, area };
-  }
-  return best;
-}
-
-/* ================================================================ *
- *  the ring
- *
- *  The grid is the safe shape — it gives every drawing the most room there
- *  is. The ring trades some of that for an arrangement that reads as an
- *  ensemble rather than a contact sheet, which for an odd number is often the
- *  better picture: nine in a grid is three tidy rows, nine in a ring is nine
- *  voices around a space.
- *
- *  It is an ellipse, not a circle, because a circle inscribed in a 16:9 wall
- *  throws away everything to the left and right of it. The tile size is found
- *  by relaxation rather than by trigonometry: place them, measure the closest
- *  pair, shrink to fit, repeat. Trigonometry would do for a true circle, but
- *  on an ellipse the tightest neighbours are not evenly spaced, and this way
- *  the same code is correct at any count and any shape of screen.
- * ================================================================ */
-
-/** the centres for a given tile size — bigger tiles mean a tighter ellipse */
-function ringCentres(count, width, height, s) {
-  const rx = Math.max(1, (width - s) / 2);
-  const ry = Math.max(1, (height - s) / 2);
-  const out = [];
-  for (let i = 0; i < count; i++) {
-    // from the top, clockwise, so part I is where a listener looks first
-    const a = -Math.PI / 2 + (2 * Math.PI * i) / count;
-    out.push({ cx: width / 2 + rx * Math.cos(a), cy: height / 2 + ry * Math.sin(a) });
-  }
-  return out;
-}
-
-/**
- * Can tiles this big sit on the ring without touching?
- *
- * Two axis-aligned squares of side s miss each other when they are clear on
- * EITHER axis — side by side is fine, stacked is fine, and only both at once
- * is an overlap. The obvious test, "keep the centres s apart", is the wrong
- * one: it is too weak on the diagonal, where two squares s apart do overlap,
- * and much too strong everywhere else, which is why a first pass at this put
- * nine players in 146px boxes on a 1600x760 wall when they had room
- * for 191.
- *
- * Every pair, not just neighbours: on a wide ellipse the closest pair is not
- * always the next one round.
- */
-function ringFits(count, width, height, s) {
-  const c = ringCentres(count, width, height, s);
-  for (let i = 0; i < count; i++) {
-    for (let j = i + 1; j < count; j++) {
-      const dx = Math.abs(c[i].cx - c[j].cx);
-      const dy = Math.abs(c[i].cy - c[j].cy);
-      if (Math.max(dx, dy) < s) return false;
-    }
-  }
-  return true;
-}
-
-function placeRing(count, width, height) {
-  if (count === 1) {
-    const s = Math.min(width, height) * 0.82;
-    return [{ x: (width - s) / 2, y: (height - s) / 2, w: s, h: s }];
-  }
-  // Making the tiles bigger also pulls the ellipse inwards, so "does it fit"
-  // only ever goes from true to false as s grows — which is exactly what
-  // bisection needs. Thirty halvings settle it to well under a pixel, and
-  // unlike iterating towards a fixed point it cannot oscillate.
-  let lo = 8;
-  let hi = Math.min(width, height) * 0.9;
-  for (let pass = 0; pass < 30; pass++) {
-    const mid = (lo + hi) / 2;
-    if (ringFits(count, width, height, mid)) lo = mid;
-    else hi = mid;
-  }
-  const s = lo;
-  return ringCentres(count, width, height, s).map((p) => ({
-    x: p.cx - s / 2,
-    y: p.cy - s / 2,
-    w: s,
-    h: s,
-  }));
-}
-
-/** the grid: whichever column count wastes the least of the wall */
-function placeGrid(count, width, height) {
-  const { cols } = bestGrid(count, width, height);
-  const rows = Math.ceil(count / cols);
-  const cellW = width / cols;
-  const cellH = height / rows;
-  const out = [];
-  for (let index = 0; index < count; index++) {
-    const col = index % cols;
-    const row = Math.floor(index / cols);
-    // the last row is centred if it is short, so a five-player grid is not
-    // left-heavy on a wall
-    const inRow = Math.min(cols, count - row * cols);
-    const indent = ((cols - inRow) * cellW) / 2;
-    out.push({ x: indent + col * cellW, y: row * cellH, w: cellW, h: cellH });
-  }
-  return out;
-}
-
 const LAYOUTS = ["grid", "ring"];
 let layoutMode = (() => {
   const asked = new URLSearchParams(location.search).get("layout");
@@ -710,46 +586,6 @@ function layout() {
   });
   placeSubtitle(inRing ? ringHole(spots, width, height) : null);
   paintWho();
-}
-
-/* ================================================================ *
- *  the words in the middle of a ring
- *
- *  A ring is a frame with nothing in it, and the bottom strip was costing
- *  every tract on it 15vh to put the words somewhere else. So in a ring
- *  they go in the hole, and the wall keeps its full height. Under three
- *  players there is no hole — one sits in the middle, two stack — so the
- *  words stay along the bottom.
- * ================================================================ */
-const RING_HOLE_FROM = 3;
-
-/**
- * The biggest rectangle centred on the wall that no tile touches. Tried at
- * forty heights: at each, the tiles level with that band are the ones that
- * limit its width, and the widest-by-area wins. Centred because a ring is
- * symmetric and the words should read as being in it, not merely beside it.
- */
-function ringHole(spots, width, height) {
-  const cx = width / 2;
-  const cy = height / 2;
-  let best = null;
-  for (let k = 1; k <= 40; k++) {
-    const hh = (k / 40) * (height / 2);
-    let hw = width / 2;
-    for (const s of spots) {
-      if (s.y < cy + hh && s.y + s.h > cy - hh) {
-        const gap = s.x + s.w <= cx ? cx - (s.x + s.w) : s.x >= cx ? s.x - cx : 0;
-        hw = Math.min(hw, gap);
-      }
-    }
-    if (hw <= 0) continue;
-    if (!best || hw * hh > best.hw * best.hh) best = { hw, hh };
-  }
-  if (!best) return null;
-  // air, so a letter is never against a tile's edge
-  const hw = best.hw * 0.9;
-  const hh = best.hh * 0.9;
-  return { x: cx - hw, y: cy - hh, w: 2 * hw, h: 2 * hh };
 }
 
 let hole = null;
@@ -861,30 +697,9 @@ function applyLook(block) {
   }
 }
 
-/**
- * Where one player's camera is pointed: the angle saved for their part, the
- * parallax of where their tile sits on the wall, and the shuffle on top of
- * both. The shuffle is the only part of this that is
- * not written down, and it lasts exactly until the next phrase's angles
- * arrive — which is what makes it safe to press mid-piece.
- *
- * The shuffle is keyed by PART, not machine: every player on a part swings
- * to the same new angle and only the parallax tells them apart, so the wall
- * still reads as four parts rather than nine strangers. A part with no yaw
- * saved has nothing to nudge, so the shuffle picks its yaw outright.
- */
+/** where this player's camera is pointed: see aimAt in look.js */
 function aimFor(info) {
-  const saved = angles[String(info.part)] || {};
-  const seat = parallaxOffset(info.where, spread);
-  const stir = shuffleOffset("part " + info.part, shuffle);
-  // last, so neither a shuffle's nudge nor a wide spread can swing a tile
-  // round behind the tongue — see VIEW in look.js
-  return inView({
-    yaw:
-      (saved.yaw !== undefined ? saved.yaw + stir.yaw : shuffle ? stir.anyYaw : look.YAW) + seat.yaw,
-    pitch: (saved.pitch === undefined ? look.PITCH : saved.pitch) + seat.pitch + stir.pitch,
-    perspective: saved.perspective === undefined ? look.PERSPECTIVE : saved.perspective,
-  });
+  return aimAt(info, { look, angles, spread, shuffle });
 }
 
 function pointAt(index, diameter, frame, time) {

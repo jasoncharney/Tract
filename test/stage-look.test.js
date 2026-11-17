@@ -10,6 +10,8 @@
        and a saved one takes the shuffle back.
     5. A projector that reloads mid-piece comes back to the right look.
     6. The stage page has no keys left on it.
+    7. The tuning page draws, reads look.json back to exactly what is on
+       disk, and carries the words cues.json gives the phrase.
 */
 const { suite } = require("./lib/harness");
 
@@ -342,4 +344,42 @@ suite("the look, moved to the desk", async (t) => {
     return { changed: document.body.innerHTML.length !== before };
   });
   t.check(!keys.changed, "the old keys do nothing", `changed: ${keys.changed}`);
+
+  t.section("7 — the tuning page");
+  const tune = await t.browser.newPage({ viewport: { width: 1400, height: 800 } });
+  const tuneErrors = [];
+  tune.on("pageerror", (e) => tuneErrors.push(e.message));
+  await tune.goto(`${t.base}/scan/tune.html`, { waitUntil: "load" });
+  await tune.waitForFunction(() => window.tune && window.tune.text, null, { timeout: 20000 });
+  await t.sleep(1500);
+  const seen = await tune.evaluate(() => ({ build: window.tune.BUILD, ink: window.tune.ink(), text: window.tune.text, words: window.tune.words }));
+  const stageBuild = await stage.evaluate(() => window.stage.BUILD);
+  t.check(tuneErrors.length === 0, "it loads without an error", tuneErrors.join("; "));
+  t.check(seen.build === stageBuild, "and is the same build as the stage", `${seen.build} against ${stageBuild}`);
+  t.check(
+    seen.ink.length === 9 && seen.ink.every((n) => n > 500),
+    "all nine seats draw",
+    `lit pixels ${seen.ink.join(", ")}`
+  );
+  /* untouched, what it would write is what is there: a write of an
+     unchanged page moves nothing, whatever look.json holds today. Knobs the
+     file predates come in at look.js's defaults, so those are the one thing
+     allowed to differ. */
+  const fs = require("fs");
+  const file = (name) => JSON.parse(fs.readFileSync(require("path").join(t.ROOT, "scan", name), "utf8"));
+  const onDisk = file("look.json");
+  const ours = JSON.parse(seen.text);
+  const lookSame = Object.keys(onDisk.look).every((k) => ours.look[k] === onDisk.look[k]);
+  t.check(
+    lookSame && JSON.stringify(ours.phrases) === JSON.stringify(onDisk.phrases),
+    "it reads look.json back as it is on disk",
+    `${Object.keys(onDisk.look).length} knobs, ${Object.keys(onDisk.phrases || {}).length} phrases`
+  );
+  const cues = file("cues.json").cues;
+  const first = cues.find((c) => Number(c.phrase) === 1 && c.stage && c.stage.text);
+  t.check(
+    !!first && seen.words === first.stage.text,
+    "and shows phrase 1's words from cues.json",
+    `"${seen.words}"`
+  );
 });
