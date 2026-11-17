@@ -82,15 +82,20 @@ export function parallaxOffset(where, spread) {
  * A shuffle is a seed, not a list of angles. The desk sends one number and
  * every wall derives the same offsets from it, which means a projector that
  * reconnects mid-piece lands on the same angles as the one that did not.
+ * `who` is the part, so players on one part share their offset.
  */
-export function shuffleOffset(machine, seed) {
+export function shuffleOffset(who, seed) {
   if (!seed) return { yaw: 0, pitch: 0 };
   let h = 2166136261 ^ (seed >>> 0);
-  for (let i = 0; i < String(machine).length; i++) {
-    h ^= String(machine).charCodeAt(i);
+  for (let i = 0; i < String(who).length; i++) {
+    h ^= String(who).charCodeAt(i);
     h = Math.imul(h, 16777619);
   }
   const a = ((h >>> 0) % 4096) / 4096 - 0.5;
   const b = (((h >>> 7) >>> 0) % 4096) / 4096 - 0.5;
-  return { yaw: a * 1.5, pitch: b * 0.7 };
+  /* `yaw` and `pitch` are a nudge off an angle someone saved. `anyYaw` is for
+     a part with nothing saved: anywhere across the YAW knob, so seen head on
+     the tongue can be looking either way, not just round from the side. */
+  const [, , lo, hi] = KNOBS.find((k) => k[0] === "YAW");
+  return { yaw: a * 1.5, pitch: b * 0.7, anyYaw: lo + (a + 0.5) * (hi - lo) };
 }

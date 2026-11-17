@@ -6,7 +6,8 @@
     2. The desk can switch it, and the wall actually draws something else.
     3. Angles saved per part per phrase reach the wall, and two players on one
        part do NOT end up identical.
-    4. Shuffle moves them, and the next phrase takes the shuffle back.
+    4. Shuffle moves them, per part; an unsaved phrase shuffles by itself,
+       and a saved one takes the shuffle back.
     5. A projector that reloads mid-piece comes back to the right look.
     6. The stage page has no keys left on it.
 */
@@ -126,36 +127,49 @@ suite("the look, moved to the desk", async (t) => {
     null,
     { timeout: 20000 }
   );
+  /*
+    The shuffle is per part, so both part II players ride one random draw,
+    and a draw near zero moved nothing — about one run in eight. So the seed
+    is chosen here, read off look.js, as one that moves part II by at least
+    0.5, and the desk's Math.random is held to it for the press.
+  */
+  const { shuffleOffset } = await import(
+    require("url").pathToFileURL(require("path").join(__dirname, "../scan/src/look.js")).href
+  );
+  let r = 0.001;
+  while (Math.abs(shuffleOffset("part 2", (r * 0xffffffff) >>> 0).yaw) < 0.5) r += 0.001;
+  const nudge = shuffleOffset("part 2", (r * 0xffffffff) >>> 0).yaw;
   const before = (await wall()).aims;
-  // watch one camera from just before the press: where it is drawn from, not
-  // where it is aimed — the aim is meant to jump, the drawing is not
+  // watch a part II camera from just before the press: where it is drawn
+  // from, not where it is aimed — the aim is meant to jump, the drawing is not
   const watching = stage.evaluate(async () => {
     const out = [];
     const t0 = performance.now();
     while (performance.now() - t0 < 2500) {
-      const f = window.stage.frames.find((x) => x.cam);
+      const f = window.stage.frames.find((x) => x.cam && String(x.part) === "2");
       if (f) out.push(f.cam.yaw);
       await new Promise((r) => requestAnimationFrame(r));
     }
     return out;
   });
   await t.sleep(200);
-  await desk.click("#shuffleBtn");
+  await desk.evaluate((r) => {
+    const was = Math.random;
+    Math.random = () => r;
+    document.getElementById("shuffleBtn").click();
+    Math.random = was;
+  }, r);
   const path = await watching;
   const after = (await wall()).aims;
-  const n = Object.keys(before).length;
-  /*
-    Not "every camera moved by at least x": the offsets are drawn at random,
-    so one of them being near zero is the shuffle working, not failing, and a
-    per-camera threshold makes this flaky about one run in eight. The total
-    movement across the wall is the thing that cannot happen by chance.
-    "0 of 0" is not a pass either — an empty wall would sail through it.
-  */
-  const total = Object.keys(before).reduce(
-    (sum, k) => sum + (after[k] ? Math.abs(after[k].yaw - before[k].yaw) : 0),
-    0
+  // "0 of 0" is not a pass — an empty wall would sail through it
+  const moved = Object.keys(before)
+    .filter((k) => before[k].part === "2" && after[k])
+    .map((k) => after[k].yaw - before[k].yaw);
+  t.check(
+    moved.length === 2 && moved.every((d) => Math.abs(d - nudge) < 1e-9),
+    "the cameras moved by the shuffle's nudge",
+    `part II moved ${moved.map((d) => d.toFixed(3)).join(", ")}, nudge ${nudge.toFixed(3)}`
   );
-  t.check(n > 0 && total > 0.2, "the cameras scattered", `${total.toFixed(2)} of yaw across ${n} of them`);
   /*
     Eased, not cut. Before the wall stopped resetting on every look, the
     shuffle's own message threw each camera away and the next frame drew it
@@ -171,11 +185,59 @@ suite("the look, moved to the desk", async (t) => {
   );
   const seed = await stage.evaluate(() => window.stage.look.shuffle);
   t.check(seed !== 0, "the wall is holding a shuffle", `seed ${seed}`);
+  /*
+    A shuffle is per part: the two part II players move by the same amount,
+    so the gap the parallax put between them is the gap that is left.
+  */
+  const gap = (aims) => {
+    const two = Object.values(aims).filter((v) => v.part === "2");
+    return two.length === 2 ? two[0].yaw - two[1].yaw : NaN;
+  };
+  t.check(
+    Math.abs(gap(after) - gap(before)) < 1e-9,
+    "and one part moves as one",
+    `part II gap ${gap(before).toFixed(4)} before, ${gap(after).toFixed(4)} after`
+  );
 
+  // phrase 3 has nothing in look.json, so it shuffles by itself
   await desk.evaluate(() => window.conduct.lookAtPhrase(3));
   await t.sleep(1200);
+  const seedUnsaved = await stage.evaluate(() => window.stage.look.shuffle);
+  t.check(
+    seedUnsaved !== 0 && seedUnsaved !== seed,
+    "a phrase with no saved angles gets a shuffle of its own",
+    `seed ${seedUnsaved}, was ${seed}`
+  );
+
+  /*
+    And with nothing saved to nudge, the shuffle picks the yaw outright,
+    from the whole knob: head on, the tongue looks either way. Read off
+    look.js itself, so the wall is checked against the formula and the
+    formula against the range.
+  */
+  const unsavedAims = Object.values((await wall()).aims).filter((v) => v.part === "2");
+  const picked = shuffleOffset("part 2", seedUnsaved).anyYaw;
+  const off = unsavedAims.map((v) => v.yaw - picked);
+  t.check(
+    unsavedAims.length === 2 && off.every((d) => Math.abs(d) <= 0.22 + 1e-9),
+    "an unsaved part is aimed at the shuffle's own yaw, give or take its seat",
+    `picked ${picked.toFixed(3)}, seats off by ${off.map((d) => d.toFixed(3)).join(", ")}`
+  );
+  const yaws = [];
+  for (let s = 1; s <= 400; s++) yaws.push(shuffleOffset("part 2", s * 2654435761 >>> 0).anyYaw);
+  const lo = Math.min(...yaws);
+  const hi = Math.max(...yaws);
+  t.check(
+    lo < -1.3 && hi > 1.3 && lo >= -1.5 && hi <= 1.5,
+    "and over many shuffles it looks both left and right",
+    `400 seeds: ${lo.toFixed(3)} to ${hi.toFixed(3)}`
+  );
+
+  // phrase 1 has angles saved (section 3 put them there), so it lets go
+  await desk.evaluate(() => window.conduct.lookAtPhrase(1));
+  await t.sleep(1200);
   const seedAfter = await stage.evaluate(() => window.stage.look.shuffle);
-  t.check(seedAfter === 0, "and the next phrase lets it go", `seed ${seedAfter}`);
+  t.check(seedAfter === 0, "and a saved phrase lets it go", `seed ${seedAfter}`);
 
   t.section("5 — a projector that reloads comes back right");
   await stage.reload({ waitUntil: "load" });

@@ -30,7 +30,7 @@
   playheads along the bottom of the screen.
 */
 
-const BUILD = "2026-11-16c";
+const BUILD = "2026-11-16e";
 import { KNOBS, ANGLES, defaults as lookDefaults } from "./look.js";
 
 const $ = (id) => document.getElementById(id);
@@ -387,6 +387,8 @@ setInterval(paintStrips, 60);
 
 async function loadAll() {
   await loadLook();
+  // the desk opens on phrase 1 without passing through lookAtPhrase
+  if (unsaved(lookPhrase)) shuffleSeed = freshSeed();
   buildLookPanel();
   try {
     const response = await fetch("/scan/parts.json", { cache: "no-store" });
@@ -1151,9 +1153,9 @@ loadAll();
  *                players' presets are: per phrase, written to the same file.
  *
  *  Angles are per PART because nine players share four parts; each seat is
- *  nudged off its part's angle by a fixed amount of its own, worked out on
- *  the wall from the machine's name, so two players on one part are never
- *  identical and never change places between nights.
+ *  nudged off its part's angle by where its tile sits on the wall, so two
+ *  players on one part are never identical. A shuffle is per part too, so
+ *  they stay recognisably the same part after one.
  * ================================================================ */
 
 const PART_NAMES = ["I", "II", "III", "IV"];
@@ -1213,18 +1215,30 @@ function sendLook(extra) {
  * — and a shuffle, which is a thing the conductor asked for a moment ago
  * rather than a thing the piece says, is let go of. That is what makes the
  * shuffle button safe to press mid-piece: the next phrase puts it right.
+ *
+ * A phrase look.json says nothing about is shuffled instead: otherwise every
+ * part sits on the look's own camera and the wall stops showing which tile is
+ * singing with which. The seed is fresh each time, and the heartbeat repeats
+ * it, so a projector that reloads lands on the same angles.
  */
 function lookAtPhrase(phrase) {
   const n = Number(phrase) || 0;
   if (!n || n === lookPhrase) return;
   lookPhrase = n;
-  shuffleSeed = 0;
+  shuffleSeed = unsaved(n) ? freshSeed() : 0;
   paintLook();
   sendLook();
 }
 
+/** nothing in look.json for this phrase, for any part */
+function unsaved(phrase) {
+  return Object.keys(anglesFor(phrase)).length === 0;
+}
+
+const freshSeed = () => ((Math.random() * 0xffffffff) >>> 0) || 1;
+
 function shuffleAngles() {
-  shuffleSeed = (Math.random() * 0xffffffff) >>> 0;
+  shuffleSeed = freshSeed();
   sendLook();
   paintLook();
 }

@@ -12,7 +12,7 @@
   player is playing, not an impression of it.
 */
 
-const BUILD = "2026-11-16c";
+const BUILD = "2026-11-16e";
 const $ = (id) => document.getElementById(id);
 
 /* ---- upstream's numbers, so the shape is the shape ---- */
@@ -867,13 +867,19 @@ function applyLook(block) {
  * both. The shuffle is the only part of this that is
  * not written down, and it lasts exactly until the next phrase's angles
  * arrive — which is what makes it safe to press mid-piece.
+ *
+ * The shuffle is keyed by PART, not machine: every player on a part swings
+ * to the same new angle and only the parallax tells them apart, so the wall
+ * still reads as four parts rather than nine strangers. A part with no yaw
+ * saved has nothing to nudge, so the shuffle picks its yaw outright.
  */
 function aimFor(info) {
   const saved = angles[String(info.part)] || {};
   const seat = parallaxOffset(info.where, spread);
-  const stir = shuffleOffset(info.machine || info.part, shuffle);
+  const stir = shuffleOffset("part " + info.part, shuffle);
   return {
-    yaw: (saved.yaw === undefined ? look.YAW : saved.yaw) + seat.yaw + stir.yaw,
+    yaw:
+      (saved.yaw !== undefined ? saved.yaw + stir.yaw : shuffle ? stir.anyYaw : look.YAW) + seat.yaw,
     pitch: (saved.pitch === undefined ? look.PITCH : saved.pitch) + seat.pitch + stir.pitch,
     perspective: saved.perspective === undefined ? look.PERSPECTIVE : saved.perspective,
   };
