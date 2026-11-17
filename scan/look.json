@@ -4,35 +4,40 @@
     "renderer": "wire",
     "surface": "lines",
     "SHEET": 42,
-    "RIBS": 5,
-    "GROOVE": 16,
-    "HOLD": 0.3,
-    "GAIN": 7,
+    "RIBS": 9,
+    "GROOVE": 21,
+    "HOLD": 1.15,
+    "GAIN": 6,
     "GHOST": 0.3,
     "SHIMMER": 2.2,
-    "WOBBLE": 1,
-    "WOBHZ": 8,
+    "WOBBLE": 1.7,
+    "WOBHZ": 8.5,
     "RIBW": 1.4,
-    "EDGEW": 1,
-    "GHOSTW": 1,
+    "EDGEW": 2.3,
+    "GHOSTW": 2.1,
     "BYWIDTH": 0.75,
-    "IPA": 0.1,
-    "IPAEASE": 0.12,
-    "IPASPACE": 0.5,
-    "IPAMORPH": 0.22,
+    "GLOW": 0.6,
+    "GLOWR": 0.025,
+    "ROOF": 0.33,
+    "ROOFTINT": 0.1,
+    "ROOFW": 2.5,
+    "IPA": 0.115,
+    "IPAEASE": 0.43,
+    "IPASPACE": 0.2,
+    "IPAMORPH": 0.08,
     "IPAFADE": 0.3,
-    "EASE": 0.22,
-    "CAMEASE": 0.02,
+    "EASE": 0.04,
+    "CAMEASE": 0.062,
     "FILL": 1,
     "SMOOTH": 3,
-    "THICK": 9,
+    "THICK": 9.5,
     "YAW": -1.5,
     "PITCH": 0,
     "PERSPECTIVE": 1500
   },
   "spread": {
-    "yaw": 0.22,
-    "pitch": 0.1
+    "yaw": 0.81,
+    "pitch": 0.36
   },
   "phrases": {
     "1": {
@@ -51,18 +56,128 @@
     },
     "2": {
       "1": {
-        "yaw": -0.26
+        "yaw": -0.26,
+        "pitch": 0.8,
+        "perspective": 6000
       },
       "2": {
-        "yaw": -0.26
+        "yaw": -0.26,
+        "pitch": 0.8,
+        "perspective": 6000
       },
       "3": {
-        "yaw": 0.26
+        "yaw": -0.53,
+        "pitch": 0.8,
+        "perspective": 6000
       },
       "4": {
-        "yaw": 0.26
+        "yaw": 0.26,
+        "pitch": 0.8,
+        "perspective": 6000
       }
-      
+    },
+    "3": {
+      "1": {
+        "yaw": -1.5,
+        "perspective": 6000
+      },
+      "2": {
+        "yaw": -1.5,
+        "perspective": 6000
+      },
+      "3": {
+        "yaw": -1.5,
+        "perspective": 6000
+      },
+      "4": {
+        "yaw": -1.5,
+        "perspective": 6000
+      },
+      "spread": {
+        "yaw": 0.77,
+        "pitch": 0.08
+      }
+    },
+    "4": {
+      "1": {
+        "pitch": 0.8,
+        "perspective": 400
+      },
+      "2": {
+        "pitch": 0.8,
+        "perspective": 400
+      },
+      "3": {
+        "pitch": 0.8,
+        "perspective": 400
+      },
+      "4": {
+        "pitch": 0.8,
+        "perspective": 6000
+      },
+      "spread": {
+        "yaw": 0,
+        "pitch": 0
+      }
+    },
+    "5": {
+      "1": {
+        "yaw": -0.66,
+        "pitch": 0.51
+      },
+      "2": {
+        "yaw": -1.01,
+        "pitch": 0.34
+      },
+      "3": {
+        "yaw": -0.36,
+        "pitch": 0.61
+      },
+      "4": {
+        "yaw": -1.5,
+        "pitch": 0.35,
+        "perspective": 1400
+      },
+      "spread": {
+        "yaw": 0.34,
+        "pitch": 0.41
+      }
+    },
+    "7": {
+      "1": {
+        "yaw": -1.48,
+        "pitch": 0.12
+      },
+      "2": {
+        "yaw": -0.5,
+        "pitch": 0.26
+      },
+      "spread": {
+        "yaw": 1,
+        "pitch": 0.5
+      }
+    },
+    "8": {
+      "1": {
+        "pitch": 0.8,
+        "perspective": 400
+      },
+      "2": {
+        "pitch": 0.8,
+        "perspective": 400
+      },
+      "3": {
+        "pitch": 0.8,
+        "perspective": 400
+      },
+      "4": {
+        "pitch": 0.8,
+        "perspective": 400
+      },
+      "spread": {
+        "yaw": 0,
+        "pitch": 0
+      }
     }
   }
 }
