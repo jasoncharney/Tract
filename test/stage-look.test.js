@@ -94,8 +94,8 @@ suite("the look, moved to the desk", async (t) => {
 
   t.section("3 — angles are per part, seats are not identical");
   await desk.evaluate(() => {
-    window.conduct.setAngle(2, "YAW", 0.9);
-    window.conduct.setAngle(2, "PITCH", -0.4);
+    window.conduct.setAngle(2, "YAW", -0.9);
+    window.conduct.setAngle(2, "PITCH", 0.4);
   });
   await t.sleep(1500);
   w = await wall();
@@ -104,9 +104,9 @@ suite("the look, moved to the desk", async (t) => {
   if (two.length === 2) {
     const [p, q] = two.map(([, v]) => v);
     t.check(
-      Math.abs(p.yaw - 0.9) < 0.45 && Math.abs(q.yaw - 0.9) < 0.45,
+      Math.abs(p.yaw + 0.9) < 0.45 && Math.abs(q.yaw + 0.9) < 0.45,
       "both are aimed near the angle saved for their part",
-      `yaws ${p.yaw.toFixed(2)}, ${q.yaw.toFixed(2)} against 0.9`
+      `yaws ${p.yaw.toFixed(2)}, ${q.yaw.toFixed(2)} against -0.9`
     );
     t.check(
       Math.abs(p.yaw - q.yaw) > 0.01,
@@ -115,8 +115,46 @@ suite("the look, moved to the desk", async (t) => {
     );
   }
 
+  /*
+    A phrase can carry its own spread beside its parts. The two part II
+    seats sit a fixed distance apart across the wall, so their yaws are apart
+    by exactly that distance times the spread: tripling it triples the gap.
+    Ratios rather than numbers, because the piece's own spread is whatever
+    look.json says today. Taken back off afterwards, because everything below
+    is measured against the piece's spread.
+  */
+  if (two.length === 2) {
+    const gapAt = async () => {
+      const both = Object.values((await wall()).aims || {}).filter((v) => v.part === "2");
+      return both.length === 2 ? Math.abs(both[0].yaw - both[1].yaw) : NaN;
+    };
+    const base = await gapAt();
+    const at = async (yaw) => {
+      await desk.evaluate((yaw) => {
+        window.conduct.look.phrases["1"].spread = { yaw };
+        window.conduct.setAngle(2, "YAW", -0.9); // anything that sends the look
+      }, yaw);
+      await t.sleep(1200);
+      return gapAt();
+    };
+    const narrow = await at(0.1);
+    const wide = await at(0.3);
+    await desk.evaluate(() => {
+      delete window.conduct.look.phrases["1"].spread;
+      window.conduct.setAngle(2, "YAW", -0.9);
+    });
+    await t.sleep(1200);
+    const back = await gapAt();
+    t.check(
+      narrow > 0 && Math.abs(wide / narrow - 3) < 1e-6 && Math.abs(back - base) < 1e-9,
+      "a phrase's own spread replaces the piece's, and only while it is there",
+      `part II gap ${narrow.toFixed(4)} at the phrase's 0.1, ${wide.toFixed(4)} at 0.3, ` +
+        `${base.toFixed(4)} at the piece's before and ${back.toFixed(4)} once removed`
+    );
+  }
+
   t.section("4 — shuffle, and the next phrase taking it back");
-  // let section 3's swing finish first: from phrase 1's yaw of -1.5 to 0.9 is
+  // let section 3's swing finish first: from phrase 1's yaw of -1.5 to -0.9 is
   // further than CAMEASE covers in 1.5s, and a camera still on its way there
   // when the shuffle lands is two motions, not one
   await stage.waitForFunction(
@@ -133,7 +171,7 @@ suite("the look, moved to the desk", async (t) => {
     is chosen here, read off look.js, as one that moves part II by at least
     0.5, and the desk's Math.random is held to it for the press.
   */
-  const { shuffleOffset } = await import(
+  const { shuffleOffset, KNOBS, VIEW } = await import(
     require("url").pathToFileURL(require("path").join(__dirname, "../scan/src/look.js")).href
   );
   let r = 0.001;
@@ -199,8 +237,18 @@ suite("the look, moved to the desk", async (t) => {
     `part II gap ${gap(before).toFixed(4)} before, ${gap(after).toFixed(4)} after`
   );
 
-  // phrase 3 has nothing in look.json, so it shuffles by itself
-  await desk.evaluate(() => window.conduct.lookAtPhrase(3));
+  // a phrase with nothing in look.json shuffles by itself — whichever one
+  // that is today, since look.json is being tuned
+  const bare = await desk.evaluate(() => {
+    const all = window.conduct.look.phrases || {};
+    for (let n = 2; n <= 8; n++) {
+      const p = all[String(n)] || {};
+      if (!["1", "2", "3", "4"].some((k) => p[k])) return n;
+    }
+    return 0;
+  });
+  t.check(bare > 0, "there is a phrase with no angles saved to try it on", `phrase ${bare}`);
+  await desk.evaluate((n) => window.conduct.lookAtPhrase(n), bare);
   await t.sleep(1200);
   const seedUnsaved = await stage.evaluate(() => window.stage.look.shuffle);
   t.check(
@@ -211,15 +259,16 @@ suite("the look, moved to the desk", async (t) => {
 
   /*
     And with nothing saved to nudge, the shuffle picks the yaw outright,
-    from the whole knob: head on, the tongue looks either way. Read off
-    look.js itself, so the wall is checked against the formula and the
-    formula against the range.
+    from the whole knob — which stops short of the throat end, so it is
+    never from behind the tongue. Read off look.js itself, so the wall is
+    checked against the formula and the formula against the range.
   */
   const unsavedAims = Object.values((await wall()).aims).filter((v) => v.part === "2");
   const picked = shuffleOffset("part 2", seedUnsaved).anyYaw;
+  const wallSpread = await stage.evaluate(() => window.stage.look.spread);
   const off = unsavedAims.map((v) => v.yaw - picked);
   t.check(
-    unsavedAims.length === 2 && off.every((d) => Math.abs(d) <= 0.22 + 1e-9),
+    unsavedAims.length === 2 && off.every((d) => Math.abs(d) <= wallSpread.yaw + 1e-9),
     "an unsaved part is aimed at the shuffle's own yaw, give or take its seat",
     `picked ${picked.toFixed(3)}, seats off by ${off.map((d) => d.toFixed(3)).join(", ")}`
   );
@@ -227,10 +276,11 @@ suite("the look, moved to the desk", async (t) => {
   for (let s = 1; s <= 400; s++) yaws.push(shuffleOffset("part 2", s * 2654435761 >>> 0).anyYaw);
   const lo = Math.min(...yaws);
   const hi = Math.max(...yaws);
+  const [, , yawLo, yawHi] = KNOBS.find((k) => k[0] === "YAW");
   t.check(
-    lo < -1.3 && hi > 1.3 && lo >= -1.5 && hi <= 1.5,
-    "and over many shuffles it looks both left and right",
-    `400 seeds: ${lo.toFixed(3)} to ${hi.toFixed(3)}`
+    lo < yawLo + 0.1 && hi > yawHi - 0.1 && lo >= yawLo && hi <= yawHi,
+    "and over many shuffles it covers the whole yaw knob and no more",
+    `400 seeds: ${lo.toFixed(3)} to ${hi.toFixed(3)}, knob ${yawLo} to ${yawHi}`
   );
 
   // phrase 1 has angles saved (section 3 put them there), so it lets go
@@ -238,6 +288,42 @@ suite("the look, moved to the desk", async (t) => {
   await t.sleep(1200);
   const seedAfter = await stage.evaluate(() => window.stage.look.shuffle);
   t.check(seedAfter === 0, "and a saved phrase lets it go", `seed ${seedAfter}`);
+
+  /*
+    Never from behind the tongue, however the angles are arrived at. Part II
+    is saved at the very edge of both knobs and given a shuffle that pushes
+    further — toward the throat and from below — which without VIEW would
+    aim past both limits. The phrase's spread is set to nothing for it, so
+    neither seat's parallax can pull it back inside on its own.
+  */
+  const [, , pitchLo] = KNOBS.find((k) => k[0] === "PITCH");
+  let rb = 0.001;
+  const pushes = (x) => {
+    const o = shuffleOffset("part 2", (x * 0xffffffff) >>> 0);
+    return o.yaw > VIEW.yawMax - yawHi + 0.05 && o.pitch < VIEW.pitchMin - pitchLo - 0.05;
+  };
+  while (!pushes(rb)) rb += 0.001;
+  const push = shuffleOffset("part 2", (rb * 0xffffffff) >>> 0);
+  await desk.evaluate(([yaw, pitch]) => {
+    window.conduct.look.phrases["1"].spread = { yaw: 0, pitch: 0 };
+    window.conduct.setAngle(2, "YAW", yaw);
+    window.conduct.setAngle(2, "PITCH", pitch);
+  }, [yawHi, pitchLo]);
+  await desk.evaluate((r) => {
+    const was = Math.random;
+    Math.random = () => r;
+    document.getElementById("shuffleBtn").click();
+    Math.random = was;
+  }, rb);
+  await t.sleep(1200);
+  const pushed = Object.values((await wall()).aims).filter((v) => v.part === "2");
+  t.check(
+    pushed.length === 2 &&
+      pushed.every((v) => Math.abs(v.yaw - VIEW.yawMax) < 1e-9 && Math.abs(v.pitch - VIEW.pitchMin) < 1e-9),
+    "a shuffle past the edge of the knobs stops at the limit, not behind the tongue",
+    `unclamped would be yaw ${(yawHi + push.yaw).toFixed(3)}, pitch ${(pitchLo + push.pitch).toFixed(3)} before the seat; ` +
+      `aimed ${pushed.map((v) => `${v.yaw.toFixed(3)}/${v.pitch.toFixed(3)}`).join(", ")}`
+  );
 
   t.section("5 — a projector that reloads comes back right");
   await stage.reload({ waitUntil: "load" });

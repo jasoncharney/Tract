@@ -37,6 +37,11 @@ export const KNOBS = [
   ["EDGEW", 1, 0.1, 12, 0.1, "line weight: the lines along its length"],
   ["GHOSTW", 1, 0.1, 12, 0.1, "line weight: the floor through the whole tract"],
   ["BYWIDTH", 0.75, 0, 1, 0.01, "how much of the fade is weight rather than opacity"],
+  ["GLOW", 0.6, 0, 2, 0.05, "a soft light behind the tract (0 is the bare wire)"],
+  ["GLOWR", 0.025, 0.005, 0.1, 0.005, "how far the glow spreads, as a share of the tile"],
+  ["ROOF", 0.5, 0, 1, 0.01, "how strongly the roof of the mouth is drawn"],
+  ["ROOFTINT", 0.35, 0, 1, 0.01, "the roof's colour, from the dim grey (0) to the bright edge (1)"],
+  ["ROOFW", 1.4, 0.1, 6, 0.1, "line weight: the roof"],
   ["IPA", 0.1, 0, 0.3, 0.005, "the phoneme at the mouth, as a share of the tile (0 is off)"],
   ["IPAEASE", 0.12, 0.02, 1, 0.01, "how hard the phoneme follows the mouth"],
   ["IPASPACE", 0.5, 0, 2, 0.05, "how far the vowel space moves the phoneme"],
@@ -47,10 +52,34 @@ export const KNOBS = [
   ["FILL", 1, 0, 1, 0.01, "how solid the filled surface is"],
   ["SMOOTH", 3, 1, 8, 1, "samples per section on the surface modes"],
   ["THICK", 9, 0, 30, 0.5, "how thick the tongue is (0 is a flat plane)"],
-  ["YAW", -1.5, -1.5, 1.5, 0.01, "how far round you stand"],
-  ["PITCH", 0, -0.8, 0.8, 0.01, "and how far above"],
+  ["YAW", -1.5, -1.5, 0.3, 0.01, "how far round you stand (positive swings toward the throat)"],
+  ["PITCH", 0, 0, 0.8, 0.01, "and how far above (never below)"],
   ["PERSPECTIVE", 1500, 400, 6000, 50, "a little, not a lot"],
 ];
+
+/*
+  Never from behind the tongue. Positive yaw swings the camera round to the
+  throat end — at 1.5 it looks down the tract from behind the root of the
+  tongue toward the lips — and negative pitch puts it underneath, looking up
+  at the underside. Both read as the back of the thing rather than the
+  thing. Chosen by eye from a 5x5 grid of yaw against pitch on the recorded
+  phrase (experiments/tract-3d), not computed.
+
+  The knobs stop short of these limits by the default spread, 0.22 and 0.1,
+  so a part saved at the edge of a slider still has its seats fanned out by
+  the parallax. VIEW is the hard limit on the angle a tile is finally
+  aimed at, after parallax and shuffle, which is the only place a shuffle's
+  nudge or a wide spread can be caught.
+*/
+export const VIEW = { yawMax: 0.5, pitchMin: -0.1 };
+
+/** an aim with the back of the tongue kept out of it */
+export function inView(aim) {
+  return Object.assign({}, aim, {
+    yaw: Math.min(VIEW.yawMax, aim.yaw),
+    pitch: Math.max(VIEW.pitchMin, aim.pitch),
+  });
+}
 
 /** the three that move during a performance, per part, per phrase */
 export const ANGLES = ["YAW", "PITCH", "PERSPECTIVE"];
@@ -79,6 +108,17 @@ export function parallaxOffset(where, spread) {
 }
 
 /**
+ * The spread for one phrase. look.json may give a phrase its own beside its
+ * parts — phrases["2"].spread = { yaw, pitch } — and whatever it leaves out
+ * comes from the piece's. The desk and the tuning page both ask this, so the
+ * two cannot disagree about which wins.
+ */
+export function spreadFor(phrases, phrase, spread) {
+  const own = ((phrases || {})[String(phrase)] || {}).spread || {};
+  return Object.assign({ yaw: 0.22, pitch: 0.1 }, spread || {}, own);
+}
+
+/**
  * A shuffle is a seed, not a list of angles. The desk sends one number and
  * every wall derives the same offsets from it, which means a projector that
  * reconnects mid-piece lands on the same angles as the one that did not.
@@ -94,8 +134,9 @@ export function shuffleOffset(who, seed) {
   const a = ((h >>> 0) % 4096) / 4096 - 0.5;
   const b = (((h >>> 7) >>> 0) % 4096) / 4096 - 0.5;
   /* `yaw` and `pitch` are a nudge off an angle someone saved. `anyYaw` is for
-     a part with nothing saved: anywhere across the YAW knob, so seen head on
-     the tongue can be looking either way, not just round from the side. */
+     a part with nothing saved: anywhere across the YAW knob — which now
+     stops short of the throat end, so this is everywhere from the lips round
+     to just past side on. */
   const [, , lo, hi] = KNOBS.find((k) => k[0] === "YAW");
   return { yaw: a * 1.5, pitch: b * 0.7, anyYaw: lo + (a + 0.5) * (hi - lo) };
 }

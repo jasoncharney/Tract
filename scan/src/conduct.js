@@ -30,8 +30,8 @@
   playheads along the bottom of the screen.
 */
 
-const BUILD = "2026-11-16e";
-import { KNOBS, ANGLES, defaults as lookDefaults } from "./look.js";
+const BUILD = "2026-11-16i";
+import { KNOBS, ANGLES, defaults as lookDefaults, spreadFor } from "./look.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -1164,7 +1164,7 @@ const PART_NAMES = ["I", "II", "III", "IV"];
    look's own fields. This is the one place the two meet. */
 const angleKey = (knob) => knob.toLowerCase();
 let look = lookDefaults();
-let lookPhrases = {};          // phrase -> part -> { yaw, pitch, perspective }
+let lookPhrases = {};          // phrase -> part -> { yaw, pitch, perspective }, and maybe .spread
 let lookSpread = { yaw: 0.22, pitch: 0.1 };
 let shuffleSeed = 0;
 let lookPhrase = 1;            // the phrase the angles on screen belong to
@@ -1203,7 +1203,14 @@ function sendLook(extra) {
   send("/stage/look", [
     JSON.stringify(
       Object.assign(
-        { look, angles: anglesFor(lookPhrase), spread: lookSpread, shuffle: shuffleSeed },
+        // the phrase's own spread where it has one; the wall only ever
+        // hears the one that applies now
+        {
+          look,
+          angles: anglesFor(lookPhrase),
+          spread: spreadFor(lookPhrases, lookPhrase, lookSpread),
+          shuffle: shuffleSeed,
+        },
         extra || {}
       )
     ),

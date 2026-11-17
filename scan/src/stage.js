@@ -12,12 +12,12 @@
   player is playing, not an impression of it.
 */
 
-const BUILD = "2026-11-16e";
+const BUILD = "2026-11-16i";
 const $ = (id) => document.getElementById(id);
 
 /* ---- upstream's numbers, so the shape is the shape ---- */
 import { PT, angleAt, wobbleAt, easeBox } from "./geom.js";
-import { defaults as lookDefaults, parallaxOffset, shuffleOffset } from "./look.js";
+import { defaults as lookDefaults, parallaxOffset, shuffleOffset, inView } from "./look.js";
 import { drawWire, easeFrame } from "./wire.js";
 
 const GONE_AFTER = 6000; // a player that has said nothing for this long leaves
@@ -877,12 +877,14 @@ function aimFor(info) {
   const saved = angles[String(info.part)] || {};
   const seat = parallaxOffset(info.where, spread);
   const stir = shuffleOffset("part " + info.part, shuffle);
-  return {
+  // last, so neither a shuffle's nudge nor a wide spread can swing a tile
+  // round behind the tongue — see VIEW in look.js
+  return inView({
     yaw:
       (saved.yaw !== undefined ? saved.yaw + stir.yaw : shuffle ? stir.anyYaw : look.YAW) + seat.yaw,
     pitch: (saved.pitch === undefined ? look.PITCH : saved.pitch) + seat.pitch + stir.pitch,
     perspective: saved.perspective === undefined ? look.PERSPECTIVE : saved.perspective,
-  };
+  });
 }
 
 function pointAt(index, diameter, frame, time) {
@@ -1346,7 +1348,7 @@ window.stage = {
   /* how it is drawing, and where each player's camera is pointed — for the
      console during a rehearsal, and for a test to check against */
   get look() {
-    return { ...look, shuffle };
+    return { ...look, shuffle, spread };
   },
   aims() {
     const out = {};

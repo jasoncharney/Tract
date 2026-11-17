@@ -28,6 +28,26 @@ import { PT, angleAt, wobbleAt, easeBox } from "./geom.js";
 
 const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
+/* "#rrggbb" -> [r, g, b]; the page's colours are all written that way */
+const hex = (c) => [1, 3, 5].map((i) => parseInt(c.slice(i, i + 2), 16));
+const mix = (a, b, t) => {
+  const p = hex(a), q = hex(b);
+  return "rgb(" + p.map((v, i) => Math.round(v + (q[i] - v) * t)).join(",") + ")";
+};
+
+/* ctx.filter is what makes the glow cheap, and Safari before 18 does not
+   have it: the property can be set and simply reads back empty. Without it
+   the glow is the downsampling alone, which is softer but still a glow. */
+const canFilter = (() => {
+  try {
+    const c = document.createElement("canvas").getContext("2d");
+    c.filter = "blur(2px)";
+    return c.filter === "blur(2px)";
+  } catch (e) {
+    return false;
+  }
+})();
+
 /*
   The look, for the length of one tile's draw.
 
@@ -173,7 +193,13 @@ function surf(i, frame, time, floor, u, dr, dz) {
      every frame with the loudness held steady, none with it at zero. The
      heat reads loudness on its own, so taking this down does not darken a
      held note. */
-  const w = wobbleAt(i, len, (frame.a || 0) * look.WOBBLE, time, look.WOBHZ * 2 * Math.PI);
+  /* The roof shivers half as much as the tongue. It is the one fixed thing
+     in the picture, and at full wobble it rippled along with the floor, so
+     the mouth had no stable arch for the tongue to move under. Both the
+     angle and the radius are linear in w, so halving w halves the roof's
+     whole movement, whatever WOBBLE and WOBHZ are set to. */
+  const w =
+    wobbleAt(i, len, (frame.a || 0) * look.WOBBLE, time, look.WOBHZ * 2 * Math.PI) * (floor ? 1 : 0.5);
   const a = angleAt(i, frame.lip || len - 5) + w;
   // the roof is where upstream puts the outer wall and never moves; the
   // floor is as far below it as the bore is wide
@@ -420,12 +446,16 @@ export function drawWire(ctx, canvas, info, time, dt, theLook, aim) {
   }
 
   // 1. the roof: a ceiling of three unlit lines, the only fixed thing
-  //    in the picture, and only over the stretch the tongue is under
+  //    in the picture, and only over the stretch the tongue is under.
+  //    It used to be fixed at a third of the dim grey, which on a
+  //    projector left the tongue moving under nothing; ROOF and ROOFTINT
+  //    say how present it is, and the outer two stay at two thirds of
+  //    the middle so it still reads as a curved ceiling rather than a slab
   if (mode !== 2) {
-  ctx.strokeStyle = dim;
+  ctx.strokeStyle = mix(dim, edge, look.ROOFTINT);
   for (const k of [0, mid, nu - 1]) {
-    ctx.globalAlpha = sheer * (k === mid ? 0.34 : 0.22);
-    ctx.lineWidth = 1.1 / fit;
+    ctx.globalAlpha = sheer * look.ROOF * (k === mid ? 1 : 0.65);
+    ctx.lineWidth = look.ROOFW / fit;
     ctx.beginPath();
     for (let j = bladeJ; j <= last; j++) {
       const p = roofPts[j][k];
@@ -570,7 +600,6 @@ export function drawWire(ctx, canvas, info, time, dt, theLook, aim) {
       at a few thousand patches a frame across eight tiles that parse
       was most of the drawing's time.
     */
-    const hex = (c) => [1, 3, 5].map((i) => parseInt(c.slice(i, i + 2), 16));
     const bg = hex(css("--bg")), bodyC = hex(body), edgeC = hex(edge);
     const STEPS = 32;
     const ramp = (to) => {
@@ -663,6 +692,70 @@ export function drawWire(ctx, canvas, info, time, dt, theLook, aim) {
     tract's own direction, and drawn screen-aligned: a letter that
     turned with the camera would be unreadable half the time.
   */
+  /*
+    The glow: the tract as drawn so far, blurred, and laid BEHIND itself.
+
+    Behind, not on top: added over the lines it would wash them out to
+    white on the dark wall and do nothing at all on the pink one, where
+    there is no darker to lighten. Drawn underneath, the lines stay as they
+    were and the light spreads out from them onto the background, which
+    works the same on both. It is taken before the phoneme is set, so the
+    letter stays crisp and the glow belongs to the mouth alone.
+
+    What it costs is not the blur. Measured on a wall of nine 1280x720
+    tiles in headless Chrome (software canvas, so a real machine should do
+    better): the drawing alone 0.8ms a pass, a full-tile glow 17.9ms —
+    and 11.6ms of that with the blur switched off. The time goes on
+    copying the tile out and compositing it back in, so this touches only
+    the rectangle the tract is in, plus the glow's reach, and composites
+    once: the two blurs, tight and wide, are combined on a buffer at an
+    eighth of the size, where everything is cheap.
+
+    Two blurs because a single one either hugs the lines or fogs the
+    tile; together they read as light. The wide one is the tight one
+    blurred again, which spreads it further for the same cost.
+  */
+  if (look.GLOW > 0) {
+    const q = 8;
+    const reach = h * look.GLOWR * 3;
+    const rx = Math.max(0, Math.floor(box.x * fit + tx0 - reach));
+    const ry = Math.max(0, Math.floor(box.y * fit + ty0 - reach));
+    const rr = Math.min(w, Math.ceil((box.x + box.w) * fit + tx0 + reach));
+    const rb = Math.min(h, Math.ceil((box.y + box.h) * fit + ty0 + reach));
+    const rw = rr - rx, rh = rb - ry;
+    if (rw > 0 && rh > 0) {
+      const gw = Math.max(1, Math.ceil(rw / q)), gh = Math.max(1, Math.ceil(rh / q));
+      const bufs = info.glow || (info.glow = [0, 1, 2].map(() => document.createElement("canvas")));
+      for (const gb of bufs) if (gb.width !== gw || gb.height !== gh) { gb.width = gw; gb.height = gh; }
+      const [tight, wide, both] = bufs.map((gb) => gb.getContext("2d"));
+      const blur = (r) => (canFilter ? "blur(" + r / q + "px)" : "none");
+      tight.clearRect(0, 0, gw, gh);
+      tight.filter = blur(h * look.GLOWR);
+      tight.drawImage(ctx.canvas, rx, ry, rw, rh, 0, 0, gw, gh);
+      tight.filter = "none";
+      wide.clearRect(0, 0, gw, gh);
+      wide.filter = blur(h * look.GLOWR * 2);
+      wide.drawImage(bufs[0], 0, 0);
+      wide.filter = "none";
+      // past full strength it is laid down again rather than clipped: a
+      // blur spreads a thin line's light so far that once can be too little
+      both.clearRect(0, 0, gw, gh);
+      both.globalCompositeOperation = "lighter";
+      for (const [src, share] of [[bufs[0], 0.6], [bufs[1], 0.4]]) {
+        const want = look.GLOW * share;
+        const times = Math.ceil(want);
+        both.globalAlpha = want / times;
+        for (let k = 0; k < times; k++) both.drawImage(src, 0, 0);
+      }
+      both.globalCompositeOperation = "source-over";
+      both.globalAlpha = 1;
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.globalCompositeOperation = "destination-over";
+      ctx.drawImage(bufs[2], 0, 0, gw, gh, rx, ry, gw * q, gh * q);
+      ctx.globalCompositeOperation = "source-over";
+    }
+  }
+
   if (glyph) {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     const size = Math.max(9, h * look.IPA);
